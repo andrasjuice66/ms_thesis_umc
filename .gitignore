@@ -1,0 +1,8 @@
+venv/
+/venv/
+DS_Store
+.env
+HD_BET/
+.DS_Store
+# OtherRepos/
+# DataExp/
