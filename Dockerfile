@@ -19,18 +19,6 @@ COPY requirements.txt .
 # Install Python dependencies from requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install additional dependencies for medical imaging
-RUN pip install --no-cache-dir \
-    monai \
-    nibabel \
-    torchio \
-    scikit-learn \
-    pandas \
-    matplotlib \
-    seaborn \
-    tqdm \
-    pyyaml
-
 # Copy project files
 COPY . .
 
