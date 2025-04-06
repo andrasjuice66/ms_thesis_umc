@@ -6,3 +6,4 @@ HD_BET/
 .DS_Store
 # OtherRepos/
 # DataExp/
+*.pth
