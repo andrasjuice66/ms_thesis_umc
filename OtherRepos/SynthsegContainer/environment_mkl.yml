@@ -1,0 +1,10 @@
+name: synthseg-deps
+channels:
+  - anaconda
+  - conda-forge
+dependencies:
+  - python=3.8.16
+  - keras=2.3.1
+  - matplotlib-base
+  - nibabel
+  - tensorflow-mkl=2.2.0

@@ -1,0 +1,74 @@
+#
+# Building here without CUDA support
+#
+# This Dockerfile first builds tensorflow-2.2.0 from source. The default optimization is for
+# "native" architecture, which runs substantially faster at the cost of decreased compatibility
+#
+FROM tensorflow/tensorflow:devel as builder
+
+RUN mkdir /src && \
+    cd /src && \
+    git clone --depth 1 -b v2.2.0 https://github.com/tensorflow/tensorflow.git
+
+COPY tf_configure.bazelrc.in /src/tensorflow/.tf_configure.bazelrc
+
+# Build and test tensorflow
+# https://www.tensorflow.org/install/source
+# https://www.intel.com/content/www/us/en/developer/articles/guide/optimization-for-tensorflow-installation-guide.html
+#
+# We use tensorflow's options here, though I think Intels are equivalent, but Intel's specify
+# optimization here rather than in the .tf_configure.bazelrc
+#
+# MKL massively increases memory footprint. Remove mkl config to build with native CPU optimizations
+# only - might not be much faster
+#
+RUN mkdir /opt/tensorflow && \
+    cd /src/tensorflow && \
+    bazel build -c opt --config=mkl --config=opt //tensorflow/tools/pip_package:build_pip_package && \
+    ./bazel-bin/tensorflow/tools/pip_package/build_pip_package /opt/tensorflow && \
+    pip uninstall tensorflow && \
+    pip install /opt/tensorflow/tensorflow-2.2.0-cp38-cp38-linux_x86_64.whl && \
+    cd /tmp && \
+    python -c "import tensorflow as tf; print(tf.__version__)"
+
+ENV VIRTUAL_ENV=/opt/venv
+
+RUN apt-get update && \
+    apt install -y python3.8-venv && \
+    python -m venv ${VIRTUAL_ENV} && \
+    . ${VIRTUAL_ENV}/bin/activate && \
+    git clone -b master --depth 1 https://github.com/BBillot/SynthSeg.git /opt/SynthSeg && \
+    cd /opt/SynthSeg && \
+    git log > synthseg_version.txt
+
+COPY intel_requirements_python3.8.txt /opt/SynthSeg/
+
+RUN . ${VIRTUAL_ENV}/bin/activate && \
+    pip install wheel && \
+    pip install --upgrade pip && \
+    pip install keras==2.3.1 protobuf==3.20.3 numpy==1.23.5 \
+      nibabel==5.0.1 matplotlib-base==3.6.2 \
+      /opt/tensorflow/tensorflow-2.2.0-cp38-cp38-linux_x86_64.whl
+
+FROM tensorflow/tensorflow:devel
+
+ENV VIRTUAL_ENV=/opt/venv
+
+RUN apt-get update && \
+    apt install -y python3.8-venv && \
+    python -m venv ${VIRTUAL_ENV} && \
+    . ${VIRTUAL_ENV}/bin/activate
+
+ENV PATH="${VIRTUAL_ENV}/bin:$PATH"
+
+COPY --from=builder /opt/SynthSeg /opt/SynthSeg/
+COPY --from=builder ${VIRTUAL_ENV} ${VIRTUAL_ENV}
+
+COPY synthseg_models/*.h5 /opt/SynthSeg/models/
+
+LABEL maintainer="Philip A Cook (https://github.com/cookpa)" \
+      description="Container for SynthSeg, with tensorflow built from source on Intel with AVX2 optimization. \
+        Please see SynthSeg repository for citations" \
+      synthseg_repo="https://github.com/BBillot/SynthSeg"
+
+ENTRYPOINT ["python", "/opt/SynthSeg/scripts/commands/SynthSeg_predict.py"]

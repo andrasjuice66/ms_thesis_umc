@@ -1,0 +1,39 @@
+#
+# This builds using conda, and installs into a cuda runtime layer
+FROM continuumio/miniconda3:4.12.0 AS builder
+
+COPY environment.yml ./
+RUN conda env create -f environment.yml
+
+# Install conda-pack:
+RUN conda install -c conda-forge conda-pack
+
+# Use conda-pack to create a standalone environment
+# in /opt/venv:
+RUN conda-pack -n synthseg-deps -o /tmp/env.tar && \
+  mkdir /opt/venv && cd /opt/venv && tar xf /tmp/env.tar && \
+  rm /tmp/env.tar
+
+# Now unpack ready to copy into runtime layer
+RUN /opt/venv/bin/conda-unpack
+
+RUN git clone -b master --depth 1 https://github.com/BBillot/SynthSeg.git /opt/SynthSeg && \
+    cd /opt/SynthSeg && \
+    git log > synthseg_version.txt
+
+FROM nvidia/cuda:10.1-cudnn7-devel-ubuntu18.04
+
+# Copy venv from the previous stage:
+COPY --from=builder /opt/venv /opt/venv
+COPY --from=builder /opt/SynthSeg /opt/SynthSeg/
+
+COPY synthseg_models/*.h5 /opt/SynthSeg/models/
+
+LABEL maintainer="Philip A Cook (https://github.com/cookpa)" \
+      description="Container for SynthSeg. Please see SynthSeg repository for citations" \
+      synthseg_repo="https://github.com/BBillot/SynthSeg"
+
+ENV VIRTUAL_ENV=/opt/venv
+ENV PATH="${VIRTUAL_ENV}/bin:$PATH"
+
+ENTRYPOINT ["python", "/opt/SynthSeg/scripts/commands/SynthSeg_predict.py"]
