@@ -1,0 +1,96 @@
+#!/usr/bin/env python3
+
+# This wrapper script facilitates setup and use of SynthMorph containers by
+# pulling them from the Docker Hub and mounting the host directory defined by
+# environment variable SUBJECTS_DIR to /mnt in the container. Invoke the script
+# just like `mri_synthmorph` in FreeSurfer, with one exception: you can only
+# read and write data under SUBJECTS_DIR, which will be the working directory
+# in the container. If unset, SUBJECTS_DIR defaults to your current directory.
+# This means you can access relative paths under your working directory without
+# setting SUBJECTS_DIR. In other words, SUBJECTS_DIR sets the working directory
+# for SynthMorph, and you can specify paths relative to it.
+
+# Update the version to pull a different image, unless you already have it.
+version = 4
+
+# Local image location for Apptainer/Singularity. Set an absolute path to avoid
+# pulling new images when you change the folder. Ignored for Docker and Podman.
+sif_file = f'synthmorph_{version}.sif'
+
+# We will use the first of the below container systems found in your PATH, from
+# left to right. You may wish to reorder them, If you have several installed.
+tools = ('docker', 'apptainer', 'singularity', 'podman')
+
+
+import os
+import sys
+import signal
+import shutil
+import subprocess
+
+
+# Report version. Avoid errors when piping, for example to `head`.
+signal.signal(signal.SIGPIPE, handler=signal.SIG_DFL)
+hub = 'https://hub.docker.com/u/freesurfer'
+print(f'Running SynthMorph version {version} from {hub}')
+
+
+# Find a container system.
+for tool in tools:
+    path = shutil.which(tool)
+    if path:
+        print(f'Using {path} to manage containers')
+        break
+
+if not path:
+    print(f'Cannot find container tools {tools} in PATH', file=sys.stderr)
+    exit(1)
+
+
+# Prepare bind path and URL. Mount SUBJECTS_DIR as /mnt inside the container,
+# which we made the working directory when building the image. While Docker
+# and Podman will respect it, they require absolute paths for bind mounts.
+host = os.environ.get('SUBJECTS_DIR', os.getcwd())
+host = os.path.abspath(host)
+print(f'Will bind /mnt in image to SUBJECTS_DIR="{host}"')
+
+image = f'freesurfer/synthmorph:{version}'
+if tool != 'docker':
+    image = f'docker://{image}'
+
+
+# Run Docker containers with the UID and GID of the host user. This user will
+# own bind mounts inside the container, preventing output files owned by root.
+# Root inside a rootless Podman container maps to the non-root host user, which
+# is what we want. If we set UID and GID inside the container to the non-root
+# host user as we do for Docker, then these would get remapped according to
+# /etc/subuid outside, causing problems with read and write permissions.
+if tool in ('docker', 'podman'):
+    arg = ('run', '--rm', '-v', f'{host}:/mnt')
+
+    # Pretty-print help text.
+    if sys.stdout.isatty():
+        arg = (*arg, '-t')
+    if tool == 'docker':
+        arg = (*arg, '-u', f'{os.getuid()}:{os.getgid()}')
+
+    arg = (*arg, image)
+
+
+# For Apptainer/Singularity, the user inside and outside the container is the
+# same. The working directory is also the same, unless we explicitly set it.
+if tool in ('apptainer', 'singularity'):
+    arg = ('run', '--nv', '--pwd', '/mnt', '-e', '-B', f'{host}:/mnt', sif_file)
+
+    if not os.path.isfile(sif_file):
+        print(f'Cannot find image {sif_file}, pulling it', file=sys.stderr)
+        proc = subprocess.run((tool, 'pull', sif_file, image))
+        if proc.returncode:
+            exit(proc.returncode)
+
+
+# Summarize and launch container.
+print('Command:', ' '.join((tool, *arg)))
+print('SynthMorph arguments:', *sys.argv[1:])
+proc = subprocess.run((tool, *arg, *sys.argv[1:]))
+exit(proc.returncode)
