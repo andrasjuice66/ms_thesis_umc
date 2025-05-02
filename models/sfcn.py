@@ -1,133 +1,135 @@
 """
-Simple Fully Convolutional Network (SFCN) for brain age prediction.
+Modern-style PyTorch implementation of SFCN
+(keeps the original computational graph intact).
+
+  • clean, functional blocks
+  • adaptive global pooling (no hard-coded input size)
+  • bias-free convolutions + Kaiming weight init
+  • type hints for readability
+  • returns a tensor instead of a 1-element list
 """
+
+from typing import Sequence, Union
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import List
-
-from models.base_model import BrainAgeModel
 
 
-class SFCN(BrainAgeModel):
+# ----------------------------------------------------------------------------- #
+#                                building blocks                                #
+# ----------------------------------------------------------------------------- #
+class ConvBlock(nn.Sequential):
     """
-    Simple Fully Convolutional Network for brain age prediction.
+    Conv3d → BatchNorm3d → (optional MaxPool3d) → ReLU
     """
-    
+
     def __init__(
         self,
-        in_channels: int = 1,
-        dropout_rate: float = 0.5,
-        use_attention: bool = False,
-        model_name: str = "sfcn",
-        channel_number: List[int] = [32, 64, 128, 256, 256, 64],
-        avg_pool_shape: List[int] = [5, 6, 5]
-    ):
+        in_ch: int,
+        out_ch: int,
+        *,
+        kernel_size: int,
+        padding: int,
+        use_pool: bool,
+    ) -> None:
+        layers = [
+            nn.Conv3d(
+                in_ch,
+                out_ch,
+                kernel_size=kernel_size,
+                padding=padding,
+                bias=False,
+            ),
+            nn.BatchNorm3d(out_ch),
+            nn.ReLU(inplace=True),
+        ]
+        if use_pool:
+            # insert MaxPool *before* ReLU
+            layers.insert(2, nn.MaxPool3d(kernel_size=2, stride=2))
+
+        super().__init__(*layers)
+
+
+# ----------------------------------------------------------------------------- #
+#                                      SFCN                                     #
+# ----------------------------------------------------------------------------- #
+class SFCN(nn.Module):
+    """
+    Simple Fully-Convolutional Network for 3-D brain-age prediction.
+    """
+
+    def __init__(
+        self,
+        channels: Sequence[int] = (32, 64, 128, 256, 256, 64),
+        num_bins: int = 40,
+        dropout_p: Union[float, None] = 0.5,
+        log_probs: bool = True,
+    ) -> None:
         """
-        Initialize the SFCN model.
-        
-        Args:
-            in_channels: Number of input channels
-            dropout_rate: Dropout rate
-            use_attention: Whether to use attention mechanisms
-            model_name: Name of the model
-            channel_number: List of channel numbers for each layer
-            avg_pool_shape: Shape for average pooling
+        Args
+        ----
+        channels  : widths of successive Conv blocks (paper default shown).
+        num_bins  : number of age bins / classes.
+        dropout_p : `None` or float ∈ (0, 1); keeps behaviour of original paper (0.5).
+        log_probs : if True, apply `log_softmax` so loss can be KL-Div / NLL.
         """
-        self.channel_number = channel_number
-        self.avg_pool_shape = avg_pool_shape
-        super().__init__(in_channels, dropout_rate, use_attention, model_name)
-    
-    def _conv_layer(
-        self, 
-        in_channel: int, 
-        out_channel: int, 
-        maxpool: bool = True, 
-        kernel_size: int = 3, 
-        padding: int = 0, 
-        maxpool_stride: int = 2
-    ) -> nn.Sequential:
-        """Create a convolutional layer with optional max pooling."""
-        if maxpool:
-            layer = nn.Sequential(
-                nn.Conv3d(in_channel, out_channel, padding=padding, kernel_size=kernel_size),
-                nn.BatchNorm3d(out_channel),
-                nn.MaxPool3d(2, stride=maxpool_stride),
-                nn.ReLU(),
-            )
-        else:
-            layer = nn.Sequential(
-                nn.Conv3d(in_channel, out_channel, padding=padding, kernel_size=kernel_size),
-                nn.BatchNorm3d(out_channel),
-                nn.ReLU()
-            )
-        return layer
-    
-    def _build_feature_extractor(self) -> nn.Sequential:
-        """Build the feature extraction part of the model."""
-        n_layer = len(self.channel_number)
-        feature_extractor = nn.Sequential()
-        
-        for i in range(n_layer):
-            if i == 0:
-                in_channel = self.in_channels
-            else:
-                in_channel = self.channel_number[i-1]
-            
-            out_channel = self.channel_number[i]
-            
-            if i < n_layer-1:
-                feature_extractor.add_module(
-                    f'conv_{i}',
-                    self._conv_layer(
-                        in_channel,
-                        out_channel,
-                        maxpool=True,
-                        kernel_size=3,
-                        padding=1
-                    )
+        super().__init__()
+        self.log_probs = log_probs
+
+        # --------------------------- feature extractor -------------------------- #
+        feats: list[nn.Module] = []
+        in_ch = 1  # MRI is single-channel
+
+        for idx, out_ch in enumerate(channels):
+            last = idx == len(channels) - 1
+            feats.append(
+                ConvBlock(
+                    in_ch,
+                    out_ch,
+                    kernel_size=1 if last else 3,
+                    padding=0 if last else 1,
+                    use_pool=not last,
                 )
-            else:
-                feature_extractor.add_module(
-                    f'conv_{i}',
-                    self._conv_layer(
-                        in_channel,
-                        out_channel,
-                        maxpool=False,
-                        kernel_size=1,
-                        padding=0
-                    )
-                )
-        
-        return feature_extractor
-    
-    def _build_regression_head(self) -> nn.Sequential:
-        """Build the regression head for age prediction."""
-        classifier = nn.Sequential()
-        
-        # Average pooling
-        classifier.add_module('average_pool', nn.AvgPool3d(self.avg_pool_shape))
-        
-        # Dropout
-        if self.dropout_rate > 0:
-            classifier.add_module('dropout', nn.Dropout(self.dropout_rate))
-        
-        # Final convolution to get age prediction
-        classifier.add_module(
-            f'conv_{len(self.channel_number)}',
-            nn.Conv3d(self.channel_number[-1], 1, padding=0, kernel_size=1)
-        )
-        
-        # Flatten to get final output
-        classifier.add_module('flatten', nn.Flatten())
-        
-        return classifier
-    
+            )
+            in_ch = out_ch
+
+        self.feature_extractor = nn.Sequential(*feats)
+
+        # ------------------------------- classifier ----------------------------- #
+        cls_layers: list[nn.Module] = [nn.AdaptiveAvgPool3d(1)]  # global pooling
+        if dropout_p:
+            cls_layers.append(nn.Dropout(p=dropout_p))
+        cls_layers.append(nn.Conv3d(in_ch, num_bins, kernel_size=1))
+        self.classifier = nn.Sequential(*cls_layers)
+
+        # weight init (optional but recommended)
+        self._init_weights()
+
+    # --------------------------------------------------------------------- #
+    #                               utilities                               #
+    # --------------------------------------------------------------------- #
+    @staticmethod
+    def _init_weights(module):
+        for m in module.modules():
+            if isinstance(m, nn.Conv3d):
+                nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+            elif isinstance(m, (nn.BatchNorm3d, nn.GroupNorm, nn.InstanceNorm3d)):
+                nn.init.ones_(m.weight)
+                nn.init.zeros_(m.bias)
+
+    # --------------------------------------------------------------------- #
+    #                                forward                                #
+    # --------------------------------------------------------------------- #
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass through the model."""
-        features = self.feature_extractor(x)
-        age = self.regression_head(features)
-        return age.squeeze()
-
-
+        """
+        x : (N, 1, D, H, W)
+        returns:
+            (N, num_bins) log-probs (if `log_probs`) or raw logits (else).
+        """
+        x = self.feature_extractor(x)          # (N, C, d, h, w)
+        x = self.classifier(x)                 # (N, num_bins, 1, 1, 1)
+        x = torch.flatten(x, 1)                # squeeze spatial dims
+        return F.log_softmax(x, dim=1) if self.log_probs else x
