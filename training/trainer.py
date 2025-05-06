@@ -1,344 +1,410 @@
-"""
-Trainer class for brain age prediction models.
-"""
-
-import os
+from __future__ import annotations
 import time
+from pathlib import Path
+from typing import Dict, Any, List, Optional
+
+import numpy as np
 import torch
 import torch.nn as nn
-import torch.optim as optim
+import torch.nn.functional as F
+from torch.amp import autocast
+from torch.amp import GradScaler
 from torch.utils.data import DataLoader
-import numpy as np
 from tqdm import tqdm
-from typing import Dict, List, Optional, Tuple, Union, Callable, Any
-import logging
-from pathlib import Path
 
-from models.base_model import BrainAgeModel
-from training.losses import get_loss_function
-from training.metrics import calculate_metrics
-from training.optimizers import get_optimizer, get_scheduler
-from utils.wandb_logger import WandbLogger
-from utils.logger import setup_logger
+# ──────────────── project helpers ───────────────── #
+from brain_age_pred.training.losses import get_loss_function
+from brain_age_pred.training.metrics import calculate_metrics
+from brain_age_pred.training.optimizers import get_optimizer, get_scheduler
+from brain_age_pred.utils.logger import setup_logger
+from brain_age_pred.utils.wandb_logger import WandbLogger
 
 
+# ---------------------------------------------------------------------------- #
+#                              helper ‑ utilities                              #
+# ---------------------------------------------------------------------------- #
+def _weighted_reduction(
+    per_sample: torch.Tensor,
+    weights: Optional[torch.Tensor] = None,
+) -> torch.Tensor:
+    """Reduce per-sample loss tensor with optional weights."""
+    if weights is None:
+        return per_sample.mean()
+    w = weights / (weights.sum() + 1e-8)           # normalise
+    return (per_sample * w).sum()
+
+
+# ---------------------------------------------------------------------------- #
+#                                 trainer                                      #
+# ---------------------------------------------------------------------------- #
 class BrainAgeTrainer:
     """
-    Trainer for brain age prediction models with domain randomization.
+    Generic trainer that works with any **regression** model returning a tensor
+    of shape (N,) or (N,1).
+
+    Parameters
+    ----------
+    model          : torch.nn.Module
+    train_loader   : DataLoader
+    val_loader     : DataLoader
+    config         : Dict    – subsection `training:` of YAML
+    device         : torch.device
+    checkpoint_dir : path to save checkpoints in
+    log_dir        : path to save log file
+    use_wandb      : enable Weights & Biases
+    wandb_project / entity / config  : usual W&B params
+    experiment_name: readable experiment id (used in filenames & wandb name)
     """
-    
+
+    # --------------------------------------------------------------------- #
     def __init__(
         self,
-        model: BrainAgeModel,
+        model: nn.Module,
         train_loader: DataLoader,
         val_loader: DataLoader,
         config: Dict[str, Any],
         device: Optional[torch.device] = None,
-        checkpoint_dir: str = "checkpoints",
-        log_dir: str = "logs",
-        use_wandb: bool = True,
-        wandb_project: str = "brain-age-prediction",
+        checkpoint_dir: str | Path = "checkpoints",
+        log_dir: str | Path = "logs",
+        use_wandb: bool = False,
+        wandb_project: str = "brain-age",
         wandb_entity: Optional[str] = None,
         wandb_config: Optional[Dict[str, Any]] = None,
-        experiment_name: Optional[str] = None
-    ):
-        """
-        Initialize the trainer.
-        
-        Args:
-            model: Model to train
-            train_loader: Training data loader
-            val_loader: Validation data loader
-            config: Training configuration
-            device: Device to train on
-            checkpoint_dir: Directory to save checkpoints
-            log_dir: Directory to save logs
-            use_wandb: Whether to use Weights & Biases
-            wandb_project: Weights & Biases project name
-            wandb_entity: Weights & Biases entity name
-            wandb_config: Weights & Biases configuration
-            experiment_name: Name of the experiment
-        """
-        self.model = model
+        experiment_name: Optional[str] = None,
+    ) -> None:
+
+        # /--------- basic attributes ----------/
+        self.model        = model
         self.train_loader = train_loader
-        self.val_loader = val_loader
-        self.config = config
-        self.device = device if device is not None else torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.checkpoint_dir = Path(checkpoint_dir)
-        self.log_dir = Path(log_dir)
-        
-        # Create directories
-        self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
-        self.log_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Set up experiment name
-        self.experiment_name = experiment_name or f"{model.model_name}_{time.strftime('%Y%m%d_%H%M%S')}"
-        self.experiment_dir = self.checkpoint_dir / self.experiment_name
-        self.experiment_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Set up logger
-        self.logger = setup_logger(
-            name=self.experiment_name,
-            log_file=self.log_dir / f"{self.experiment_name}.log"
+        self.val_loader   = val_loader
+        self.cfg          = config
+        self.device       = device or torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu"
         )
-        
-        # Set up Weights & Biases
+
+        # /--------- dirs & logging ---------/
+        self.ckpt_dir = Path(checkpoint_dir)
+        self.ckpt_dir.mkdir(parents=True, exist_ok=True)
+        self.log_dir  = Path(log_dir)
+        self.log_dir.mkdir(parents=True, exist_ok=True)
+
+        self.exp_name = experiment_name or f"{model.__class__.__name__}_{int(time.time())}"
+        self.logger   = setup_logger(
+            name = self.exp_name,
+            log_file = self.log_dir / f"{self.exp_name}.log"
+        )
+
+        # /--------- W&B ---------/
         self.use_wandb = use_wandb
         if use_wandb:
-            self.wandb_logger = WandbLogger(
-                project=wandb_project,
-                entity=wandb_entity,
-                name=self.experiment_name,
-                config=wandb_config or self.config
+            self.wandb = WandbLogger(
+                project = wandb_project,
+                entity  = wandb_entity,
+                name    = self.exp_name,
+                config  = wandb_config or {},
             )
-        
-        # Set up loss function
-        self.criterion = get_loss_function(config.get("loss", "mse"))
-        
-        # Set up optimizer
+
+        # /--------- loss ---------/
+        self.loss_name   = self.cfg.get("loss", "mse").lower()
+        self.loss_params = self.cfg.get("loss_params", {})
+        self.criterion   = get_loss_function(self.loss_name, **self.loss_params)
+
+        # /--------- optimiser / scheduler ---------/
+        params = list(self.model.parameters())
+        # print("Modelllll parameters:", params)
+        #print("Number of model parameters:", sum(p.numel() for p in self.model.parameters()))
         self.optimizer = get_optimizer(
-            model.parameters(),
-            optimizer_type=config.get("optimizer", "adam"),
-            lr=config.get("learning_rate", 1e-4),
-            weight_decay=config.get("weight_decay", 1e-5)
+            params,
+            optimizer_type = self.cfg.get("optimizer", "adamw"),
+            lr             = self.cfg.get("learning_rate", 1e-4),
+            weight_decay   = self.cfg.get("weight_decay", 1e-5),
         )
-        
-        # Set up scheduler
+
         self.scheduler = get_scheduler(
             self.optimizer,
-            scheduler_type=config.get("scheduler", "cosine"),
-            **config.get("scheduler_params", {})
+            scheduler_type = self.cfg.get("scheduler", "cosine"),
+            **self.cfg.get("scheduler_params", {}),
         )
-        
-        # Move model to device
+
+        # /--------- misc hyper-params ---------/
+        self.epochs                     = self.cfg.get("epochs", 100)
+        self.grad_accum_steps           = self.cfg.get("gradient_accumulation_steps", 1)
+        self.early_stopping_patience    = self.cfg.get("early_stopping_patience", 10)
+        self.use_amp                    = self.cfg.get("use_amp", True) and torch.cuda.is_available()
+        self.scaler: Optional[GradScaler] = GradScaler(device=self.device) if self.use_amp else None
+
+        # /--------- early-stop bookkeeping ---------/
+        self.best_val_loss      = float("inf")
+        self.early_stop_counter = 0
+
+        # /--------- move model ----------/
         self.model.to(self.device)
-        
-        # Training parameters
-        self.epochs = config.get("epochs", 100)
-        self.early_stopping_patience = config.get("early_stopping_patience", 10)
-        self.early_stopping_counter = 0
-        self.best_val_loss = float('inf')
-        
-        # Gradient accumulation
-        self.gradient_accumulation_steps = config.get("gradient_accumulation_steps", 1)
-        
-        # Mixed precision training
-        self.use_amp = config.get("use_amp", True) and torch.cuda.is_available()
-        self.scaler = torch.cuda.amp.GradScaler() if self.use_amp else None
-        
-        # Log configuration
-        self.logger.info(f"Initialized trainer for {self.experiment_name}")
-        self.logger.info(f"Model: {model.model_name}")
+        self.logger.info(f"Model: {self.model.__class__.__name__}")
         self.logger.info(f"Device: {self.device}")
-        self.logger.info(f"Training samples: {len(train_loader.dataset)}")
+        self.logger.info(f"Training samples : {len(train_loader.dataset)}")
         self.logger.info(f"Validation samples: {len(val_loader.dataset)}")
-        self.logger.info(f"Batch size: {train_loader.batch_size}")
-        self.logger.info(f"Using mixed precision: {self.use_amp}")
-    
-    def train_epoch(self, epoch: int) -> Dict[str, float]:
+        self.logger.info(f"Use AMP: {self.use_amp}")
+
+        # print("Model parameters:", list(model.parameters()))
+        # print("Number of parameters:", sum(p.numel() for p in model.parameters()))
+
+    # ------------------------------------------------------------------ #
+    #                        internal helpers                             #
+    # ------------------------------------------------------------------ #
+    def _compute_loss(
+        self,
+        outputs: torch.Tensor,
+        targets: torch.Tensor,
+        weights: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
         """
-        Train for one epoch.
-        
-        Args:
-            epoch: Current epoch number
-            
-        Returns:
-            Dictionary of training metrics
+        Returns scalar loss; if `weighted_mse` is chosen or `weights`
+        tensor is provided we override reduction manually.
         """
-        self.model.train()
-        epoch_loss = 0.0
-        all_predictions = []
-        all_targets = []
-        
-        # Progress bar
-        pbar = tqdm(self.train_loader, desc=f"Epoch {epoch+1}/{self.epochs} [Train]")
-        
-        # Reset gradients
-        self.optimizer.zero_grad()
-        
-        for batch_idx, batch in enumerate(pbar):
-            # Get data
-            inputs = batch["image"].to(self.device)
-            targets = batch["age"].float().to(self.device)
-            
-            # Forward pass with mixed precision
+        if self.loss_name == "weighted_mse" or weights is not None:
+            per_sample = F.mse_loss(
+                outputs.squeeze(), targets, reduction="none"
+            )
+            return _weighted_reduction(per_sample, weights)
+        # default: rely on criterion's internal reduction
+        return self.criterion(outputs.squeeze(), targets)
+
+    # ------------------------------------------------------------------ #
+    def _step(
+        self,
+        batch: Dict[str, torch.Tensor],
+        train: bool = True,
+    ) -> torch.Tensor:
+        """One forward/backward (if train) pass. Returns scalar loss."""
+        # First ensure all tensors are on the correct device
+        imgs = batch["image"].to(self.device, non_blocking=True)
+        ages = batch["age"].float().to(self.device, non_blocking=True)
+        wts = batch.get("weight")
+        if wts is not None:
+            wts = wts.to(self.device)
+
+        # Forward pass (with AMP if enabled)
+        if self.use_amp:
+            with autocast(device_type=self.device.type):
+                preds = self.model(imgs)
+                loss = self._compute_loss(preds, ages, wts)
+        else:
+            preds = self.model(imgs)
+            loss = self._compute_loss(preds, ages, wts)
+
+        if train:
+            loss = loss / self.grad_accum_steps
             if self.use_amp:
-                with torch.cuda.amp.autocast():
-                    outputs = self.model(inputs)
-                    loss = self.criterion(outputs, targets)
-                    loss = loss / self.gradient_accumulation_steps
-                
-                # Backward pass with gradient scaling
                 self.scaler.scale(loss).backward()
-                
-                # Gradient accumulation
-                if (batch_idx + 1) % self.gradient_accumulation_steps == 0:
-                    self.scaler.step(self.optimizer)
-                    self.scaler.update()
-                    self.optimizer.zero_grad()
             else:
-                # Standard forward pass
-                outputs = self.model(inputs)
-                loss = self.criterion(outputs, targets)
-                loss = loss / self.gradient_accumulation_steps
-                
-                # Backward pass
                 loss.backward()
-                
-                # Gradient accumulation
-                if (batch_idx + 1) % self.gradient_accumulation_steps == 0:
-                    self.optimizer.step()
-                    self.optimizer.zero_grad()
+        return loss.detach(), preds.detach()
+
+    # ------------------------------------------------------------------ #
+    def _optim_step(self) -> None:
+        """Handles optimiser + scaler step for AMP."""
+        if self.use_amp:
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
+        else:
+            self.optimizer.step()
+        self.optimizer.zero_grad(set_to_none=True)
+
+
+    def train_epoch(self, epoch: int) -> Dict[str, float]:
+        self.model.train()
+        running_loss: float = 0.0
+        preds_all, targets_all = [], []
+        
+        # Add metrics for timing
+        data_time_avg = 0.0
+        gpu_time_avg = 0.0
+        
+        pbar = tqdm(
+            enumerate(self.train_loader),
+            total=len(self.train_loader),
+            leave=False,
+            desc=f"Epoch {epoch+1}/{self.epochs} [train]",
+        )
+
+        self.optimizer.zero_grad(set_to_none=True)
+
+        for step, batch in pbar:
+            # Start timing data loading
+            t0 = time.time()
             
-            # Update metrics
-            epoch_loss += loss.item() * self.gradient_accumulation_steps
-            all_predictions.extend(outputs.detach().cpu().numpy())
-            all_targets.extend(targets.detach().cpu().numpy())
+            # Move data to device (this is part of data pipeline timing)
+            imgs = batch["image"].to(self.device, non_blocking=True)
+            ages = batch["age"].float().to(self.device, non_blocking=True)
+            wts = batch.get("weight")
+            if wts is not None:
+                wts = wts.to(self.device)
             
-            # Update progress bar
-            pbar.set_postfix({"loss": loss.item() * self.gradient_accumulation_steps})
-        
-        # Step scheduler
-        if self.scheduler is not None:
-            self.scheduler.step()
-        
-        # Calculate metrics
-        all_predictions = np.array(all_predictions)
-        all_targets = np.array(all_targets)
-        metrics = calculate_metrics(all_predictions, all_targets)
-        metrics["loss"] = epoch_loss / len(self.train_loader)
-        
-        # Log metrics
-        self.logger.info(f"Train Epoch: {epoch+1} | Loss: {metrics['loss']:.4f} | MAE: {metrics['mae']:.4f}")
-        
-        # Log to wandb
-        if self.use_wandb:
-            self.wandb_logger.log({f"train/{k}": v for k, v in metrics.items()})
-            self.wandb_logger.log({"lr": self.optimizer.param_groups[0]['lr']})
-        
-        return metrics
-    
-    def validate(self, epoch: int) -> Dict[str, float]:
-        """
-        Validate the model.
-        
-        Args:
-            epoch: Current epoch number
+            # Calculate data loading time
+            data_time = time.time() - t0
+            data_time_avg += data_time
             
-        Returns:
-            Dictionary of validation metrics
-        """
-        self.model.eval()
-        val_loss = 0.0
-        all_predictions = []
-        all_targets = []
-        
-        # Progress bar
-        pbar = tqdm(self.val_loader, desc=f"Epoch {epoch+1}/{self.epochs} [Val]")
-        
-        with torch.no_grad():
-            for batch in pbar:
-                # Get data
-                inputs = batch["image"].to(self.device)
-                targets = batch["age"].float().to(self.device)
-                
-                # Forward pass
-                outputs = self.model(inputs)
-                loss = self.criterion(outputs, targets)
-                
-                # Update metrics
-                val_loss += loss.item()
-                all_predictions.extend(outputs.detach().cpu().numpy())
-                all_targets.extend(targets.detach().cpu().numpy())
-                
-                # Update progress bar
-                pbar.set_postfix({"loss": loss.item()})
-        
-        # Calculate metrics
-        all_predictions = np.array(all_predictions)
-        all_targets = np.array(all_targets)
-        metrics = calculate_metrics(all_predictions, all_targets)
-        metrics["loss"] = val_loss / len(self.val_loader)
-        
-        # Log metrics
-        self.logger.info(f"Val Epoch: {epoch+1} | Loss: {metrics['loss']:.4f} | MAE: {metrics['mae']:.4f}")
-        
-        # Log to wandb
-        if self.use_wandb:
-            self.wandb_logger.log({f"val/{k}": v for k, v in metrics.items()})
+            # Ensure GPU operations from data loading are complete
+            torch.cuda.synchronize()
+            t1 = time.time()
             
-            # Log sample predictions
-            if epoch % 5 == 0 and len(all_predictions) > 0:
-                self.wandb_logger.log_predictions(all_predictions[:20], all_targets[:20], epoch)
-        
-        return metrics
-    
-    def train(self) -> Dict[str, List[float]]:
-        """
-        Train the model for the specified number of epochs.
-        
-        Returns:
-            Dictionary of training history
-        """
-        self.logger.info(f"Starting training for {self.epochs} epochs")
-        
-        history = {
-            "train_loss": [],
-            "val_loss": [],
-            "train_mae": [],
-            "val_mae": [],
-            "learning_rate": []
-        }
-        
-        for epoch in range(self.epochs):
-            # Train for one epoch
-            train_metrics = self.train_epoch(epoch)
+            # Forward pass and backward pass (already implemented in _step)
+            loss, preds = self._step(batch, train=True)
             
-            # Validate
-            val_metrics = self.validate(epoch)
+            # Apply optimizer step if needed
+            if (step + 1) % self.grad_accum_steps == 0:
+                self._optim_step()
             
-            # Update history
-            history["train_loss"].append(train_metrics["loss"])
-            history["val_loss"].append(val_metrics["loss"])
-            history["train_mae"].append(train_metrics["mae"])
-            history["val_mae"].append(val_metrics["mae"])
-            history["learning_rate"].append(self.optimizer.param_groups[0]['lr'])
+            # Ensure GPU operations are complete
+            torch.cuda.synchronize()
+            gpu_time = time.time() - t1
+            gpu_time_avg += gpu_time
             
-            # Save checkpoint
-            checkpoint_metrics = {
-                "train_loss": train_metrics["loss"],
-                "val_loss": val_metrics["loss"],
-                "train_mae": train_metrics["mae"],
-                "val_mae": val_metrics["mae"]
-            }
+            # Track metrics
+            running_loss += loss.item() * self.grad_accum_steps
+            preds_all.append(preds.cpu().numpy())
+            targets_all.append(batch["age"].cpu().numpy())
             
-            extra_info = {
-                "optimizer_state_dict": self.optimizer.state_dict(),
-                "scheduler_state_dict": self.scheduler.state_dict() if self.scheduler else None,
-                "epoch": epoch
-            }
-            
-            _, is_best = self.model.save_checkpoint(
-                checkpoint_dir=self.experiment_dir,
-                metrics=checkpoint_metrics,
-                extra_info=extra_info
+            # Update progress bar with both loss and timing info
+            pbar.set_postfix(
+                loss=loss.item() * self.grad_accum_steps,
+                data_time=f"{data_time:.3f}s", 
+                gpu_time=f"{gpu_time:.3f}s"
             )
             
-            # Early stopping
-            if val_metrics["loss"] < self.best_val_loss:
-                self.best_val_loss = val_metrics["loss"]
-                self.early_stopping_counter = 0
-            else:
-                self.early_stopping_counter += 1
-                
-                if self.early_stopping_counter >= self.early_stopping_patience:
-                    self.logger.info(f"Early stopping at epoch {epoch+1}")
-                    break
+            # Print timing for every step if needed (can be adjusted or removed)
+            if step % 10 == 0:  # Print every 10 batches to avoid too much output
+                self.logger.info(f"[{step:04d}] data {data_time:.3f}s | gpu {gpu_time:.3f}s")
+
+        # Calculate average timings
+        num_batches = len(self.train_loader)
+        avg_data_time = data_time_avg / num_batches
+        avg_gpu_time = gpu_time_avg / num_batches
         
-        self.logger.info("Training completed")
+        # Log timing statistics
+        self.logger.info(f"Epoch {epoch+1} timing: avg data {avg_data_time:.3f}s | avg gpu {avg_gpu_time:.3f}s")
         
-        # Finalize wandb
+        # scheduler ‑ per-epoch step
+        if self.scheduler is not None:
+            self.scheduler.step()
+
+        metrics = calculate_metrics(
+            np.concatenate(preds_all),
+            np.concatenate(targets_all),
+        )
+        metrics["loss"] = running_loss / num_batches
+        # Add timing metrics
+        metrics["data_time"] = avg_data_time
+        metrics["gpu_time"] = avg_gpu_time
+
+        # logging
+        self.logger.info(
+            f"Epoch {epoch+1:03d}  train | "
+            f"loss={metrics['loss']:.4f}  mae={metrics['mae']:.3f} "
+            f"data_time={avg_data_time:.3f}s  gpu_time={avg_gpu_time:.3f}s"
+        )
         if self.use_wandb:
-            self.wandb_logger.finish()
-        
+            self.wandb.log({f"train/{k}": v for k, v in metrics.items()})
+            self.wandb.log({"lr": self.optimizer.param_groups[0]["lr"]})
+
+        return metrics
+
+    # ------------------------------------------------------------------ #
+    def validate(self, epoch: int) -> Dict[str, float]:
+        self.model.eval()
+        running_loss: float = 0.0
+        preds_all, targets_all = [], []
+
+        with torch.no_grad():
+            pbar = tqdm(
+                self.val_loader,
+                total=len(self.val_loader),
+                leave=False,
+                desc=f"Epoch {epoch+1}/{self.epochs} [val]",
+            )
+            for batch in pbar:
+                loss, preds = self._step(batch, train=False)
+                running_loss += loss.item()
+                preds_all.append(preds.cpu().numpy())
+                targets_all.append(batch["age"].cpu().numpy())
+                pbar.set_postfix(loss=loss.item())
+
+        metrics = calculate_metrics(
+            np.concatenate(preds_all),
+            np.concatenate(targets_all),
+        )
+        metrics["loss"] = running_loss / len(self.val_loader)
+
+        self.logger.info(
+            f"Epoch {epoch+1:03d}  val   | "
+            f"loss={metrics['loss']:.4f}  mae={metrics['mae']:.3f}"
+        )
+        if self.use_wandb:
+            self.wandb.log({f"val/{k}": v for k, v in metrics.items()})
+
+        return metrics
+
+    # ------------------------------------------------------------------ #
+    def _save_checkpoint(
+        self,
+        epoch: int,
+        val_loss: float,
+        is_best: bool = False,
+    ) -> None:
+        ckpt = {
+            "epoch": epoch,
+            "model_state_dict": self.model.state_dict(),
+            "optimizer_state_dict": self.optimizer.state_dict(),
+            "scheduler_state_dict": self.scheduler.state_dict() if self.scheduler else None,
+            "val_loss": val_loss,
+        }
+        fname = self.ckpt_dir / f"{self.exp_name}_epoch{epoch:03d}.pt"
+        torch.save(ckpt, fname)
+        if is_best:
+            best_name = self.ckpt_dir / f"{self.exp_name}_best.pt"
+            torch.save(ckpt, best_name)
+
+    # ------------------------------------------------------------------ #
+    def train(self) -> Dict[str, List[float]]:
+        """
+        Full training loop.  Returns history dict that contains:
+            train_loss, val_loss, train_mae, val_mae, learning_rate
+        """
+        history = {k: [] for k in
+                   ("train_loss", "val_loss", "train_mae", "val_mae", "lr")}
+
+        for epoch in range(self.epochs):
+
+            # let domain-randomiser know which epoch we are on
+            if hasattr(self.train_loader.dataset.transform, "current_epoch"):
+                self.train_loader.dataset.transform.current_epoch = epoch
+
+            tr_metrics = self.train_epoch(epoch)
+            vl_metrics = self.validate(epoch)
+
+            history["train_loss"].append(tr_metrics["loss"])
+            history["val_loss"].append(vl_metrics["loss"])
+            history["train_mae"].append(tr_metrics["mae"])
+            history["val_mae"].append(vl_metrics["mae"])
+            history["lr"].append(self.optimizer.param_groups[0]["lr"])
+
+            # checkpoint & early-stopping
+            is_best = vl_metrics["loss"] < self.best_val_loss
+            if is_best:
+                self.best_val_loss = vl_metrics["loss"]
+                self.early_stop_counter = 0
+            else:
+                self.early_stop_counter += 1
+
+            self._save_checkpoint(epoch, vl_metrics["loss"], is_best=is_best)
+
+            if self.early_stop_counter >= self.early_stopping_patience:
+                self.logger.info(
+                    f"Early-stopping triggered at epoch {epoch+1}"
+                )
+                break
+
+        if self.use_wandb:
+            self.wandb.finish()
+
         return history

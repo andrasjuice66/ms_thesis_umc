@@ -1,14 +1,13 @@
 """
-Modern-style PyTorch implementation of SFCN
-(keeps the original computational graph intact).
+SFCN-Reg  –  Fully-convolutional network for 3-D brain-age regression.
 
-  • clean, functional blocks
-  • adaptive global pooling (no hard-coded input size)
-  • bias-free convolutions + Kaiming weight init
-  • type hints for readability
-  • returns a tensor instead of a 1-element list
+Differences from the original SFCN:
+    • configurable input channels, dropout, and (noop) attention flag
+    • final head returns a single scalar age (float) per sample
+    • constructor accepts the exact keys passed from YAML
 """
 
+from __future__ import annotations
 from typing import Sequence, Union
 
 import torch
@@ -16,9 +15,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-# ----------------------------------------------------------------------------- #
-#                                building blocks                                #
-# ----------------------------------------------------------------------------- #
+# ────────────────────── building blocks ─────────────────────── #
 class ConvBlock(nn.Sequential):
     """
     Conv3d → BatchNorm3d → (optional MaxPool3d) → ReLU
@@ -31,7 +28,7 @@ class ConvBlock(nn.Sequential):
         *,
         kernel_size: int,
         padding: int,
-        use_pool: bool,
+        use_pool: bool = True,
     ) -> None:
         layers = [
             nn.Conv3d(
@@ -51,36 +48,37 @@ class ConvBlock(nn.Sequential):
         super().__init__(*layers)
 
 
-# ----------------------------------------------------------------------------- #
-#                                      SFCN                                     #
-# ----------------------------------------------------------------------------- #
+# ─────────────────────────  model  ──────────────────────────── #
 class SFCN(nn.Module):
     """
-    Simple Fully-Convolutional Network for 3-D brain-age prediction.
+    Fully-convolutional network for brain-age **regression**.
+
+    Parameters
+    ----------
+    in_channels : int
+        Number of input channels (1 for most MRI, 3 for multi-modal, …).
+    dropout_rate : float | None
+        If `None` → no dropout; else applied before final conv.
+    use_attention : bool
+        Accepted for YAML compatibility; currently a no-op.
+    channels : Sequence[int]
+        Widths of successive Conv blocks.
     """
 
     def __init__(
         self,
+        *,
+        in_channels: int = 1,
+        dropout_rate: Union[float, None] = 0.3,
+        use_attention: bool = False,            # accepted but unused
         channels: Sequence[int] = (32, 64, 128, 256, 256, 64),
-        num_bins: int = 40,
-        dropout_p: Union[float, None] = 0.5,
-        log_probs: bool = True,
+        **_ignored,                             # swallow extra YAML keys (e.g. 'type')
     ) -> None:
-        """
-        Args
-        ----
-        channels  : widths of successive Conv blocks (paper default shown).
-        num_bins  : number of age bins / classes.
-        dropout_p : `None` or float ∈ (0, 1); keeps behaviour of original paper (0.5).
-        log_probs : if True, apply `log_softmax` so loss can be KL-Div / NLL.
-        """
         super().__init__()
-        self.log_probs = log_probs
 
-        # --------------------------- feature extractor -------------------------- #
+        # ------------------ feature extractor ------------------ #
         feats: list[nn.Module] = []
-        in_ch = 1  # MRI is single-channel
-
+        in_ch = in_channels
         for idx, out_ch in enumerate(channels):
             last = idx == len(channels) - 1
             feats.append(
@@ -93,43 +91,40 @@ class SFCN(nn.Module):
                 )
             )
             in_ch = out_ch
-
         self.feature_extractor = nn.Sequential(*feats)
 
-        # ------------------------------- classifier ----------------------------- #
-        cls_layers: list[nn.Module] = [nn.AdaptiveAvgPool3d(1)]  # global pooling
-        if dropout_p:
-            cls_layers.append(nn.Dropout(p=dropout_p))
-        cls_layers.append(nn.Conv3d(in_ch, num_bins, kernel_size=1))
-        self.classifier = nn.Sequential(*cls_layers)
+        # ---------------------- head --------------------------- #
+        head: list[nn.Module] = [nn.AdaptiveAvgPool3d(1)]  # global pooling
+        if dropout_rate:
+            head.append(nn.Dropout(dropout_rate))
+        head.append(nn.Conv3d(in_ch, 1, kernel_size=1))    # (N,1,1,1,1)
+        self.head = nn.Sequential(*head)
 
-        # weight init (optional but recommended)
-        self._init_weights()
+        # weight initialisation
+        self.apply(self._init_weights)
 
-    # --------------------------------------------------------------------- #
-    #                               utilities                               #
-    # --------------------------------------------------------------------- #
+    # ---------------------------------------------------------- #
     @staticmethod
-    def _init_weights(module):
-        for m in module.modules():
-            if isinstance(m, nn.Conv3d):
-                nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
-                if m.bias is not None:
-                    nn.init.zeros_(m.bias)
-            elif isinstance(m, (nn.BatchNorm3d, nn.GroupNorm, nn.InstanceNorm3d)):
-                nn.init.ones_(m.weight)
+    def _init_weights(m: nn.Module) -> None:
+        if isinstance(m, nn.Conv3d):
+            nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
+            if m.bias is not None:
                 nn.init.zeros_(m.bias)
+        elif isinstance(m, (nn.BatchNorm3d, nn.GroupNorm, nn.InstanceNorm3d)):
+            nn.init.ones_(m.weight)
+            nn.init.zeros_(m.bias)
 
-    # --------------------------------------------------------------------- #
-    #                                forward                                #
-    # --------------------------------------------------------------------- #
+    # ---------------------------------------------------------- #
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
-        x : (N, 1, D, H, W)
-        returns:
-            (N, num_bins) log-probs (if `log_probs`) or raw logits (else).
+        Parameters
+        ----------
+        x : (N, C, D, H, W)
+
+        Returns
+        -------
+        (N, 1) predicted age (float).
         """
-        x = self.feature_extractor(x)          # (N, C, d, h, w)
-        x = self.classifier(x)                 # (N, num_bins, 1, 1, 1)
-        x = torch.flatten(x, 1)                # squeeze spatial dims
-        return F.log_softmax(x, dim=1) if self.log_probs else x
+        x = self.feature_extractor(x)
+        x = self.head(x)          # (N,1,1,1,1)
+        return x.flatten(1)       # (N,1)

@@ -27,7 +27,7 @@ class Config:
         Returns:
             dict: Configuration dictionary
         """
-        with open(config_path, 'r') as f:
+        with open(config_path, encoding="utf-8") as f:
             config = yaml.safe_load(f)
         return config
     

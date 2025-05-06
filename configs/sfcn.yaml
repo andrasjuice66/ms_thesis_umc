@@ -1,70 +1,94 @@
-# Data configuration
+# ────────────────────────────  DATA  ──────────────────────────── #
 data:
-  data_dir: "data/processed"
-  train_csv: "data/train.csv"
-  val_csv: "data/val.csv"
-  test_csv: "data/test.csv"
-  image_key: "image"
-  age_key: "age"
-  cache_dir: "data/cache"
-  num_workers: 4
+  # file system
+  data_dir: "Data/brain_age_preprocessed"               # root that contains all images
+  train_csv: "brain_age_pred/data/labels/train.csv"
+  val_csv:   "brain_age_pred/data/labels/val.csv"
+  test_csv:  "brain_age_pred/data/labels/test.csv"
 
-# Model configuration
+  # CSV column names  ── (⇦ MUST match your csv)
+  image_key:  "image_path"
+  age_key:    "age"
+  weight_key: "sample_weight"              # ← new (defaults to this anyway)
+
+  # loading / caching
+  cache_dir: "data/cache"
+  cache_mode: "memory"                     # memory | disk | none
+  preload: true
+  num_workers: 8
+  persistent_workers: true
+  prefetch_factor: 2
+  target_shape: [176, 240, 256]            # (D,H,W) after optional resize
+  normalize: true
+
+# ───────────────────────────  MODEL  ──────────────────────────── #
 model:
-  type: "sfcn"  # Options: sfcn, resnet3d, efficientnet3d
+  type: "sfcn"                             # sfcn | resnet3d | efficientnet3d
   in_channels: 1
   dropout_rate: 0.3
-  use_attention: false
+  use_attention: false                     # only relevant for ResNet/EffNet
 
-# Domain randomization configuration
+# ────────────────  DOMAIN-RANDOMISATION / AUGS  ───────────────── #
 domain_randomization:
-  augmentation_strength: "medium"  # Options: light, medium, strong
-  intensity_range: [0.3, 1.0]
-  gamma_range: [0.8, 1.2]
-  contrast_range: [0.8, 1.2]
-  enable_spatial: true
-  scaling_range: [0.9, 1.1]
-  rotation_range: 10.0
-  nonlinear_std: 2.5
-  enable_simulation: true
-  resolution_range: [1.0, 2.5]
-  anisotropy_range: [1.0, 3.0]
-  enable_artifacts: true
-  bias_field_range: [0.0, 0.4]
-  noise_range: [0.0, 0.07]
-  max_augmentations_per_sample: 5
+  augmentation_strength: "medium"          # light | medium | strong
+  intensity_range:   [0.3, 1.0]
+  gamma_range:       [0.8, 1.2]
+  contrast_range:    [0.8, 1.2]
 
-# Training configuration
+  enable_spatial:    true
+  scaling_range:     [0.9, 1.1]
+  rotation_range:    10.0                  # degrees
+  nonlinear_std:     2.5
+
+  enable_simulation: true                  # low-res / anisotropic etc.
+  resolution_range:  [1.0, 2.5]
+  anisotropy_range:  [1.0, 3.0]
+
+  enable_artifacts:  true                  # spike / ghosting / bias / noise
+  bias_field_range:  [0.0, 0.4]
+  noise_range:       [0.0, 0.07]
+
+  max_augmentations_per_sample: 5          # global cap (optional)
+
+# ──────────────────────────  TRAINING  ────────────────────────── #
 training:
   batch_size: 8
   epochs: 100
+
+  # optimiser & LR
   learning_rate: 0.0001
-  weight_decay: 0.00001
-  optimizer: "adamw"  # Options: adam, adamw, sgd, rmsprop
-  scheduler: "cosine"  # Options: cosine, plateau, onecycle, step, none
+  weight_decay:  0.00001
+  optimizer: "adamw"                       # adam | adamw | sgd | rmsprop
+  scheduler: "cosine"                      # cosine | plateau | onecycle | step | none
   scheduler_params:
     T_max: 100
     eta_min: 0.000001
-  loss: "huber_mae"  # Options: mse, mae, huber, huber_mae, weighted_mse
+    epochs: 100
+    steps_per_epoch: 534
+
+  # losses
+  loss: "huber_mae"                        # mse | mae | huber | huber_mae | weighted_mse
   loss_params:
     delta: 1.0
     mae_weight: 0.5
+
+  # misc
   early_stopping_patience: 10
   gradient_accumulation_steps: 1
-  use_amp: true
+  use_amp: true                            # mixed precision if CUDA present
 
-# Output configuration
+# ────────────────────────────  OUTPUT  ────────────────────────── #
 output:
   checkpoint_dir: "checkpoints"
   log_dir: "logs"
-  experiment_name: null  # Will be auto-generated if null
+  experiment_name: null                   # auto-generate if left null
 
-# Weights & Biases configuration
+# ─────────────────────────────  W&B  ──────────────────────────── #
 wandb:
-  use_wandb: true
-  project: "brain-age-prediction"
+  use_wandb: true                         # still requires $WANDB_API env-var
+  project: "brainage-model-training"
   entity: null
 
-# Miscellaneous
+# ───────────────────────── MISCELLANEOUS ───────────────────────── #
 seed: 42
-device: null  # Will use CUDA if available, otherwise CPU 
+device: null                              # cuda if available, else cpu
