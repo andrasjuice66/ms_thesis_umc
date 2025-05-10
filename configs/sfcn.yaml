@@ -1,25 +1,22 @@
 # ────────────────────────────  DATA  ──────────────────────────── #
 data:
-  # file system
-  data_dir: "Data/brain_age_preprocessed"               # root that contains all images
+  data_dir: "Data"               # root that contains all images
   train_csv: "brain_age_pred/data/labels/train.csv"
   val_csv:   "brain_age_pred/data/labels/val.csv"
   test_csv:  "brain_age_pred/data/labels/test.csv"
 
-  # CSV column names  ── (⇦ MUST match your csv)
   image_key:  "image_path"
   age_key:    "age"
-  weight_key: "sample_weight"              # ← new (defaults to this anyway)
+  weight_key: "sample_weight"             
 
   # loading / caching
   cache_dir: "data/cache"
   cache_mode: "memory"                     # memory | disk | none
   preload: true
-  num_workers: 8
+  num_workers: 5
   persistent_workers: true
-  prefetch_factor: 2
-  target_shape: [176, 240, 256]            # (D,H,W) after optional resize
-  normalize: true
+  prefetch_factor: 4
+  target_shape: [182, 218, 182]            # (D,H,W) after optional resize
 
 # ───────────────────────────  MODEL  ──────────────────────────── #
 model:
@@ -30,7 +27,8 @@ model:
 
 # ────────────────  DOMAIN-RANDOMISATION / AUGS  ───────────────── #
 domain_randomization:
-  augmentation_strength: "medium"          # light | medium | strong
+  augmentation_strength: "medium"   
+  use_torchio: false
   intensity_range:   [0.3, 1.0]
   gamma_range:       [0.8, 1.2]
   contrast_range:    [0.8, 1.2]

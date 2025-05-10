@@ -45,9 +45,6 @@ def read_csv(
     data_root = Path(data_root)  # Ensure data_root is a Path object
     for _, row in df.iterrows():
         rel_path = row[image_key]
-        # Remove leading 'brain_age_preprocessed/' if present
-        if rel_path.startswith("brain_age_preprocessed/") or rel_path.startswith("brain_age_preprocessed\\"):
-            rel_path = rel_path[len("brain_age_preprocessed/"):]
         fpath = data_root / rel_path
         #print(f"Checking: {fpath}")
         if fpath.exists():
@@ -60,14 +57,12 @@ def read_csv(
 def main() -> None:
 
     # 1. ─── configuration & reproducibility ─────────────────── #
-    print("Initializing configuration...")
+    # Setup logger first so we can use it right away
+    timestamp       = datetime.now().strftime("%Y%m%d_%H%M%S")
     cfg_file = sys.argv[1] if len(sys.argv) > 1 else "configs/default.yaml"
     cfg      = Config(cfg_file)
-    set_seed(cfg.get("seed", 42))
-
+    
     # 2. ─── experiment naming / I/O ─────────────────────────── #
-    print("Setting up experiment directories and logger...")
-    timestamp       = datetime.now().strftime("%Y%m%d_%H%M%S")
     experiment_name = cfg.get("output.experiment_name")
     if not experiment_name:
         experiment_name = f'{cfg.get("model.type","sfcn")}_{timestamp}'
@@ -77,10 +72,13 @@ def main() -> None:
     ckpt_dir.mkdir(parents=True, exist_ok=True)
     log_dir.mkdir(parents=True, exist_ok=True)
     logger = setup_logger("brain-age", log_file=log_dir / "train.log")
+    
+    logger.info("Initializing configuration...")
+    set_seed(cfg.get("seed", 42))
     logger.info(f"Experiment: {experiment_name}\nConfig   : {cfg_file}")
 
     # 3. ─── W&B init ─────────────────────────────────────────── #
-    print("Initializing Weights & Biases...")
+    logger.info("Initializing Weights & Biases...")
     use_wandb = cfg.get("wandb.use_wandb", True)
     if use_wandb:
         logger.info("Setting up W&B tracking")
@@ -95,12 +93,12 @@ def main() -> None:
         cfg.save_config(ckpt_dir / "config.yaml")
 
     # 4. ─── device ───────────────────────────────────────────── #
-    print("Setting up device...")
+    logger.info("Setting up device...")
     device = torch.device(cfg.get("device") or ("cuda" if torch.cuda.is_available() else "cpu"))
     logger.info(f"Using device: {device}")
 
     # 5. ─── transforms (GPU-ready) ───────────────────────────── #
-    print("Initializing domain randomization transforms...")
+    logger.info("Initializing domain randomization transforms...")
     rand_cfg = cfg.get("domain_randomization", {})
     transform = DomainRandomizer(
         **rand_cfg,
@@ -109,7 +107,7 @@ def main() -> None:
     logger.info("Domain randomizer initialized")
 
     # 6. ─── CSV → dataset / sampler ─────────────────────────── #
-    print("Reading CSV files...")
+    logger.info("Reading CSV files...")
     train_csv = Path(cfg.get("data.train_csv"))
     val_csv   = Path(cfg.get("data.val_csv"))
     data_dir  = Path(cfg.get("data.data_dir"))
@@ -125,15 +123,14 @@ def main() -> None:
         data_dir,
     )
 
-    print("Initializing datasets...")
+
+    logger.info("Initializing datasets...")
     logger.info("Creating training dataset")
     train_ds = BADataset(
         file_paths   = train_p,
         age_labels   = train_a,
         sample_wts   = train_w,
         transform    = transform,
-        target_shape = cfg.get("data.target_shape", (176,240,256)),
-        normalize    = cfg.get("data.normalize", True),
         mode         = "train",
     )
     logger.info("Creating validation dataset")
@@ -141,12 +138,10 @@ def main() -> None:
         file_paths   = val_p,
         age_labels   = val_a,
         transform    = transform,
-        target_shape = cfg.get("data.target_shape", (176,240,256)),
-        normalize    = cfg.get("data.normalize", True),
         mode         = "val",
     )
 
-    print("Setting up sampler...")
+    logger.info("Setting up sampler...")
     sampler = WeightedRandomSampler(
         weights=train_w,
         num_samples=len(train_w),
@@ -154,7 +149,7 @@ def main() -> None:
     )
     logger.info("Weighted random sampler initialized")
 
-    print("Creating data loaders...")
+    logger.info("Creating data loaders...")
     dl_kwargs = dict(
         num_workers       = cfg.get("data.num_workers", 8),
         pin_memory        = (device.type == "cuda"),
@@ -178,7 +173,7 @@ def main() -> None:
     logger.info(f"Train={len(train_ds)}  Val={len(val_ds)}")
 
     # 7. ─── model ─────────────────────────────────────────────── #
-    print("Initializing model...")
+    logger.info("Initializing model...")
     mtype = cfg.get("model.type", "sfcn").lower()
     model_map = {"sfcn": SFCN, "resnet3d": ResNet3D, "efficientnet3d": EfficientNet3D}
 
@@ -208,11 +203,11 @@ def main() -> None:
         wandb.watch(model, log="all", log_graph=False)
 
     # params = list(model.parameters())
-    # print("Model parameters:", params)
-    # print("Number of parameters:", sum(p.numel() for p in params))
+    # logger.debug("Model parameters:", params)
+    # logger.debug("Number of parameters:", sum(p.numel() for p in params))
 
     # 8. ─── trainer ──────────────────────────────────────────── #
-    print("Initializing trainer...")
+    logger.info("Initializing trainer...")
     trainer = BrainAgeTrainer(
         model          = model,
         train_loader   = train_loader,
@@ -230,7 +225,7 @@ def main() -> None:
     logger.info("Trainer initialized")
 
     # 9. ─── train ────────────────────────────────────────────── #
-    print("Starting training...")
+    logger.info("Starting training...")
     try:
         t0 = time.time()
         logger.info("Beginning training loop")

@@ -81,7 +81,7 @@ class DomainRandomizer:
         ### resolution / artefacts ##########################################
         max_res_iso: float = 3.0,
         ### misc ############################################################
-        output_shape: Tuple[int, int, int] | None = (150, 200, 150),
+        output_shape: Tuple[int, int, int] | None = (182, 218, 182),
         use_torchio: bool = False,
         current_epoch: int = 0,
         max_epochs: int = 200,

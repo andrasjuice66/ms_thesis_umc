@@ -12,7 +12,6 @@ import nibabel as nib
 import numpy as np
 import torch
 from torch.utils.data import Dataset
-import torchio as tio          # used only if you decide to add heavy IO aug
 
 __all__ = ["BADataset"]
 
@@ -25,8 +24,7 @@ class BADataset(Dataset):
         sample_wts: Optional[List[float]] = None,
         transform = None,
         cache_size: int = 128,
-        target_shape: Tuple[int,int,int] = (176,240,256),
-        normalize: bool = True,
+
         mode: str = "train",
     ):
         self.file_paths  = file_paths
@@ -35,19 +33,12 @@ class BADataset(Dataset):
         self.transform   = transform
         self.cache_size  = cache_size
         self.cache       : Dict[int,np.ndarray] = OrderedDict()
-        self.target_shape= target_shape
-        self.normalize   = normalize
         self.mode        = mode.lower()
         assert len(self.file_paths) == len(self.age_labels)
 
     # ───────────────────────── internals ───────────────────────── #
     def _load_image(self, idx: int) -> np.ndarray:
-        img = nib.load(self.file_paths[idx]).get_fdata(dtype=np.float32)
-        if self.normalize:
-            vmin, vmax = np.percentile(img, (1, 99))
-            img = np.clip(img, vmin, vmax)
-            img = (img - vmin) / (vmax - vmin + 1e-6)
-        # (optional) resize / crop to target_shape could be added here
+        img = np.load(self.file_paths[idx])
         return img
 
     # ───────────────────────── Dataset API ─────────────────────── #

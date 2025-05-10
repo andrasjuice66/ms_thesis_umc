@@ -70,7 +70,6 @@ class SFCN(nn.Module):
         *,
         in_channels: int = 1,
         dropout_rate: Union[float, None] = 0.3,
-        use_attention: bool = False,            # accepted but unused
         channels: Sequence[int] = (32, 64, 128, 256, 256, 64),
         **_ignored,                             # swallow extra YAML keys (e.g. 'type')
     ) -> None:
