@@ -110,6 +110,7 @@ def main() -> None:
     logger.info("Reading CSV files...")
     train_csv = Path(cfg.get("data.train_csv"))
     val_csv   = Path(cfg.get("data.val_csv"))
+    test_csv  = Path(cfg.get("data.test_csv"))
     data_dir  = Path(cfg.get("data.data_dir"))
 
     logger.info(f"Reading train CSV from {train_csv}")
@@ -120,6 +121,11 @@ def main() -> None:
     logger.info(f"Reading validation CSV from {val_csv}")
     val_p,   val_a, _ = read_csv(
         val_csv,
+        data_dir,
+    )
+    logger.info(f"Reading test CSV from {test_csv}")
+    test_p,  test_a, _ = read_csv(
+        test_csv,
         data_dir,
     )
 
@@ -140,8 +146,17 @@ def main() -> None:
         transform    = transform,
         mode         = "val",
     )
+    test_ds = BADataset(
+
+        file_paths   = test_p,
+        age_labels   = test_a,
+        transform    = transform,
+        mode         = "test",
+    )
+
 
     logger.info("Setting up sampler...")
+
     sampler = WeightedRandomSampler(
         weights=train_w,
         num_samples=len(train_w),
@@ -149,13 +164,14 @@ def main() -> None:
     )
     logger.info("Weighted random sampler initialized")
 
-    logger.info("Creating data loaders...")
+    logger.info("Setting up data loader parameters...")
     dl_kwargs = dict(
         num_workers       = cfg.get("data.num_workers", 8),
         pin_memory        = (device.type == "cuda"),
         persistent_workers= cfg.get("data.persistent_workers", True),
         prefetch_factor   = cfg.get("data.prefetch_factor", 2),
     )
+
     logger.info("Creating training data loader")
     train_loader = torch.utils.data.DataLoader(
         train_ds,
@@ -171,6 +187,13 @@ def main() -> None:
         **dl_kwargs,
     )
     logger.info(f"Train={len(train_ds)}  Val={len(val_ds)}")
+
+    test_loader = torch.utils.data.DataLoader(
+        test_ds,
+        batch_size = cfg.get("training.batch_size", 8),
+        shuffle    = False,
+        **dl_kwargs,
+    )
 
     # 7. ─── model ─────────────────────────────────────────────── #
     logger.info("Initializing model...")
@@ -212,6 +235,7 @@ def main() -> None:
         model          = model,
         train_loader   = train_loader,
         val_loader     = val_loader,
+        test_loader    = test_loader,
         config         = cfg.get("training"),
         device         = device,
         checkpoint_dir = ckpt_dir,
@@ -233,6 +257,12 @@ def main() -> None:
         logger.info(f"Training finished in {time.time()-t0:.1f}s")
         json.dump(history, open(ckpt_dir/"history.json","w"), indent=2)
         if use_wandb: wandb.log({"train/duration_s": time.time()-t0})
+
+    # 10. ─── evaluate ─────────────────────────────────────── #
+        logger.info("Evaluating model...")
+        metrics = trainer.evaluate(test_loader)
+        logger.info(f"Evaluation results: {metrics}")
+        if use_wandb: wandb.log({"test/metrics": metrics})
     except Exception as e:
         logger.error(f"Training failed: {e}")
         if use_wandb: wandb.finish()

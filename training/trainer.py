@@ -62,6 +62,7 @@ class BrainAgeTrainer:
         model: nn.Module,
         train_loader: DataLoader,
         val_loader: DataLoader,
+        test_loader: DataLoader,
         config: Dict[str, Any],
         device: Optional[torch.device] = None,
         checkpoint_dir: str | Path = "checkpoints",
@@ -77,6 +78,7 @@ class BrainAgeTrainer:
         self.model        = model
         self.train_loader = train_loader
         self.val_loader   = val_loader
+        self.test_loader  = test_loader
         self.cfg          = config
         self.device       = device or torch.device(
             "cuda" if torch.cuda.is_available() else "cpu"
@@ -312,9 +314,6 @@ class BrainAgeTrainer:
             f"loss={metrics['loss']:.4f}  mae={metrics['mae']:.3f}  "
             f"data={avg_data_time:.3f}s  gpu={avg_gpu_time:.3f}s"
         )
-        if self.use_wandb:
-            self.wandb.log({f"train/{k}": v for k, v in metrics.items()})
-            self.wandb.log({"lr": self.optimizer.param_groups[0]["lr"]})
 
         return metrics
         # ------------------------------------------------------------------ #
@@ -347,8 +346,6 @@ class BrainAgeTrainer:
             f"Epoch {epoch+1:03d}  val   | "
             f"loss={metrics['loss']:.4f}  mae={metrics['mae']:.3f}"
         )
-        if self.use_wandb:
-            self.wandb.log({f"val/{k}": v for k, v in metrics.items()})
 
         return metrics
 
@@ -396,6 +393,13 @@ class BrainAgeTrainer:
             history["val_mae"].append(vl_metrics["mae"])
             history["lr"].append(self.optimizer.param_groups[0]["lr"])
 
+            # Log everything at once to wandb
+            if self.use_wandb:
+                log_dict = {f"train/{k}": v for k, v in tr_metrics.items()}
+                log_dict.update({f"val/{k}": v for k, v in vl_metrics.items()})
+                log_dict["lr"] = self.optimizer.param_groups[0]["lr"]
+                self.wandb.log(log_dict, step=epoch)
+
             # checkpoint & early-stopping
             is_best = vl_metrics["loss"] < self.best_val_loss
             if is_best:
@@ -416,3 +420,66 @@ class BrainAgeTrainer:
             self.wandb.finish()
 
         return history
+
+    def evaluate(
+        self, 
+        test_loader: DataLoader,
+        checkpoint_path: Optional[str] = None,
+    ) -> Dict[str, float]:
+        """
+        Evaluate the model on a test set.
+        
+        Parameters
+        ----------
+        test_loader : DataLoader
+            DataLoader for the test set
+        checkpoint_path : Optional[str]
+            Path to checkpoint to load. If None, uses current model state.
+            
+        Returns
+        -------
+        Dict[str, float]
+            Dictionary with evaluation metrics
+        """
+        if checkpoint_path:
+            self.logger.info(f"Loading checkpoint from {checkpoint_path}")
+            checkpoint = torch.load(checkpoint_path, map_location=self.device)
+            self.model.load_state_dict(checkpoint["model_state_dict"])
+            
+        self.model.eval()
+        self.logger.info(f"Evaluating on {len(test_loader.dataset)} samples")
+        
+        running_loss: float = 0.0
+        preds_all, targets_all = [], []
+        
+        with torch.no_grad():
+            pbar = tqdm(
+                test_loader,
+                total=len(test_loader),
+                leave=False,
+                desc="Evaluation",
+            )
+            for batch in pbar:
+                loss, preds = self._step(batch, train=False)
+                running_loss += loss.item()
+                preds_all.append(preds.cpu().numpy())
+                targets_all.append(batch["age"].cpu().numpy())
+                pbar.set_postfix(loss=loss.item())
+        
+        metrics = calculate_metrics(
+            np.concatenate(preds_all),
+            np.concatenate(targets_all),
+        )
+        metrics["loss"] = running_loss / len(test_loader)
+        
+        self.logger.info(
+            f"Evaluation results | "
+            f"loss={metrics['loss']:.4f}  mae={metrics['mae']:.3f}  "
+            f"mse={metrics['mse']:.3f}  r2={metrics['r2']:.3f}"
+        )
+        
+        if self.use_wandb:
+            log_dict = {f"test/{k}": v for k, v in metrics.items()}
+            self.wandb.log(log_dict)
+            
+        return metrics

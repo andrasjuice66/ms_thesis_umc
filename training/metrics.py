@@ -36,7 +36,7 @@ def calculate_metrics(predictions: np.ndarray, targets: np.ndarray) -> Dict[str,
     correlation = np.corrcoef(predictions, targets)[0, 1]
     
     # Calculate age-specific MAE
-    age_bins = [0, 20, 40, 60, 80, 100]
+    age_bins = [20, 30, 40, 50, 60, 70, 80, 90]
     age_specific_mae = {}
     
     for i in range(len(age_bins) - 1):
