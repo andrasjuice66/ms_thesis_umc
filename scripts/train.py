@@ -26,33 +26,12 @@ from brain_age_pred.models.resnet3d import ResNet3D
 from brain_age_pred.models.efficientnet3d import EfficientNet3D
 from brain_age_pred.training.trainer import BrainAgeTrainer
 from brain_age_pred.utils.logger import setup_logger
-from brain_age_pred.utils.utils import set_seed
+from brain_age_pred.utils.utils import set_seed, read_csv, load_checkpoint
 from torch.utils.data import WeightedRandomSampler
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# ───────────────────── helpers ────────────────────── #
-def read_csv(
-    csv_path: str,
-    data_root: str,
-    image_key: str = "image_path",
-    age_key: str = "age",
-    weight_key: str = "sample_weight",
-) -> Tuple[List[str], List[float], List[float]]:
-    df = pd.read_csv(csv_path)
-    paths, ages, weights = [], [], []
-    data_root = Path(data_root)  # Ensure data_root is a Path object
-    for _, row in df.iterrows():
-        rel_path = row[image_key]
-        fpath = data_root / rel_path
-        #print(f"Checking: {fpath}")
-        if fpath.exists():
-            paths.append(str(fpath))
-            ages.append(float(row[age_key]))
-            weights.append(float(row[weight_key]))
-    return paths, ages, weights
-# ───────────────────────────────────────────────────── #
 
 def main() -> None:
 
@@ -132,6 +111,12 @@ def main() -> None:
 
     logger.info("Initializing datasets...")
     logger.info("Creating training dataset")
+    
+    logger.info("Some Validation:")
+    logger.info(f"Train paths: {train_p[:5]}")
+    logger.info(f"Train ages: {train_a[:5]}")
+    logger.info(f"Train weights: {train_w[:5]}")
+
     train_ds = BADataset(
         file_paths   = train_p,
         age_labels   = train_a,
@@ -143,17 +128,17 @@ def main() -> None:
     val_ds   = BADataset(
         file_paths   = val_p,
         age_labels   = val_a,
-        transform    = transform,
+        transform    = None,
         mode         = "val",
     )
+
     test_ds = BADataset(
 
         file_paths   = test_p,
         age_labels   = test_a,
-        transform    = transform,
+        transform    = None,
         mode         = "test",
     )
-
 
     logger.info("Setting up sampler...")
 
@@ -179,6 +164,7 @@ def main() -> None:
         sampler    = sampler,
         **dl_kwargs,
     )
+
     logger.info("Creating validation data loader")
     val_loader   = torch.utils.data.DataLoader(
         val_ds,
@@ -217,9 +203,17 @@ def main() -> None:
         logger.info(f"Creating {mtype} model")
         model = model_map[mtype](**cfg.get("model")).to(device)
 
-    if ckpt := cfg.get("model.checkpoint"):
-        logger.info(f"Loading checkpoint: {ckpt}")
-        model.load_state_dict(torch.load(ckpt, map_location=device))
+    # Load checkpoint if specified
+    checkpoint_path = cfg.get("model.checkpoint")
+    if checkpoint_path:
+        try:
+            checkpoint_info = load_checkpoint(model, checkpoint_path, device, logger)
+            if checkpoint_info:
+                logger.info(f"Loaded checkpoint from epoch {checkpoint_info.get('epoch', 'unknown')}")
+                if checkpoint_info.get('best_metric'):
+                    logger.info(f"Best metric from checkpoint: {checkpoint_info['best_metric']}")
+        except Exception as e:
+            logger.error(f"Failed to load checkpoint: {e}")
 
     if use_wandb: 
         logger.info("Setting up W&B model watching")
@@ -257,15 +251,17 @@ def main() -> None:
         logger.info(f"Training finished in {time.time()-t0:.1f}s")
         json.dump(history, open(ckpt_dir/"history.json","w"), indent=2)
         if use_wandb: wandb.log({"train/duration_s": time.time()-t0})
+    except Exception as e:
+        logger.error(f"Training failed: {e}")
 
     # 10. ─── evaluate ─────────────────────────────────────── #
+    try:
         logger.info("Evaluating model...")
         metrics = trainer.evaluate(test_loader)
         logger.info(f"Evaluation results: {metrics}")
         if use_wandb: wandb.log({"test/metrics": metrics})
     except Exception as e:
-        logger.error(f"Training failed: {e}")
-        if use_wandb: wandb.finish()
+        logger.error(f"Eval failed: {e}")
     finally:
         if use_wandb: wandb.finish()
 

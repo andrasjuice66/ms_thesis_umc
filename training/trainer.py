@@ -163,7 +163,7 @@ class BrainAgeTrainer:
         Returns scalar loss; if `weighted_mse` is chosen or `weights`
         tensor is provided we override reduction manually.
         """
-        if self.loss_name == "weighted_mse" or weights is not None:
+        if self.loss_name == "weighted_mse" and weights is not None:
             per_sample = F.mse_loss(
                 outputs.squeeze(), targets, reduction="none"
             )
@@ -181,9 +181,7 @@ class BrainAgeTrainer:
         # First ensure all tensors are on the correct device
         imgs = batch["image"].to(self.device, non_blocking=True)
         ages = batch["age"].float().to(self.device, non_blocking=True)
-        wts = batch.get("weight")
-        if wts is not None:
-            wts = wts.to(self.device)
+        wts = batch["weight"].to(self.device, non_blocking=True)
 
         # Forward pass (with AMP if enabled)
         if self.use_amp:
@@ -415,9 +413,6 @@ class BrainAgeTrainer:
                     f"Early-stopping triggered at epoch {epoch+1}"
                 )
                 break
-
-        if self.use_wandb:
-            self.wandb.finish()
 
         return history
 

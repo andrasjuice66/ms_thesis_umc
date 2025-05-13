@@ -1,18 +1,17 @@
 """
 GPU-aware domain-randomisation pipeline for 3-D brain MR images.
 
-• Combines MONAI (fast, GPU-ready) and TorchIO (advanced MRI artefacts).
-• Probabilities of every transform are configurable.
-• Can be instantiated once and safely reused by multiple workers.
+• Fast, GPU-ready MONAI transforms + optional heavy TorchIO artefacts
+• All probabilities are configurable (override via `transform_probs`)
+• Can be instantiated once and reused safely across workers
 
 Typical use
 -----------
-    dr = DomainRandomizer(device=torch.device("cuda"), **cfg.get("domain_randomization", {}))
-    train_ds = BADataset(..., transform=dr, mode="train")
+dr = DomainRandomizer(device=torch.device("cuda"), **cfg["domain_randomization"])
+train_ds = BADataset(..., transform=dr, mode="train")
 """
-
 from __future__ import annotations
-from typing import Dict, Tuple, Optional, Any
+from typing import Dict, Tuple, Optional
 
 import numpy as np
 import torch
@@ -24,76 +23,88 @@ from monai.transforms import (
     RandBiasFieldd,
     RandFlipd,
     RandGaussianSmoothd,
+    RandGaussianNoised,
+    RandRicianNoised,
+    RandScaleIntensityd,
+    RandShiftIntensityd,
+    RandHistogramShiftd,
+    RandGibbsNoised,
+    RandCoarseDropoutd,
     RandSpatialCropd,
     ToTensord,
+    LoadImaged,
+    EnsureChannelFirstd,
 )
+
+# custom project transforms
 from brain_age_pred.dom_rand.custom_transformations import (
     RandomResolutionD,
     RandGammaD,
 )
 
-
 class DomainRandomizer:
     """
-    Compose random geometric + intensity + artefact transforms.
-
-    Parameters
-    ----------
-    device          : torch.device – tensors & kernel execution device.
-    image_key       : str          – dictionary key that stores the image.
-    use_torchio     : bool         – enable slow, heavy TorchIO artefacts.
-    transform_probs : Dict[str,float] – override default probabilities.
-    current_epoch / max_epochs
-                    : int          – updated externally for curriculum if desired.
-    Other kwargs correspond to bound ranges for the transforms.
+    Random geometric, intensity and artefact transforms for 3-D MRI volumes.
     """
 
-    # ---------------------- default hyper-parameters ---------------------- #
+    # ------------------------------------------------------------------ #
+    #                    default transform probabilities                  #
+    # ------------------------------------------------------------------ #
     _DEFAULT_PROBS: Dict[str, float] = {
-        "flip": 0.5,
-        "affine": 0.8,
-        "elastic": 0.4,
-        "contrast": 0.6,
-        "gamma": 0.5,
-        "blur": 0.4,
-        "bias": 0.5,
+        # geometric
+        "flip"      : 0.5,
+        "affine"    : 0.8,
+        "elastic"   : 0.4,   # TorchIO
+        # intensity
+        "contrast"  : 0.6,
+        "gamma"     : 0.5,
+        "blur"      : 0.4,
+        "bias"      : 0.5,
+        "scale_int" : 0.4,
+        "shift_int" : 0.4,
+        "hist_shift": 0.3,
+        "noise"     : 0.4,
+        "rician"    : 0.3,
+        "gibbs"     : 0.3,
+        # resolution / dropout
         "resolution": 0.5,
-        "spike": 0.2,
-        "ghost": 0.3,
-        "crop": 1.0,
+        "coarse_do" : 0.3,
+        # heavy artefacts
+        "spike"     : 0.2,   # TorchIO
+        "ghost"     : 0.3,   # TorchIO
+        # misc
+        "crop"      : 1.0,
     }
 
+    # ------------------------------------------------------------------ #
     def __init__(
         self,
         *,
-        device: torch.device,
+        device=torch.device("cpu"),  # Required keyword-only argument
         image_key: str = "image",
-        ### probabilities ###################################################
+        # probability overrides
         transform_probs: Optional[Dict[str, float]] = None,
-        ### geometric #######################################################
+        # geometric ranges
         scaling_range: Tuple[float, float] = (0.9, 1.1),
-        rotation_range: float = 10.0,       # deg
+        rotation_range: float = 10.0,          # degrees
         shearing_bounds: float = 0.05,
-        ### intensity #######################################################
+        # intensity
         contrast_range: Tuple[float, float] = (0.8, 1.2),
         log_gamma_std: float = 0.2,
         bias_field_range: Tuple[float, float] = (0.0, 0.4),
-        ### resolution / artefacts ##########################################
+        # resolution / artefacts
         max_res_iso: float = 3.0,
-        ### misc ############################################################
-        output_shape: Tuple[int, int, int] | None = (182, 218, 182),
+        coarse_dropout_size: Tuple[int, int, int] = (20, 20, 20),
+        # misc
+        output_shape: Tuple[int, int, int] = (182, 218, 182),
         use_torchio: bool = False,
-        current_epoch: int = 0,
-        max_epochs: int = 200,
         **unused,
     ):
         self.image_key     = image_key
         self.device        = device
-        self.current_epoch = current_epoch
-        self.max_epochs    = max_epochs
         self.use_tio       = use_torchio
 
-        # merge probabilities
+        # merge / override probabilities
         self.prob = {**DomainRandomizer._DEFAULT_PROBS}
         if transform_probs:
             self.prob.update(transform_probs)
@@ -106,97 +117,139 @@ class DomainRandomizer:
         self.log_gamma_std  = log_gamma_std
         self.bias_field_rng = bias_field_range
         self.max_res_iso    = max_res_iso
+        self.coarse_size    = coarse_dropout_size
         self.output_shape   = output_shape
 
-        # build internal pipelines
+        # build transform pipelines
         self._build_monai_pipeline()
         self._build_torchio_pipeline()
 
-    # --------------------------- build pipelines --------------------------- #
+    # ------------------------------------------------------------------ #
+    #                          MONAI pipeline                             #
+    # ------------------------------------------------------------------ #
     def _build_monai_pipeline(self) -> None:
-        """Fast GPU-ready transforms via MONAI."""
         deg2rad = np.pi / 180
         tfms = []
 
-        # 1. random LR flip
-        tfms.append(RandFlipd(
-            keys=[self.image_key], prob=self.prob["flip"], spatial_axis=0
-        ))
-
-        # 2. affine (rotate, scale, shear, translate)
-        tfms.append(RandAffined(
-            keys=[self.image_key],
-            prob=self.prob["affine"],
-            rotate_range=(deg2rad * self.rotation_range) * 3,
-            scale_range=(self.scaling_range[1] - 1) * 3,
-            shear_range=(self.shearing_bounds) * 3,
-            mode="bilinear",
-        ))
-
-        # 3. contrast adjust
-        tfms.append(RandAdjustContrastd(
-            keys=[self.image_key],
-            prob=self.prob["contrast"],
-            gamma=self.contrast_range,
-        ))
-
-        # 4. gamma exponent
-        tfms.append(RandGammaD(
-            keys=[self.image_key],
-            log_gamma_std=self.log_gamma_std,
-            prob=self.prob["gamma"],
-        ))
-
-        # 5. gaussian blur
-        tfms.append(RandGaussianSmoothd(
-            keys=[self.image_key],
-            prob=self.prob["blur"],
-            sigma_x=(0.5, 1.5),
-            sigma_y=(0.5, 1.5),
-            sigma_z=(0.5, 1.5),
-        ))
-
-        # 6. bias field
-        tfms.append(RandBiasFieldd(
-            keys=[self.image_key],
-            prob=self.prob["bias"],
-            coeff_range=self.bias_field_rng,
-        ))
-
-        # 7. simulate lower resolution
-        tfms.append(RandomResolutionD(
-            keys=[self.image_key],
-            min_res=1.0,
-            max_res_iso=self.max_res_iso,
-            prob=self.prob["resolution"],
-        ))
-
-        # 8. (optional) crop to fixed ROI
-        if self.output_shape is not None:
-            tfms.append(RandSpatialCropd(
+        # 1. flips & affine
+        tfms.extend([
+            RandFlipd(
                 keys=[self.image_key],
-                roi_size=self.output_shape,
-                random_center=True,
-                random_size=False,
-            ))
+                prob=self.prob["flip"],
+                spatial_axis=0,
+            ),
+            RandAffined(
+                keys=[self.image_key],
+                prob=self.prob["affine"],
+                rotate_range=(deg2rad * self.rotation_range,) * 3,
+                scale_range=(self.scaling_range[1] - 1,) * 3,
+                shear_range=(self.shearing_bounds,) * 3,
+                mode="bilinear",
+            ),
+        ])
 
-        # 9. convert to tensor
+        # 2. basic intensity
+        tfms.extend([
+            RandAdjustContrastd(
+                keys=[self.image_key],
+                prob=self.prob["contrast"],
+                gamma=self.contrast_range,
+            ),
+            RandGammaD(
+                keys=[self.image_key],
+                log_gamma_std=self.log_gamma_std,
+                prob=self.prob["gamma"],
+            ),
+            RandScaleIntensityd(
+                keys=[self.image_key],
+                prob=self.prob["scale_int"],
+                factors=self.contrast_range,
+            ),
+            RandShiftIntensityd(
+                keys=[self.image_key],
+                prob=self.prob["shift_int"],
+                offsets=(-0.1, 0.1),
+            ),
+            RandHistogramShiftd(
+                keys=[self.image_key],
+                prob=self.prob["hist_shift"],
+                num_control_points=(5, 10),
+            ),
+        ])
+
+        # 3. noise / artefacts
+        tfms.extend([
+            RandGaussianNoised(
+                keys=[self.image_key],
+                prob=self.prob["noise"],
+                mean=0.0,
+                std=0.05,
+            ),
+            RandRicianNoised(
+                keys=[self.image_key],
+                prob=self.prob["rician"],
+                std=0.05,
+            ),
+            RandGibbsNoised(
+                keys=[self.image_key],
+                prob=self.prob["gibbs"],
+                alpha=(0.0, 1.0),
+            ),
+            RandGaussianSmoothd(
+                keys=[self.image_key],
+                prob=self.prob["blur"],
+                sigma_x=(0.5, 1.5),
+                sigma_y=(0.5, 1.5),
+                sigma_z=(0.5, 1.5),
+            ),
+            RandBiasFieldd(
+                keys=[self.image_key],
+                prob=self.prob["bias"],
+                coeff_range=self.bias_field_rng,
+            ),
+            RandomResolutionD(
+                keys=[self.image_key],
+                min_res=1.0,
+                max_res_iso=self.max_res_iso,
+                prob=self.prob["resolution"],
+            ),
+            RandCoarseDropoutd(
+                keys=[self.image_key],
+                prob=self.prob["coarse_do"],
+                holes=8,
+                spatial_size=self.coarse_size,
+                fill_value=0.0,
+            ),
+        ])
+
+        # 4. optional crop to ROI
+        if self.output_shape is not None:
+            tfms.append(
+                RandSpatialCropd(
+                    keys=[self.image_key],
+                    roi_size=self.output_shape,
+                    random_center=True,
+                    random_size=False,
+                )
+            )
+
+        # 5. tensor conversion
         tfms.append(ToTensord(keys=[self.image_key]))
 
+        # compose & push to GPU if possible
         self.monai = Compose(tfms)
-        # push MONAI transforms that support it to GPU
         if self.device.type == "cuda":
             for t in self.monai.transforms:
                 if hasattr(t, "set_device"):
                     t.set_device(self.device)
 
+   
     def _build_torchio_pipeline(self) -> None:
-        """Optional heavy-weight MRI artefacts (elastic, spike, ghosting)."""
         if not self.use_tio:
             self.tio = None
             return
 
-        tfms: list[tio.Transform] = [
+        self.tio = tio.Compose([
             tio.RandomElasticDeformation(
                 num_control_points=7,
                 max_displacement=5.0,
@@ -204,33 +257,31 @@ class DomainRandomizer:
                 p=self.prob["elastic"],
             ),
             tio.RandomSpike(
-                num_spikes=(1, 6), intensity=(0.1, 0.6), p=self.prob["spike"]
+                num_spikes=(1, 6),
+                intensity=(0.1, 0.6),
+                p=self.prob["spike"],
             ),
             tio.RandomGhosting(
-                num_ghosts=(2, 10), axes=(0, 1, 2), p=self.prob["ghost"]
+                num_ghosts=(2, 10),
+                axes=(0, 1, 2),
+                p=self.prob["ghost"],
             ),
-        ]
-        self.tio = tio.Compose(tfms)
+        ])
 
-    # --------------------------------------------------------------------- #
-    #                              call                                     #
-    # --------------------------------------------------------------------- #
+
     def __call__(self, sample: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         img = sample[self.image_key]
 
-        # TorchIO transforms (CPU) – elastic, spike, ghosting
+        # TorchIO (CPU) artefacts
         if self.tio is not None:
             subj = tio.Subject({self.image_key: tio.ScalarImage(tensor=img)})
             img = self.tio(subj)[self.image_key].data
 
-        # MONAI transforms (GPU capable)
+        # MONAI (GPU-capable) transforms
         img = self.monai({self.image_key: img})[self.image_key]
 
-        # Keep image on the same device as where it was processed
+        # keep tensors on the same device
         sample[self.image_key] = img
-
-        # Don't move tensors - let the trainer handle device placement
-        # Only ensure other fields are on the same device as the image
         for k in ("age", "weight"):
             if k in sample and sample[k].device != img.device:
                 sample[k] = sample[k].to(img.device)

@@ -30,7 +30,6 @@ def calculate_metrics(predictions: np.ndarray, targets: np.ndarray) -> Dict[str,
     
     # Calculate brain age delta (BAD)
     brain_age_delta = np.mean(predictions - targets)
-    brain_age_delta_abs = np.mean(np.abs(predictions - targets))
     
     # Calculate correlation
     correlation = np.corrcoef(predictions, targets)[0, 1]
@@ -55,7 +54,6 @@ def calculate_metrics(predictions: np.ndarray, targets: np.ndarray) -> Dict[str,
         "rmse": rmse,
         "r2": r2,
         "brain_age_delta": brain_age_delta,
-        "brain_age_delta_abs": brain_age_delta_abs,
         "correlation": correlation
     }
     

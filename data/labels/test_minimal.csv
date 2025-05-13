@@ -1,0 +1,16 @@
+subject_id,image_path,sex,age,modality,dataset,sample_weight
+IXI002-Guys-0828,brain_age_converted/IXI/IXI002-Guys-0828-T1.nii.npy,female,35.8,t1,ixi,0.0005899705014749262
+IXI002-Guys-0828,brain_age_converted/IXI/IXI002-Guys-0828-T2.nii.npy,female,35.8,t2,ixi,0.0005899705014749262
+IXI012-HH-1211,brain_age_converted/IXI/IXI012-HH-1211-T1.nii.npy,male,38.78,t1,ixi,0.0004214075010535187
+IXI012-HH-1211,brain_age_converted/IXI/IXI012-HH-1211-T2.nii.npy,male,38.78,t2,ixi,0.0004916420845624385
+IXI013-HH-1212,brain_age_converted/IXI/IXI013-HH-1212-T1.nii.npy,male,46.71,t1,ixi,0.0005899705014749262
+IXI013-HH-1212,brain_age_converted/IXI/IXI013-HH-1212-T2.nii.npy,male,46.71,t2,ixi,0.0007374631268436578
+IXI014-HH-1236,brain_age_converted/IXI/IXI014-HH-1236-T1.nii.npy,female,34.24,t1,ixi,0.000983284169124877
+IXI014-HH-1236,brain_age_converted/IXI/IXI014-HH-1236-T2.nii.npy,female,34.24,t2,ixi,0.000983284169124877
+IXI015-HH-1258,brain_age_converted/IXI/IXI015-HH-1258-T1.nii.npy,male,24.28,t1,ixi,0.0002681684097613301
+IXI015-HH-1258,brain_age_converted/IXI/IXI015-HH-1258-T2.nii.npy,male,24.28,t2,ixi,0.00032776138970829236
+IXI016-Guys-0697,brain_age_converted/IXI/IXI016-Guys-0697-T1.nii.npy,male,55.17,t1,ixi,0.0004916420845624385
+IXI016-Guys-0697,brain_age_converted/IXI/IXI016-Guys-0697-T2.nii.npy,male,55.17,t2,ixi,0.0004916420845624385
+IXI017-Guys-0698,brain_age_converted/IXI/IXI017-Guys-0698-T1.nii.npy,female,29.09,t1,ixi,0.0004214075010535187
+IXI017-Guys-0698,brain_age_converted/IXI/IXI017-Guys-0698-T2.nii.npy,female,29.09,t2,ixi,0.0004214075010535187
+IXI019-Guys-0702,brain_age_converted/IXI/IXI019-Guys-0702-T1.nii.npy,male,58.66,t1,ixi,0.0014749262536873156

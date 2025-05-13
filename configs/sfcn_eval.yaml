@@ -1,0 +1,40 @@
+# ────────────────────────────  DATA  ──────────────────────────── #
+data:
+  data_dir: "Data"               # root that contains all images
+  test_csv:  "brain_age_pred/data/labels/test.csv"  # only need test set
+
+  image_key:  "image_path"
+  age_key:    "age"
+
+  # loading parameters
+  num_workers: 8
+  persistent_workers: true
+  prefetch_factor: 4
+  target_shape: [182, 218, 182]  # (D,H,W)
+
+# ───────────────────────────  MODEL  ──────────────────────────── #
+model:
+  type: "sfcn"                  # sfcn | resnet3d | efficientnet3d
+  in_channels: 1
+  dropout_rate: 0.3
+  checkpoint: "output/checkpoints/sfcn_20250511_204402/sfcn_20250511_204402_epoch050.pt"  # path to your checkpoint
+
+# ──────────────────────────  EVALUATION  ────────────────────────── #
+training:
+  batch_size: 8              # can use larger batch size for evaluation
+  use_amp: true                 # mixed precision if CUDA present
+  total_steps: 1   
+# ────────────────────────────  OUTPUT  ────────────────────────── #
+output:
+  output_dir: "output"
+  experiment_name: "sfcn_evaluation"
+
+# ─────────────────────────────  W&B  ──────────────────────────── #
+wandb:
+  use_wandb: true
+  project: "brainage-model-evaluation"
+  entity: null
+
+# ───────────────────────── MISCELLANEOUS ───────────────────────── #
+seed: 42
+device: null                   # cuda if available, else cpu
