@@ -55,7 +55,7 @@ domain_randomization:
     rician:      0.30     # Rician noise
     gibbs:       0.30     # Gibbs ringing
     resolution:  0.50     # RandomResolutionD
-    coarse_do:   0.30     # RandCoarseDropoutd
+    coarse_do:   0.0     # RandCoarseDropoutd
     spike:       0.20     # TorchIO spike artefact
     ghost:       0.30     # TorchIO ghosting
     crop:        1.00     # RandSpatialCropd
@@ -101,13 +101,13 @@ training:
   epochs: 100
 
   # optimiser & LR
-  learning_rate: 0.0003
+  learning_rate: 0.001
   weight_decay:  0.00001
   optimizer: "sgd"                       # adam | adamw | sgd | rmsprop | radam | novograd
   scheduler: "cosine"                      # cosine | plateau | onecycle | step | none
   scheduler_params:
     T_max: 100
-    eta_min: 0.000001
+    eta_min: 0.00001
     epochs: 100
     steps_per_epoch: 534
 
@@ -118,7 +118,7 @@ training:
     mae_weight: 0.5
 
   # misc
-  early_stopping_patience: 30
+  early_stopping_patience: 8
   gradient_accumulation_steps: 1
   use_amp: true                            # mixed precision if CUDA present
 

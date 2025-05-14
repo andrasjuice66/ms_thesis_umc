@@ -181,7 +181,9 @@ class BrainAgeTrainer:
         # First ensure all tensors are on the correct device
         imgs = batch["image"].to(self.device, non_blocking=True)
         ages = batch["age"].float().to(self.device, non_blocking=True)
-        wts = batch["weight"].to(self.device, non_blocking=True)
+        wts = batch.get("weight")
+        if wts is not None:
+            wts = wts.to(self.device, non_blocking=True)
 
         # Forward pass (with AMP if enabled)
         if self.use_amp:

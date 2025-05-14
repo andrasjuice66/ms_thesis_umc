@@ -111,11 +111,6 @@ def main() -> None:
 
     logger.info("Initializing datasets...")
     logger.info("Creating training dataset")
-    
-    logger.info("Some Validation:")
-    logger.info(f"Train paths: {train_p[:5]}")
-    logger.info(f"Train ages: {train_a[:5]}")
-    logger.info(f"Train weights: {train_w[:5]}")
 
     train_ds = BADataset(
         file_paths   = train_p,
