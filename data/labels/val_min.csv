@@ -1,0 +1,13 @@
+subject_id,image_path,sex,age,modality,dataset,sample_weight
+sub-194,brain_age_converted/OpenNeuro/DallasLifeSpan/sub-194_ses-wave1_acq-MPRAGE_run-1_T1w.nii.npy,male,33.0,t1,dallas_lifespan,0.07142857142857142
+sub-CC222125,brain_age_converted/CamCAN/sub-CC222125_T1w.nii.npy,male,34.0,t1,camcan,0.14285714285714285
+sub-51,brain_age_converted/OpenNeuro/NPC/sub-51_T1w.nii.npy,male,31.0,t1,npc,0.047619047619047616
+sub-1775,brain_age_converted/OpenNeuro/DallasLifeSpan/sub-1775_ses-wave1_acq-MPRAGE_run-1_T1w.nii.npy,male,31.0,t1,dallas_lifespan,0.047619047619047616
+sub-11,brain_age_converted/OpenNeuro/NPC/sub-11_T1w.nii.npy,male,33.0,t1,npc,0.07142857142857142
+sub-1665,brain_age_converted/OpenNeuro/DallasLifeSpan/sub-1665_ses-wave1_acq-MPRAGE_run-1_T1w.nii.npy,male,31.0,t1,dallas_lifespan,0.047619047619047616
+sub-CC221935,brain_age_converted/CamCAN/sub-CC221935_T1w.nii.npy,male,37.0,t1,camcan,0.14285714285714285
+sub-CC321000,brain_age_converted/CamCAN/sub-CC321000_T1w.nii.npy,male,40.0,t1,camcan,0.07142857142857142
+sub-CC222652,brain_age_converted/CamCAN/sub-CC222652_T1w.nii.npy,male,30.0,t1,camcan,0.14285714285714285
+sub-CC221040,brain_age_converted/CamCAN/sub-CC221040_T1w.nii.npy,male,36.0,t1,camcan,0.07142857142857142
+sub-ON09760,brain_age_converted/NIMH_RV/sub-ON09760_ses-01_acq-MPRAGE_T1w.nii.npy,male,36.0,t1,nimh_rv,0.07142857142857142
+sub-CC320297,brain_age_converted/CamCAN/sub-CC320297_T1w.nii.npy,male,40.0,t1,camcan,0.07142857142857142

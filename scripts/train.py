@@ -13,6 +13,7 @@ import pandas as pd
 import numpy as np
 import torch
 import wandb
+import optuna
 
 # ───────────────────── project imports ────────────────────── #
 project_root = Path(__file__).resolve().parent.parent
@@ -246,6 +247,10 @@ def main() -> None:
         logger.info(f"Training finished in {time.time()-t0:.1f}s")
         json.dump(history, open(ckpt_dir/"history.json","w"), indent=2)
         if use_wandb: wandb.log({"train/duration_s": time.time()-t0})
+        history = trainer.train()            # trainer should keep best val
+        best_val = trainer.best_metric       # whatever attr you store
+        if best_val is None:                 # early stop very early
+            raise optuna.TrialPruned()
     except Exception as e:
         logger.error(f"Training failed: {e}")
 
@@ -259,8 +264,8 @@ def main() -> None:
         logger.error(f"Eval failed: {e}")
     finally:
         if use_wandb: wandb.finish()
-
-    logger.info("All done.")
+        logger.info("All done.")
+        return float(best_val)      # ← ② return metric for Optuna
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

@@ -398,7 +398,7 @@ class BrainAgeTrainer:
                 log_dict = {f"train/{k}": v for k, v in tr_metrics.items()}
                 log_dict.update({f"val/{k}": v for k, v in vl_metrics.items()})
                 log_dict["lr"] = self.optimizer.param_groups[0]["lr"]
-                self.wandb.log(log_dict, step=epoch)
+                self.wandb.log(log_dict, step=epoch+1)
 
             # checkpoint & early-stopping
             is_best = vl_metrics["loss"] < self.best_val_loss
