@@ -249,8 +249,9 @@ def main() -> None:
         if use_wandb: wandb.log({"train/duration_s": time.time()-t0})
         history = trainer.train()            # trainer should keep best val
         best_val = trainer.best_metric       # whatever attr you store
-        if best_val is None:                 # early stop very early
+        if np.isinf(best_val):                     # early stop too early?
             raise optuna.TrialPruned()
+        
     except Exception as e:
         logger.error(f"Training failed: {e}")
 
@@ -265,7 +266,7 @@ def main() -> None:
     finally:
         if use_wandb: wandb.finish()
         logger.info("All done.")
-        return float(best_val)      # ← ② return metric for Optuna
+        return float(best_val)      
 
 if __name__ == "__main__":
     sys.exit(main())

@@ -15,13 +15,13 @@ import os, sys, copy, yaml, optuna, torch
 from pathlib import Path
 
 # ─── paths ─────────────────────────────────────────────────────────────
-PROJECT_ROOT = Path(__file__).resolve().parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))               # for `import brain_age_train`
 BASE_CFG   = PROJECT_ROOT / "configs/tuning.yaml"  # original YAML
 TUNE_DIR   = PROJECT_ROOT / "output" / "hpo_runs"
 
 # import AFTER sys.path tweak
-from train import main as train_entry     # <- rename your script
+from .train import main as train_entry     # <- rename your script
 
 # ─── Optuna objective ─────────────────────────────────────────────────
 def objective(trial: optuna.Trial) -> float:
@@ -59,12 +59,11 @@ def objective(trial: optuna.Trial) -> float:
 
     # 4) launch *exactly* the same CLI entry point
     try:
-        sys.argv = ["brain_age_train.py", str(cfg_path)]  # fake CLI call
-        best_val = train_entry()                          # returns float
+        sys.argv = ["brain_age_train.py", str(cfg_path)]  
+        best_val = train_entry()                         
     except optuna.TrialPruned:
         raise                                             # propagate
     except Exception as e:
-        # any crash ⇒ prune the trial so the optimiser can move on
         raise optuna.TrialPruned() from e
     finally:
         torch.cuda.empty_cache()
@@ -74,9 +73,15 @@ def objective(trial: optuna.Trial) -> float:
 
 # ─── main launcher ────────────────────────────────────────────────────
 def main():
-    storage = f"sqlite:///{TUNE_DIR/'study.db'}"   # enables multi-process tuning
-    pruner  = optuna.pruners.SuccessiveHalvingPruner(min_resource=3,
-                                                     reduction_factor=3)
+    # Ensure the directory exists with proper permissions
+    TUNE_DIR.mkdir(parents=True, exist_ok=True)
+    
+    # Use absolute path for the database
+    db_path = TUNE_DIR.absolute() / "study.db"
+    storage = f"sqlite:///{db_path}"
+    
+    pruner = optuna.pruners.SuccessiveHalvingPruner(min_resource=3,
+                                                   reduction_factor=3)
     sampler = optuna.samplers.TPESampler(seed=42)  # Bayesian
 
     study = optuna.create_study(

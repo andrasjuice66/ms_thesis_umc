@@ -137,6 +137,7 @@ class BrainAgeTrainer:
 
         # /--------- early-stop bookkeeping ---------/
         self.best_val_loss      = float("inf")
+        self.best_metric     = float("inf")       
         self.early_stop_counter = 0
 
         # /--------- move model ----------/
@@ -404,10 +405,11 @@ class BrainAgeTrainer:
             is_best = vl_metrics["loss"] < self.best_val_loss
             if is_best:
                 self.best_val_loss = vl_metrics["loss"]
-                self.early_stop_counter = 0
-            else:
-                self.early_stop_counter += 1
 
+            if vl_metrics["mae"] < self.best_metric:   # <─ NEW
+                self.best_metric = vl_metrics["mae"]   # <─ NEW
+
+            self.early_stop_counter = 0 if is_best else self.early_stop_counter + 1
             self._save_checkpoint(epoch, vl_metrics["loss"], is_best=is_best)
 
             if self.early_stop_counter >= self.early_stopping_patience:
