@@ -13,14 +13,12 @@ import pandas as pd
 import numpy as np
 import torch
 import wandb
-import optuna
 
-# ───────────────────── project imports ────────────────────── #
 project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
 
 from brain_age_pred.configs.config import Config
-from brain_age_pred.dom_rand.dataset import BADataset            # ← renamed module
+from brain_age_pred.dom_rand.dataset import BADataset          
 from brain_age_pred.dom_rand.domain_randomization import DomainRandomizer
 from brain_age_pred.models.sfcn import SFCN
 from brain_age_pred.models.resnet3d import ResNet3D
@@ -37,7 +35,6 @@ load_dotenv()
 def main() -> None:
 
     # 1. ─── configuration & reproducibility ─────────────────── #
-    # Setup logger first so we can use it right away
     timestamp       = datetime.now().strftime("%Y%m%d_%H%M%S")
     cfg_file = sys.argv[1] if len(sys.argv) > 1 else "configs/default.yaml"
     cfg      = Config(cfg_file)
@@ -81,8 +78,8 @@ def main() -> None:
     logger.info("Initializing domain randomization transforms...")
     rand_cfg = cfg.get("domain_randomization", {})
     transform = DomainRandomizer(
+        device=torch.device("cuda"),
         **rand_cfg,
-        device=device,
     )
     logger.info("Domain randomizer initialized")
 
@@ -109,7 +106,6 @@ def main() -> None:
         data_dir,
     )
 
-
     logger.info("Initializing datasets...")
     logger.info("Creating training dataset")
 
@@ -118,23 +114,21 @@ def main() -> None:
         age_labels   = train_a,
         sample_wts   = train_w,
         transform    = transform,
-        mode         = "train",
-    )
+        mode         = "train",)
+    
     logger.info("Creating validation dataset")
     val_ds   = BADataset(
         file_paths   = val_p,
         age_labels   = val_a,
         transform    = None,
-        mode         = "val",
-    )
+        mode         = "val",)
 
     test_ds = BADataset(
 
         file_paths   = test_p,
         age_labels   = test_a,
         transform    = None,
-        mode         = "test",
-    )
+        mode         = "test",)
 
     logger.info("Setting up sampler...")
 
@@ -215,9 +209,6 @@ def main() -> None:
         logger.info("Setting up W&B model watching")
         wandb.watch(model, log="all", log_graph=False)
 
-    # params = list(model.parameters())
-    # logger.debug("Model parameters:", params)
-    # logger.debug("Number of parameters:", sum(p.numel() for p in params))
 
     # 8. ─── trainer ──────────────────────────────────────────── #
     logger.info("Initializing trainer...")
@@ -234,8 +225,7 @@ def main() -> None:
         wandb_project  = cfg.get("wandb.project", "brain-age-pred"),
         wandb_entity   = cfg.get("wandb.entity"),
         wandb_config   = cfg.config,
-        experiment_name= experiment_name,
-    )
+        experiment_name= experiment_name,)
     logger.info("Trainer initialized")
 
     # 9. ─── train ────────────────────────────────────────────── #
@@ -247,10 +237,9 @@ def main() -> None:
         logger.info(f"Training finished in {time.time()-t0:.1f}s")
         json.dump(history, open(ckpt_dir/"history.json","w"), indent=2)
         if use_wandb: wandb.log({"train/duration_s": time.time()-t0})
-        history = trainer.train()            # trainer should keep best val
-        best_val = trainer.best_metric       # whatever attr you store
-        if np.isinf(best_val):                     # early stop too early?
-            raise optuna.TrialPruned()
+        best_val = trainer.best_metric       
+        if np.isinf(best_val):                     
+            raise Exception("Best validation metric is not yet set")
         
     except Exception as e:
         logger.error(f"Training failed: {e}")

@@ -47,9 +47,6 @@ class DomainRandomizer:
     Random geometric, intensity and artefact transforms for 3-D MRI volumes.
     """
 
-    # ------------------------------------------------------------------ #
-    #                    default transform probabilities                  #
-    # ------------------------------------------------------------------ #
     _DEFAULT_PROBS: Dict[str, float] = {
         # geometric
         "flip"      : 0.5,
@@ -80,10 +77,13 @@ class DomainRandomizer:
     def __init__(
         self,
         *,
-        device=torch.device("cpu"),  # Required keyword-only argument
+        device=torch.device("cpu"), 
         image_key: str = "image",
         # probability overrides
         transform_probs: Optional[Dict[str, float]] = None,
+        # Add new parameters for progressive randomization
+        progressive_epochs: int = 50,  
+        progressive_start: float = 0.2,  
         # geometric ranges
         scaling_range: Tuple[float, float] = (0.9, 1.1),
         rotation_range: float = 10.0,          # degrees
@@ -119,6 +119,17 @@ class DomainRandomizer:
         self.max_res_iso    = max_res_iso
         self.coarse_size    = coarse_dropout_size
         self.output_shape   = output_shape
+
+        # Store progressive randomization parameters
+        self.progressive_epochs = progressive_epochs
+        self.progressive_start = progressive_start
+        
+        # Store original probabilities for reference
+        self.original_probs = {**self.prob}
+        
+        # Initialize with starting probabilities
+        self.current_epoch = 0
+        self._update_progressive_probs()
 
         # build transform pipelines
         self._build_monai_pipeline()
@@ -268,6 +279,29 @@ class DomainRandomizer:
             ),
         ])
 
+    def _update_progressive_probs(self) -> None:
+        """Update transform probabilities based on current epoch."""
+        if self.progressive_epochs <= 0:
+            return
+            
+        # Calculate current progress (0 to 1)
+        progress = min(1.0, self.current_epoch / self.progressive_epochs)
+        
+        # Linear interpolation between start and full probabilities
+        for key in self.original_probs:
+            start_prob = self.original_probs[key] * self.progressive_start
+            final_prob = self.original_probs[key]
+            self.prob[key] = start_prob + (final_prob - start_prob) * progress
+
+    @property
+    def current_epoch(self) -> int:
+        return self._current_epoch
+
+    @current_epoch.setter
+    def current_epoch(self, epoch: int) -> None:
+        """Update current epoch and adjust probabilities accordingly."""
+        self._current_epoch = epoch
+        self._update_progressive_probs()
 
     def __call__(self, sample: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         img = sample[self.image_key]

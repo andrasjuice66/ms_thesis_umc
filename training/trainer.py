@@ -380,8 +380,7 @@ class BrainAgeTrainer:
                    ("train_loss", "val_loss", "train_mae", "val_mae", "lr")}
 
         for epoch in range(self.epochs):
-
-            # let domain-randomiser know which epoch we are on
+            # This line already exists and will now trigger probability updates
             if hasattr(self.train_loader.dataset.transform, "current_epoch"):
                 self.train_loader.dataset.transform.current_epoch = epoch
 
