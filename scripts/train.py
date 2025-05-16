@@ -116,7 +116,6 @@ def main() -> None:
         transform    = transform,
         mode         = "train",
         cache_size   = cfg.get("data.cache_size", 0),
-        shared_cache = cfg.get("data.shared_cache", 0),
         )
     
     logger.info("Creating validation dataset")
@@ -126,7 +125,6 @@ def main() -> None:
         transform    = None,
         mode         = "val",
         cache_size   = cfg.get("data.cache_size", 0),
-        shared_cache = cfg.get("data.shared_cache", 0),
         )
 
     test_ds = BADataset(
@@ -136,7 +134,6 @@ def main() -> None:
         transform    = None,
         mode         = "test",
         cache_size   = cfg.get("data.cache_size", 0),
-        shared_cache = cfg.get("data.shared_cache", 0),
         )
 
     logger.info("Setting up sampler...")
