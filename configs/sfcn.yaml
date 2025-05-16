@@ -11,9 +11,12 @@ data:
 
   # loading / caching
   cache_dir: "data/cache"
-  cache_mode: "memory"                     # memory | disk | none
+  cache_mode: "memory"   
+  cache_size: 0            
+  shared_cache: 0
   preload: true
   num_workers: 8
+  pin_memory: true
   persistent_workers: true
   prefetch_factor: 4
   target_shape: [182, 218, 182]            # (D,H,W) after optional resize

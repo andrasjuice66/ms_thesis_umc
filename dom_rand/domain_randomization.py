@@ -249,10 +249,10 @@ class DomainRandomizer:
 
         # compose & push to GPU if possible
         self.monai = Compose(tfms)
-        if self.device.type == "cuda":
-            for t in self.monai.transforms:
-                if hasattr(t, "set_device"):
-                    t.set_device(self.device)
+        # if self.device.type == "cuda": #I was getting OOM errors when pushing to GPU
+        #     for t in self.monai.transforms:
+        #         if hasattr(t, "set_device"):
+        #             t.set_device(self.device)
 
    
     def _build_torchio_pipeline(self) -> None:

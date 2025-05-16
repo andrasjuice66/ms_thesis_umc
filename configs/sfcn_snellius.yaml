@@ -1,9 +1,9 @@
 # ────────────────────────────  DATA  ──────────────────────────── #
 data:
-  data_dir: "Data"               # root that contains all images
-  train_csv: "brain_age_pred/data/labels/train_min.csv"
-  val_csv:   "brain_age_pred/data/labels/val_min.csv"
-  test_csv:  "brain_age_pred/data/labels/test_min.csv"
+  data_dir: "/scratch-shared/ajoos/brain_age/"               # root that contains all images
+  train_csv: "home/ajoos/ms_thesis_umc/data/labels/train.csv"
+  val_csv:   "home/ajoos/ms_thesis_umc/data/labels/val.csv"
+  test_csv:  "home/ajoos/ms_thesis_umc/data/labels/test.csv"
 
   image_key:  "image_path"
   age_key:    "age"
@@ -11,10 +11,12 @@ data:
 
   # loading / caching
   cache_dir: "data/cache"
-  cache_mode: "memory"                     # memory | disk | none
+  cache_mode: "memory"   
+  cache_size: 0            
+  shared_cache: 0
   preload: true
   num_workers: 8
-  pin_memory: false
+  pin_memory: true
   persistent_workers: true
   prefetch_factor: 4
   target_shape: [182, 218, 182]            # (D,H,W) after optional resize
@@ -23,7 +25,7 @@ data:
 model:
   type: "sfcn"                             # sfcn | resnet3d | efficientnet3d
   in_channels: 1
-  dropout_rate: 0.5
+  dropout_rate: 0.5532
   use_attention: false                   
   checkpoint: null #"checkpoints/sfcn_20250511_152522_epoch100.pt"  # path to checkpoint file
 
@@ -34,6 +36,9 @@ model:
 # accepted by the new DomainRandomizer class.
 # -------------------------------------------------------------------------
 domain_randomization:
+  # ── progressive randomization ───────────────────────────────────
+  progressive_epochs: 50                  # Number of epochs to reach full randomization
+  progressive_start: 0.2                  # Starting probability multiplier (0.2 = 20% of final probs)
 
   # ── global toggles ────────────────────────────────────────────────────
   augmentation_strength: "medium"        # optional meta-flag (not parsed)
@@ -44,7 +49,7 @@ domain_randomization:
   transform_probs:
     flip:        0.50
     affine:      0.80
-    elastic:     0.40     # TorchIO elastic deformation
+    elastic:     0.0     # TorchIO elastic deformation
     contrast:    0.60
     gamma:       0.50
     blur:        0.40
@@ -52,13 +57,13 @@ domain_randomization:
     scale_int:   0.40     # RandScaleIntensityd
     shift_int:   0.40     # RandShiftIntensityd
     hist_shift:  0.30     # RandHistogramShiftd
-    noise:       0.40     # Gaussian noise
-    rician:      0.30     # Rician noise
-    gibbs:       0.30     # Gibbs ringing
-    resolution:  0.50     # RandomResolutionD
+    noise:       0.30     # Gaussian noise
+    rician:      0.0     # Rician noise
+    gibbs:       0.0     # Gibbs ringing
+    resolution:  0.30     # RandomResolutionD
     coarse_do:   0.0     # RandCoarseDropoutd
-    spike:       0.20     # TorchIO spike artefact
-    ghost:       0.30     # TorchIO ghosting
+    spike:       0.0     # TorchIO spike artefact
+    ghost:       0.0    # TorchIO ghosting
     crop:        1.00     # RandSpatialCropd
 
   # ── geometric parameters ─────────────────────────────────────────────
@@ -83,7 +88,7 @@ domain_randomization:
   # ── resolution / simulation ──────────────────────────────────────────
   enable_simulation: true
   max_res_iso:       3.0                 # upper isotropic voxel-size (mm)
-  resolution_range:  [1.0, 2.5]          # passed to RandomResolutionD
+  resolution_range:  [1.0, 1.5]          # passed to RandomResolutionD
   coarse_dropout_size: [20, 20, 20]      # voxel size of cut-out cubes
 
   # ── TorchIO artefacts (only used if `use_torchio: true`) ─────────────
@@ -102,7 +107,7 @@ training:
   epochs: 100
 
   # optimiser & LR
-  learning_rate: 0.001
+  learning_rate: 0.002193
   weight_decay:  0.00001
   optimizer: "sgd"                       # adam | adamw | sgd | rmsprop | radam | novograd
   scheduler: "cosine"                      # cosine | plateau | onecycle | step | none

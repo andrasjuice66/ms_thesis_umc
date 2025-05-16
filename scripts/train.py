@@ -78,7 +78,7 @@ def main() -> None:
     logger.info("Initializing domain randomization transforms...")
     rand_cfg = cfg.get("domain_randomization", {})
     transform = DomainRandomizer(
-        device=torch.device("cuda"),
+        device=torch.device("cpu"),
         **rand_cfg,
     )
     logger.info("Domain randomizer initialized")
@@ -114,21 +114,30 @@ def main() -> None:
         age_labels   = train_a,
         sample_wts   = train_w,
         transform    = transform,
-        mode         = "train",)
+        mode         = "train",
+        cache_size   = cfg.get("data.cache_size", 0),
+        shared_cache = cfg.get("data.shared_cache", 0),
+        )
     
     logger.info("Creating validation dataset")
     val_ds   = BADataset(
         file_paths   = val_p,
         age_labels   = val_a,
         transform    = None,
-        mode         = "val",)
+        mode         = "val",
+        cache_size   = cfg.get("data.cache_size", 0),
+        shared_cache = cfg.get("data.shared_cache", 0),
+        )
 
     test_ds = BADataset(
 
         file_paths   = test_p,
         age_labels   = test_a,
         transform    = None,
-        mode         = "test",)
+        mode         = "test",
+        cache_size   = cfg.get("data.cache_size", 0),
+        shared_cache = cfg.get("data.shared_cache", 0),
+        )
 
     logger.info("Setting up sampler...")
 
@@ -141,8 +150,8 @@ def main() -> None:
 
     logger.info("Setting up data loader parameters...")
     dl_kwargs = dict(
-        num_workers       = cfg.get("data.num_workers", 8),
-        pin_memory        = (device.type == "cuda"),
+        num_workers       = cfg.get("data.num_workers", 6),
+        pin_memory        = cfg.get("data.pin_memory", True),
         persistent_workers= cfg.get("data.persistent_workers", True),
         prefetch_factor   = cfg.get("data.prefetch_factor", 2),
     )
