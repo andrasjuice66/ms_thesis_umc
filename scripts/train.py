@@ -21,8 +21,7 @@ from brain_age_pred.configs.config import Config
 from brain_age_pred.dom_rand.dataset import BADataset          
 from brain_age_pred.dom_rand.domain_randomization import DomainRandomizer
 from brain_age_pred.models.sfcn import SFCN
-from brain_age_pred.models.resnet3d import ResNet3D
-from brain_age_pred.models.efficientnet3d import EfficientNet3D
+from brain_age_pred.models.brainagenext import BrainAgeNeXt
 from brain_age_pred.training.trainer import BrainAgeTrainer
 from brain_age_pred.utils.logger import setup_logger
 from brain_age_pred.utils.utils import set_seed, read_csv, load_checkpoint
@@ -59,7 +58,8 @@ def main() -> None:
     use_wandb = cfg.get("wandb.use_wandb", True)
     if use_wandb:
         logger.info("Setting up W&B tracking")
-        wandb.login(key=os.environ["WANDB_API"])
+        WANDB_API = '2abdb867a9244072f2237704a3cacc77fa548dd8'
+        wandb.login(key=WANDB_API)
         wandb.init(
             project = cfg.get("wandb.project", "brain-age-pred"),
             entity  = cfg.get("wandb.entity"),
@@ -78,7 +78,7 @@ def main() -> None:
     logger.info("Initializing domain randomization transforms...")
     rand_cfg = cfg.get("domain_randomization", {})
     transform = DomainRandomizer(
-        device=torch.device("cpu"),
+        device=torch.device(device),
         **rand_cfg,
     )
     logger.info("Domain randomizer initialized")
@@ -89,6 +89,7 @@ def main() -> None:
     val_csv   = Path(cfg.get("data.val_csv"))
     test_csv  = Path(cfg.get("data.test_csv"))
     data_dir  = Path(cfg.get("data.data_dir"))
+    
 
     logger.info(f"Reading train CSV from {train_csv}")
     train_p, train_a, train_w = read_csv(
@@ -105,6 +106,8 @@ def main() -> None:
         test_csv,
         data_dir,
     )
+
+    print(f"Train data: {train_p}, {train_a}, {train_w}")
 
     logger.info("Initializing datasets...")
     logger.info("Creating training dataset")
@@ -149,6 +152,7 @@ def main() -> None:
     dl_kwargs = dict(
         num_workers       = cfg.get("data.num_workers", 6),
         pin_memory        = cfg.get("data.pin_memory", True),
+        pin_memory_device = cfg.get("data.pin_memory_device"),
         persistent_workers= cfg.get("data.persistent_workers", True),
         prefetch_factor   = cfg.get("data.prefetch_factor", 2),
     )
@@ -180,24 +184,24 @@ def main() -> None:
     # 7. ─── model ─────────────────────────────────────────────── #
     logger.info("Initializing model...")
     mtype = cfg.get("model.type", "sfcn").lower()
-    model_map = {"sfcn": SFCN, "resnet3d": ResNet3D, "efficientnet3d": EfficientNet3D}
-
     if mtype == "sfcn":
         logger.info("Creating SFCN model")
         model = SFCN(
             in_channels=cfg.get("model.in_channels"),
             dropout_rate=cfg.get("model.dropout_rate"),
         ).to(device)
-    elif mtype == "resnet3d":
-        logger.info("Creating ResNet3D model")
-        model = ResNet3D(
+    elif mtype == "brainagenext":
+        logger.info("Creating BrainAgeNext model...")
+        model = BrainAgeNeXt(
             in_channels=cfg.get("model.in_channels"),
             dropout_rate=cfg.get("model.dropout_rate"),
-            use_attention=cfg.get("model.use_attention", False),
+            model_id=cfg.get("model.model_id", "B"),
+            kernel_size=cfg.get("model.kernel_size", 3),
+            deep_supervision=cfg.get("model.deep_supervision", True),
+            feature_size=cfg.get("model.feature_size", 512),
+            hidden_size=cfg.get("model.hidden_size", 64)
         ).to(device)
-    else:
-        logger.info(f"Creating {mtype} model")
-        model = model_map[mtype](**cfg.get("model")).to(device)
+    print(f"Model hyperparameters: {cfg.get('model')}")
 
     # Load checkpoint if specified
     checkpoint_path = cfg.get("model.checkpoint")
@@ -218,6 +222,7 @@ def main() -> None:
 
     # 8. ─── trainer ──────────────────────────────────────────── #
     logger.info("Initializing trainer...")
+    print(f"Trainer config: {cfg.get('training')}")
     trainer = BrainAgeTrainer(
         model          = model,
         train_loader   = train_loader,

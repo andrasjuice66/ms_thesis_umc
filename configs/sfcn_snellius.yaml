@@ -130,6 +130,7 @@ training:
 
 # ────────────────────────────  OUTPUT  ────────────────────────── #
 output:
+  output_dir: "home/ajoos/ms_thesis_umc/output"
   checkpoint_dir: "checkpoints"
   log_dir: "logs"
   experiment_name: null                   # auto-generate if left null

@@ -17,7 +17,7 @@ from pathlib import Path
 # ─── paths ─────────────────────────────────────────────────────────────
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))               # for `import brain_age_train`
-BASE_CFG   = PROJECT_ROOT / "configs/tuning.yaml"  # original YAML
+BASE_CFG   = PROJECT_ROOT / "configs/sfcn_tuning.yaml"  # original YAML
 TUNE_DIR   = PROJECT_ROOT / "output" / "hpo_runs"
 
 # import AFTER sys.path tweak

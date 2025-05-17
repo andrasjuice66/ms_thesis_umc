@@ -168,7 +168,7 @@ def get_scheduler(
     """
     if scheduler_type == "none":
         return None
-    
+    print("THIS IS THE SCHEDULER: ", scheduler_type)
     schedulers = {
         "cosine": CosineAnnealingLR(
             optimizer,
@@ -182,16 +182,16 @@ def get_scheduler(
             patience=kwargs.get("patience", 5),
             min_lr=kwargs.get("min_lr", 1e-6)
         ),
-        "onecycle": OneCycleLR(
-            optimizer,
-            max_lr=kwargs.get("max_lr", 1e-3),
-            total_steps=kwargs.get("total_steps", None),
-            epochs=kwargs.get("epochs", None),
-            steps_per_epoch=kwargs.get("steps_per_epoch", None),
-            pct_start=kwargs.get("pct_start", 0.3),
-            div_factor=kwargs.get("div_factor", 25.0),
-            final_div_factor=kwargs.get("final_div_factor", 1e4)
-        ),
+        # "onecycle": OneCycleLR(
+        #     optimizer,
+        #     max_lr=kwargs.get("max_lr", 1e-3),
+        #     total_steps=kwargs.get("total_steps", None),
+        #     epochs=kwargs.get("epochs", None),
+        #     steps_per_epoch=kwargs.get("steps_per_epoch", None),
+        #     pct_start=kwargs.get("pct_start", 0.3),
+        #     div_factor=kwargs.get("div_factor", 25.0),
+        #     final_div_factor=kwargs.get("final_div_factor", 1e4)
+        # ),
         "step": StepLR(
             optimizer,
             step_size=kwargs.get("step_size", 10),

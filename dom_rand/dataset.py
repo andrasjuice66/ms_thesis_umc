@@ -59,31 +59,23 @@ class BADataset(Dataset):
     # ------------------------------------------------------------------ #
     @staticmethod
     def _load_volume(path: str) -> np.ndarray:
+        #print(f"Loading volume from {path}")
         return np.load(path)           # (D,H,W)  dtype=float32
 
-    # ------------------------------------------------------------------ #
-    #                         torch Dataset API                           #
-    # ------------------------------------------------------------------ #
     def __len__(self) -> int:
         return len(self.file_paths)
 
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
-        # ---- 1. try per-process LRU cache ----------------------------- #
-        if self.cache_size and idx in self._cache:
-            img_np = self._cache.pop(idx)          # LRU refresh
+        img_np = self._load_volume(self.file_paths[idx])
 
-        # ---- 2. load from disk --------------------------------------- #
-        else:
-            img_np = self._load_volume(self.file_paths[idx])
+        # add to per-process cache
+        if self.cache_size:
+            # evict oldest if full
+            if len(self._cache) >= self.cache_size:
+                self._cache.popitem(last=False)
+            self._cache[idx] = img_np
 
-            # add to per-process cache
-            if self.cache_size:
-                # evict oldest if full
-                if len(self._cache) >= self.cache_size:
-                    self._cache.popitem(last=False)
-                self._cache[idx] = img_np
-
-        # ---- 4. build sample dict ------------------------------------ #
+    # ---- 4. build sample dict ------------------------------------ #
         sample = {
             "image": torch.from_numpy(img_np).unsqueeze(0),   # (1,D,H,W)
             "age"  : torch.tensor(self.age_labels[idx], dtype=torch.float32),

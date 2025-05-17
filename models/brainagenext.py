@@ -14,8 +14,7 @@ import os
 import torchio
 import torch.nn as nn
 import matplotlib.pyplot as plt
-from nnunet_mednext import create_mednext_encoder_v1
-from models.base_model import BrainAgeModel
+from brain_age_pred.models.create_mednext_encoder_v1 import create_mednext_encoder_v1
 
 
 class BrainAgeNeXt(nn.Module):

@@ -1,9 +1,9 @@
 # ────────────────────────────  DATA  ──────────────────────────── #
 data:
-  data_dir: "Data"               # root that contains all images
-  train_csv: "brain_age_pred/data/labels/train.csv"
-  val_csv:   "brain_age_pred/data/labels/val.csv"
-  test_csv:  "brain_age_pred/data/labels/test.csv"
+  data_dir: "/scratch-shared/ajoos/brain_age/"               # root that contains all images
+  train_csv: "home/ajoos/ms_thesis_umc/data/labels/train.csv"
+  val_csv:   "home/ajoos/ms_thesis_umc/data/labels/val.csv"
+  test_csv:  "home/ajoos/ms_thesis_umc/data/labels/test.csv"
 
   image_key:  "image_path"
   age_key:    "age"
@@ -16,17 +16,16 @@ data:
   shared_cache: 0
   preload: true
   num_workers: 8
-  pin_memory: false
-  pin_memory_device: "cpu"
+  pin_memory: true
   persistent_workers: true
   prefetch_factor: 4
   target_shape: [182, 218, 182]            # (D,H,W) after optional resize
 
 # ───────────────────────────  MODEL  ──────────────────────────── #
 model:
-  type: "sfcn"                             # sfcn | resnet3d | efficientnet3d
+  type: "brainagenext"                             # sfcn | resnet3d | efficientnet3d
   in_channels: 1
-  dropout_rate: 0.2
+  dropout_rate: 0.5532
   use_attention: false                   
   checkpoint: null #"checkpoints/sfcn_20250511_152522_epoch100.pt"  # path to checkpoint file
 
@@ -105,7 +104,7 @@ domain_randomization:
 # ──────────────────────────  TRAINING  ────────────────────────── #
 training:
   batch_size: 8
-  epochs: 150
+  epochs: 100
 
   # optimiser & LR
   learning_rate: 0.002193
@@ -131,6 +130,7 @@ training:
 
 # ────────────────────────────  OUTPUT  ────────────────────────── #
 output:
+  output_dir: "home/ajoos/ms_thesis_umc/output"
   checkpoint_dir: "checkpoints"
   log_dir: "logs"
   experiment_name: null                   # auto-generate if left null

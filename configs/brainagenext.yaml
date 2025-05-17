@@ -1,70 +1,150 @@
-# Data configuration
+# ────────────────────────────  DATA  ──────────────────────────── #
 data:
-  data_dir: "data/processed"
-  train_csv: "data/train.csv"
-  val_csv: "data/val.csv"
-  test_csv: "data/test.csv"
-  image_key: "image"
-  age_key: "age"
+  data_dir: "Data"               # root that contains all images
+  train_csv: "brain_age_pred/data/labels/train.csv"
+  val_csv:   "brain_age_pred/data/labels/val.csv"
+  test_csv:  "brain_age_pred/data/labels/test.csv"
+
+  image_key:  "image_path"
+  age_key:    "age"
+  weight_key: "sample_weight"             
+
+  # loading / caching
   cache_dir: "data/cache"
-  num_workers: 4
+  cache_mode: "memory"   
+  cache_size: 0            
+  shared_cache: 0
+  preload: true
+  num_workers: 8
+  pin_memory: false
+  pin_memory_device: "cpu"
+  persistent_workers: true
+  prefetch_factor: 4
+  target_shape: [182, 218, 182]            # (D,H,W) after optional resize
 
-# Model configuration
+# ───────────────────────────  MODEL  ──────────────────────────── #
 model:
-  type: "sfcn"  # Options: sfcn, resnet3d, efficientnet3d
+  type: "brainagenext"                             # sfcn | resnet3d | efficientnet3d
   in_channels: 1
-  dropout_rate: 0.3
-  use_attention: false
+  dropout_rate: 0.5532
+  use_attention: false                   
+  checkpoint: null #"checkpoints/sfcn_20250511_152522_epoch100.pt"  # path to checkpoint file
+  model_id: "S"  # Options: "S", "B", "M", "L"
+  kernel_size: 3
+  deep_supervision: true
+  feature_size: 512
+  hidden_size: 64
 
-# Domain randomization configuration
+# ────────────────  DOMAIN-RANDOMISATION / AUGS  ───────────────── #
+# -------------------------------------------------------------------------
+# Domain-randomisation settings
+# Every key here maps 1-to-1 to a keyword argument or probability override
+# accepted by the new DomainRandomizer class.
+# -------------------------------------------------------------------------
 domain_randomization:
-  augmentation_strength: "medium"  # Options: light, medium, strong
-  intensity_range: [0.3, 1.0]
-  gamma_range: [0.8, 1.2]
-  contrast_range: [0.8, 1.2]
-  enable_spatial: true
-  scaling_range: [0.9, 1.1]
-  rotation_range: 10.0
-  nonlinear_std: 2.5
-  enable_simulation: true
-  resolution_range: [1.0, 2.5]
-  anisotropy_range: [1.0, 3.0]
-  enable_artifacts: true
-  bias_field_range: [0.0, 0.4]
-  noise_range: [0.0, 0.07]
-  max_augmentations_per_sample: 5
+  # ── progressive randomization ───────────────────────────────────
+  progressive_epochs: 50                  # Number of epochs to reach full randomization
+  progressive_start: 0.2                  # Starting probability multiplier (0.2 = 20% of final probs)
 
-# Training configuration
+  # ── global toggles ────────────────────────────────────────────────────
+  augmentation_strength: "medium"        # optional meta-flag (not parsed)
+  use_torchio: false                     # enable heavy TorchIO artefacts
+  output_shape:        [182, 218, 182]   # None ⇒ keep full FoV
+
+  # ── per-transform probabilities (omit to use defaults) ───────────────
+  transform_probs:
+    flip:        0.50
+    affine:      0.80
+    elastic:     0.0     # TorchIO elastic deformation
+    contrast:    0.60
+    gamma:       0.50
+    blur:        0.40
+    bias:        0.50
+    scale_int:   0.40     # RandScaleIntensityd
+    shift_int:   0.40     # RandShiftIntensityd
+    hist_shift:  0.30     # RandHistogramShiftd
+    noise:       0.30     # Gaussian noise
+    rician:      0.0     # Rician noise
+    gibbs:       0.0     # Gibbs ringing
+    resolution:  0.30     # RandomResolutionD
+    coarse_do:   0.0     # RandCoarseDropoutd
+    spike:       0.0     # TorchIO spike artefact
+    ghost:       0.0    # TorchIO ghosting
+    crop:        1.00     # RandSpatialCropd
+
+  # ── geometric parameters ─────────────────────────────────────────────
+  enable_spatial:  true
+  scaling_range:   [0.5, 1.5]            # uniform per-axis scale
+  rotation_range:  15.0                  # degrees (±)
+  shearing_bounds: 0.05                  # shear factor
+  nonlinear_std:   5.5                   # (if you extend elastic)
+
+  # ── intensity parameters ─────────────────────────────────────────────
+  contrast_range:  [0.6, 1.6]            # RandAdjustContrast & ScaleIntensity
+  log_gamma_std:   0.20                  # RandGammaD (log-space σ)
+  bias_field_range: [0.0, 0.4]           # RandBiasFieldd
+  shift_intensity_offsets: [-0.1, 0.1]   # RandShiftIntensityd
+  histogram_num_control_points: [5, 10]  # RandHistogramShiftd
+
+  # noise
+  noise_std_range:   [0.0, 0.07]         # Gaussian σ
+  rician_std_range:  [0.0, 0.07]         # Rician σ
+  gibbs_alpha_range: [0.0, 1.0]          # Gibbs α (0→none, 1→strong)
+
+  # ── resolution / simulation ──────────────────────────────────────────
+  enable_simulation: true
+  max_res_iso:       3.0                 # upper isotropic voxel-size (mm)
+  resolution_range:  [1.0, 1.5]          # passed to RandomResolutionD
+  coarse_dropout_size: [20, 20, 20]      # voxel size of cut-out cubes
+
+  # ── TorchIO artefacts (only used if `use_torchio: true`) ─────────────
+  enable_artifacts: true
+  elastic_max_disp:   5.0                # voxels, RandomElasticDeformation
+  spike_num_range:    [1, 6]
+  spike_intensity_range: [0.1, 0.6]
+  ghost_num_range:    [2, 10]
+
+  # ── misc / bookkeeping ───────────────────────────────────────────────
+  #max_augmentations_per_sample: 5        # (not implemented yet)
+
+# ──────────────────────────  TRAINING  ────────────────────────── #
 training:
   batch_size: 8
-  epochs: 100
-  learning_rate: 0.0001
-  weight_decay: 0.00001
-  optimizer: "adamw"  # Options: adam, adamw, sgd, rmsprop
-  scheduler: "cosine"  # Options: cosine, plateau, onecycle, step, none
+  epochs: 150
+
+  # optimiser & LR
+  learning_rate: 0.001
+  weight_decay:  0.00001
+  optimizer: "sgd"                       # adam | adamw | sgd | rmsprop | radam | novograd
+  scheduler: "cosine"                      # cosine | plateau | onecycle | step | none
   scheduler_params:
-    T_max: 100
-    eta_min: 0.000001
-  loss: "huber_mae"  # Options: mse, mae, huber, huber_mae, weighted_mse
+    T_max: 200
+    eta_min: 0.00001
+    # epochs: 200
+
+  # losses
+  loss: "mse"                        # mse | mae | huber | huber_mae | weighted_mse
   loss_params:
     delta: 1.0
     mae_weight: 0.5
-  early_stopping_patience: 10
-  gradient_accumulation_steps: 1
-  use_amp: true
 
-# Output configuration
+  # misc
+  early_stopping_patience: 8
+  gradient_accumulation_steps: 1
+  use_amp: true                            # mixed precision if CUDA present
+
+# ────────────────────────────  OUTPUT  ────────────────────────── #
 output:
   checkpoint_dir: "checkpoints"
   log_dir: "logs"
-  experiment_name: null  # Will be auto-generated if null
+  experiment_name: null                   # auto-generate if left null
 
-# Weights & Biases configuration
+# ─────────────────────────────  W&B  ──────────────────────────── #
 wandb:
-  use_wandb: true
-  project: "brain-age-prediction"
+  use_wandb: true                         # still requires $WANDB_API env-var
+  project: "brainage-model-training"
   entity: null
 
-# Miscellaneous
+# ───────────────────────── MISCELLANEOUS ───────────────────────── #
 seed: 42
-device: null  # Will use CUDA if available, otherwise CPU 
+device: null                              # cuda if available, else cpu
