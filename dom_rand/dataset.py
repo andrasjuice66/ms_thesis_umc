@@ -54,6 +54,8 @@ class BADataset(Dataset):
         # --- local per-process cache (OrderedDict) ---------------------- #
         self.cache_size    = max(0, cache_size)
         self._cache        : Dict[int, np.ndarray] = OrderedDict()
+        logging.info(f"Logging works!")
+        print(f"Logging works!")
 
     # ------------------------------------------------------------------ #
     #                           internal I/O                              #
@@ -69,6 +71,8 @@ class BADataset(Dataset):
 
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         img_np = self._load_volume(self.file_paths[idx])
+        print(f"Loading volume done{img_np.shape}")
+        logging.info(f"Loading volume done{img_np.shape}")
 
         # add to per-process cache
         if self.cache_size:
