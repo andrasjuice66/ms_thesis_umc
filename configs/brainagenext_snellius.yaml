@@ -16,9 +16,9 @@ data:
   shared_cache: 0
   preload: true
   num_workers: 8
-  pin_memory: true
+  pin_memory: false
   persistent_workers: true
-  pin_memory_device: "cuda"
+  pin_memory_device: ""
   prefetch_factor: 4
 
   # prefetch_factor: None
