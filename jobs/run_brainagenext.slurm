@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=brainagenext
-#SBATCH --partition=gpu_a100            
-#SBATCH --gres=gpu:a100:1
+#SBATCH --partition=gpu_h100            
+#SBATCH --gres=gpu:h100
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
 #SBATCH --time=00:10:00
