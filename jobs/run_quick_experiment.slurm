@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=sfcn
+#SBATCH --job-name=brainagenext
 #SBATCH --partition=gpu_a100            
 #SBATCH --gres=gpu:a100:1
 #SBATCH --cpus-per-task=8
