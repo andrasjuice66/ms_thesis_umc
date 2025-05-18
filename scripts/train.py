@@ -143,6 +143,7 @@ def main() -> None:
         cache_size   = cfg.get("data.cache_size", 0),
         )
 
+    logger.info("Creating test dataset")
     test_ds = BADataset(
 
         file_paths   = test_p,

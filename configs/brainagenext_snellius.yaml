@@ -28,6 +28,11 @@ model:
   dropout_rate: 0.5532
   use_attention: false                   
   checkpoint: null #"checkpoints/sfcn_20250511_152522_epoch100.pt"  # path to checkpoint file
+  model_id: "M"  # Options: "S", "B", "M", "L"
+  kernel_size: 3
+  deep_supervision: true
+  feature_size: 512
+  hidden_size: 64
 
 # ────────────────  DOMAIN-RANDOMISATION / AUGS  ───────────────── #
 # -------------------------------------------------------------------------
