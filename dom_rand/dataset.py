@@ -87,5 +87,7 @@ class BADataset(Dataset):
         # ---- 5. transform (train only) ------------------------------- #
         if self.transform is not None and self.mode == "train":
             sample = self.transform(sample)
-
+        
+        if sample is None:
+            raise RuntimeError("BADataset: Returned None sample")
         return sample
