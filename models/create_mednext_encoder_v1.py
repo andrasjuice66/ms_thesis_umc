@@ -42,7 +42,7 @@ def create_mednextv1_encoder_medium(num_input_channels, num_classes, kernel_size
         do_res=True,                     
         do_res_up_down = True,
         block_counts = [3,4,4,4,4,4,4,4,3],
-        checkpoint_style = 'outside_block'
+        checkpoint_style = None #'outside_block'
     )
 
 

@@ -204,6 +204,7 @@ class MedNeXt_Encoder(nn.Module):
             x = self.iterative_checkpoint(self.bottleneck, x)
             if self.do_ds:
                 x_ds_4 = checkpoint.checkpoint(self.out_4, x, self.dummy_tensor)
+            return x
 
         else:
             x_res_0 = self.enc_block_0(x)
