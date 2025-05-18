@@ -26,7 +26,7 @@ data:
 model:
   type: "brainagenext"                             # sfcn | resnet3d | efficientnet3d
   in_channels: 1
-  dropout_rate: 0.5532
+  dropout_rate: 0.2
   use_attention: false                   
   checkpoint: null #"checkpoints/sfcn_20250511_152522_epoch100.pt"  # path to checkpoint file
   model_id: "S"  # Options: "S", "B", "M", "L"

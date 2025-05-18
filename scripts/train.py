@@ -103,10 +103,6 @@ def main() -> None:
         data_dir,
     )
 
-    if len(test_p) == 0:
-        logger.error(f"No valid files found for test data. Check data_dir: {data_dir}")
-        sys.exit(1)
-
     logger.info("Initializing datasets...")
     logger.info("Creating training dataset")
 

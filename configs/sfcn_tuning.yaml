@@ -9,15 +9,19 @@ data:
   age_key:    "age"
   weight_key: "sample_weight"             
 
-  # loading / caching
   cache_dir: "data/cache"
-  cache_mode: "memory"                     # memory | disk | none
+  cache_mode: "memory"   
+  cache_size: 0            
+  shared_cache: 0
   preload: true
   num_workers: 8
   pin_memory: false
   persistent_workers: true
+  pin_memory_device: ""
   prefetch_factor: 4
-  target_shape: [182, 218, 182]            # (D,H,W) after optional resize
+
+  # prefetch_factor: None
+  target_shape: [182, 218, 182]          # (D,H,W) after optional resize
 
 # ───────────────────────────  MODEL  ──────────────────────────── #
 model:

@@ -54,16 +54,12 @@ class BADataset(Dataset):
         # --- local per-process cache (OrderedDict) ---------------------- #
         self.cache_size    = max(0, cache_size)
         self._cache        : Dict[int, np.ndarray] = OrderedDict()
-        logging.info(f"Logging works!")
-        print(f"Logging works!")
 
     # ------------------------------------------------------------------ #
     #                           internal I/O                              #
     # ------------------------------------------------------------------ #
     @staticmethod
     def _load_volume(path: str) -> np.ndarray:
-        logging.info(f"Loading volume from {path}")
-        print(f"Loading volume from {path}")
         return np.load(path)           # (D,H,W)  dtype=float32
 
     def __len__(self) -> int:
