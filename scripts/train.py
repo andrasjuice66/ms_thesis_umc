@@ -94,6 +94,18 @@ def main() -> None:
         train_csv,
         data_dir,
     )
+    val_p, val_a, val_w = read_csv(
+        val_csv,
+        data_dir,
+    )
+    test_p, test_a, test_w = read_csv(
+        test_csv,
+        data_dir,
+    )
+
+    if len(test_p) == 0:
+        logger.error(f"No valid files found for test data. Check data_dir: {data_dir}")
+        sys.exit(1)
 
     logger.info("Initializing datasets...")
     logger.info("Creating training dataset")
