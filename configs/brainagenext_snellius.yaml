@@ -18,7 +18,7 @@ data:
   num_workers: 8
   pin_memory: true
   persistent_workers: true
-  pin_memory_device: "cpu"
+  pin_memory_device: "cuda"
   prefetch_factor: 4
 
   # prefetch_factor: None
