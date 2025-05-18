@@ -15,9 +15,12 @@ data:
   cache_size: 0            
   shared_cache: 0
   preload: true
-  num_workers: 0
+  num_workers: 8
   pin_memory: true
-  persistent_workers: false
+  persistent_workers: true
+  pin_memory_device: "cpu"
+  prefetch_factor: 4
+
   # prefetch_factor: None
   target_shape: [182, 218, 182]            # (D,H,W) after optional resize
 
