@@ -75,7 +75,7 @@ class BADataset(Dataset):
                 self._cache.popitem(last=False)
             self._cache[idx] = img_np
 
-    # ---- 4. build sample dict ------------------------------------ #
+        # ---- 4. build sample dict ------------------------------------ #
         sample = {
             "image": torch.from_numpy(img_np).unsqueeze(0),   # (1,D,H,W)
             "age"  : torch.tensor(self.age_labels[idx], dtype=torch.float32),

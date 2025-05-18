@@ -311,14 +311,20 @@ class DomainRandomizer:
             subj = tio.Subject({self.image_key: tio.ScalarImage(tensor=img)})
             img = self.tio(subj)[self.image_key].data
 
-        # img = self.monai({self.image_key: img})[self.image_key]
-
         # MONAI (GPU-capable) transforms
-        result = self.monai({self.image_key: img})
-        if result is None:                   
-            raise RuntimeError("DomainRandomizer: MONAI pipeline dropped sample")
-
+        transform_input = {self.image_key: img}
+        result = self.monai(transform_input)
+        
+        # Check if result is None or if image key is missing
+        if result is None:
+            raise RuntimeError("DomainRandomizer: MONAI pipeline returned None")
+        
+        if self.image_key not in result:
+            raise RuntimeError(f"DomainRandomizer: Image key '{self.image_key}' missing after transforms")
+        
         img = result[self.image_key]
+        if img is None:
+            raise RuntimeError(f"DomainRandomizer: Image is None after transforms")
 
         # keep tensors on the same device
         sample[self.image_key] = img
