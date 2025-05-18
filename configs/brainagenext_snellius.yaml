@@ -15,10 +15,10 @@ data:
   cache_size: 0            
   shared_cache: 0
   preload: true
-  num_workers: 8
+  num_workers: 0
   pin_memory: true
-  persistent_workers: true
-  prefetch_factor: 4
+  persistent_workers: false
+  # prefetch_factor: None
   target_shape: [182, 218, 182]            # (D,H,W) after optional resize
 
 # ───────────────────────────  MODEL  ──────────────────────────── #

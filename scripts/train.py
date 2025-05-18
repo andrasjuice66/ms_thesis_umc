@@ -168,7 +168,7 @@ def main() -> None:
         pin_memory        = cfg.get("data.pin_memory", True),
         pin_memory_device = cfg.get("data.pin_memory_device"),
         persistent_workers= cfg.get("data.persistent_workers", True),
-        prefetch_factor   = cfg.get("data.prefetch_factor", 2),
+        prefetch_factor   = cfg.get("data.prefetch_factor"),
     )
 
     logger.info("Creating training data loader")
