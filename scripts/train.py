@@ -266,8 +266,9 @@ def main() -> None:
         if np.isinf(best_val):                     
             raise Exception("Best validation metric is not yet set")
         
-    except Exception as e:
-        logger.error(f"Training failed: {e}")
+    except Exception:
+        logger.error(f"Training failed")
+        raise
 
     # 10. ─── evaluate ─────────────────────────────────────── #
     try:
@@ -275,8 +276,9 @@ def main() -> None:
         metrics = trainer.evaluate(test_loader)
         logger.info(f"Evaluation results: {metrics}")
         if use_wandb: wandb.log({"test/metrics": metrics})
-    except Exception as e:
-        logger.error(f"Eval failed: {e}")
+    except Exception:
+        logger.error(f"Eval failed")
+        raise
     finally:
         if use_wandb: wandb.finish()
         logger.info("All done.")
