@@ -19,5 +19,5 @@ conda activate thesis
 # mkdir -p $SCRATCH && cp -r /project/<proj>/data/dataset $SCRATCH
 
 # 3) launch training exactly as on your laptop
-cd $HOME/brain_age_pred
+cd $HOME/
 python -m brain_age_pred.training.train brain_age_pred/configs/brainagenext_snellius.yaml
