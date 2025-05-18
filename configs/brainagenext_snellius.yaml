@@ -1,9 +1,9 @@
 # ────────────────────────────  DATA  ──────────────────────────── #
 data:
   data_dir: "/scratch-shared/ajoos/brain_age/"               # root that contains all images
-  train_csv: "home/ajoos/ms_thesis_umc/data/labels/train.csv"
-  val_csv:   "home/ajoos/ms_thesis_umc/data/labels/val.csv"
-  test_csv:  "home/ajoos/ms_thesis_umc/data/labels/test.csv"
+  train_csv: "home/ajoos/brain_age_pred/data/labels/train.csv"
+  val_csv:   "home/ajoos/brain_age_pred/data/labels/val.csv"
+  test_csv:  "home/ajoos/brain_age_pred/data/labels/test.csv"
 
   image_key:  "image_path"
   age_key:    "age"
@@ -103,11 +103,11 @@ domain_randomization:
 
 # ──────────────────────────  TRAINING  ────────────────────────── #
 training:
-  batch_size: 8
-  epochs: 100
+  batch_size: 4
+  epochs: 150
 
   # optimiser & LR
-  learning_rate: 0.002193
+  learning_rate: 0.001
   weight_decay:  0.00001
   optimizer: "sgd"                       # adam | adamw | sgd | rmsprop | radam | novograd
   scheduler: "cosine"                      # cosine | plateau | onecycle | step | none
