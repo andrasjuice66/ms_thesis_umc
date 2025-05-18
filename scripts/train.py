@@ -94,18 +94,33 @@ def main() -> None:
         train_csv,
         data_dir,
     )
+    logger.info(f"Train data: {len(train_p)} files, {len(train_a)} labels, {len(train_w)} weights")
+
+    if len(train_p) == 0:
+        logger.error(f"No valid files found for train data. Check data_dir: {data_dir}")
+        sys.exit(1)
+
     logger.info(f"Reading validation CSV from {val_csv}")
-    val_p,   val_a, _ = read_csv(
+    val_p, val_a, val_w = read_csv(
         val_csv,
         data_dir,
     )
+    logger.info(f"Validation data: {len(val_p)} files, {len(val_a)} labels, {len(val_w)} weights")
+
+    if len(val_p) == 0:
+        logger.error(f"No valid files found for validation data. Check data_dir: {data_dir}")
+        sys.exit(1)
+
     logger.info(f"Reading test CSV from {test_csv}")
-    test_p,  test_a, _ = read_csv(
+    test_p, test_a, test_w = read_csv(
         test_csv,
         data_dir,
     )
+    logger.info(f"Test data: {len(test_p)} files, {len(test_a)} labels, {len(test_w)} weights")
 
-    print(f"Train data: {train_p}, {train_a}, {train_w}")
+    if len(test_p) == 0:
+        logger.error(f"No valid files found for test data. Check data_dir: {data_dir}")
+        sys.exit(1)
 
     logger.info("Initializing datasets...")
     logger.info("Creating training dataset")
