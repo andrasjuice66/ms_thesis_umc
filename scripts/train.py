@@ -25,7 +25,7 @@ from brain_age_pred.models.brainagenext import BrainAgeNeXt
 from brain_age_pred.training.trainer import BrainAgeTrainer
 from brain_age_pred.utils.logger import setup_logger
 from brain_age_pred.utils.utils import set_seed, read_csv, load_checkpoint
-from torch.utils.data import WeightedRandomSampler
+from torch.utils.data import WeightedRandomSampler, DataLoader
 
 
 

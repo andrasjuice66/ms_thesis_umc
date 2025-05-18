@@ -69,31 +69,25 @@ class BADataset(Dataset):
     def __len__(self) -> int:
         return len(self.file_paths)
 
-    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
+    def __getitem__(self, idx: int):
         img_np = self._load_volume(self.file_paths[idx])
-        print(f"Loading volume done{img_np.shape}")
-        logging.info(f"Loading volume done{img_np.shape}")
 
-        # add to per-process cache
-        if self.cache_size:
-            # evict oldest if full
-            if len(self._cache) >= self.cache_size:
-                self._cache.popitem(last=False)
-            self._cache[idx] = img_np
-
-    # ---- 4. build sample dict ------------------------------------ #
         sample = {
-            "image": torch.from_numpy(img_np).unsqueeze(0),   # (1,D,H,W)
-            "age"  : torch.tensor(self.age_labels[idx], dtype=torch.float32),
+            "image": torch.from_numpy(img_np).unsqueeze(0),
+            "age":   torch.tensor(self.age_labels[idx], dtype=torch.float32),
         }
         if self.sample_wts is not None:
             sample["weight"] = torch.tensor(self.sample_wts[idx],
                                             dtype=torch.float32)
 
-        # ---- 5. transform (train only) ------------------------------- #
+        # ---- transform -------------------------------------------------
         if self.transform is not None and self.mode == "train":
             sample = self.transform(sample)
-        
+
+        # ---- sanity checks --------------------------------------------
         if sample is None:
-            raise RuntimeError("BADataset: Returned None sample")
+            raise RuntimeError(f"Transform returned None for idx {idx}")
+        if sample.get("image") is None:
+            raise RuntimeError(f"Image is None for idx {idx}")
+
         return sample
