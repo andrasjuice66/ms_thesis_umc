@@ -13,6 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing   import List, Optional, Dict
 from collections import OrderedDict
+import logging
 
 import numpy as np
 import torch
@@ -59,7 +60,8 @@ class BADataset(Dataset):
     # ------------------------------------------------------------------ #
     @staticmethod
     def _load_volume(path: str) -> np.ndarray:
-        #print(f"Loading volume from {path}")
+        logging.info(f"Loading volume from {path}")
+        print(f"Loading volume from {path}")
         return np.load(path)           # (D,H,W)  dtype=float32
 
     def __len__(self) -> int:
@@ -75,7 +77,7 @@ class BADataset(Dataset):
                 self._cache.popitem(last=False)
             self._cache[idx] = img_np
 
-        # ---- 4. build sample dict ------------------------------------ #
+    # ---- 4. build sample dict ------------------------------------ #
         sample = {
             "image": torch.from_numpy(img_np).unsqueeze(0),   # (1,D,H,W)
             "age"  : torch.tensor(self.age_labels[idx], dtype=torch.float32),
