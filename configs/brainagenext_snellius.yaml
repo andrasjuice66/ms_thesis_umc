@@ -30,7 +30,7 @@ model:
   in_channels: 1
   dropout_rate: 0.2
   use_attention: false                   
-  checkpoint: "/home/ajoos/brain_age_pred/output/checkpoints/brainagenext_20250519_160952_epoch28.pt"  # path to checkpoint file
+  checkpoint: "/home/ajoos/brain_age_pred/output/checkpoints/brainagenext_20250519_160952/brainagenext_20250519_160952_epoch028.pt"  # path to checkpoint file
   model_id: "M"  # Options: "S", "B", "M", "L"
   kernel_size: 3
   deep_supervision: false

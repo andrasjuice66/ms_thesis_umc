@@ -5,7 +5,7 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
 #SBATCH --time=10:00:00
-#SBATCH --output=/home/%u/logs/%x_%j.out   
+#SBATCH --output=/home/%u/brain_age_pred/output/run_logs/%x_%j.out   
 #SBATCH --mail-type=FAIL,END               
 
 set -euo pipefail
