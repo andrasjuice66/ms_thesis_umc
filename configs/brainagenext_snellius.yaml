@@ -30,7 +30,7 @@ model:
   in_channels: 1
   dropout_rate: 0.2
   use_attention: false                   
-  checkpoint: null #"checkpoints/sfcn_20250511_152522_epoch100.pt"  # path to checkpoint file
+  checkpoint: "/home/ajoos/brain_age_pred/output/checkpoints/brainagenext_20250519_160952_epoch28.pt"  # path to checkpoint file
   model_id: "M"  # Options: "S", "B", "M", "L"
   kernel_size: 3
   deep_supervision: false
@@ -56,7 +56,7 @@ domain_randomization:
   # ── per-transform probabilities (omit to use defaults) ───────────────
   transform_probs:
     flip:        0.50
-    affine:      0.80
+    affine:      0.60
     elastic:     0.0     # TorchIO elastic deformation
     contrast:    0.60
     gamma:       0.50
@@ -115,7 +115,7 @@ training:
   epochs: 150
 
   # optimiser & LR
-  learning_rate: 0.001
+  learning_rate: 0.0005
   weight_decay:  0.00001
   optimizer: "adamw"                       # adam | adamw | sgd | rmsprop | radam | novograd
   scheduler: "cosine"                      # cosine | plateau | onecycle | step | none

@@ -205,8 +205,6 @@ def main() -> None:
             checkpoint_info = load_checkpoint(model, checkpoint_path, device, logger)
             if checkpoint_info:
                 logger.info(f"Loaded checkpoint from epoch {checkpoint_info.get('epoch', 'unknown')}")
-                if checkpoint_info.get('best_metric'):
-                    logger.info(f"Best metric from checkpoint: {checkpoint_info['best_metric']}")
         except Exception as e:
             logger.error(f"Failed to load checkpoint: {e}")
 
