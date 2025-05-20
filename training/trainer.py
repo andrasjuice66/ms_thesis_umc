@@ -322,6 +322,7 @@ class BrainAgeTrainer:
         self.model.eval()
         running_loss: float = 0.0
         preds_all, targets_all = [], []
+        modalities_all, sexes_all = [], []
 
         with torch.no_grad():
             pbar = tqdm(
@@ -335,11 +336,17 @@ class BrainAgeTrainer:
                 running_loss += loss.item()
                 preds_all.append(preds.cpu().numpy())
                 targets_all.append(batch["age"].cpu().numpy())
+                if "modality" in batch:
+                    modalities_all.extend(batch["modality"])
+                if "sex" in batch:
+                    sexes_all.extend(batch["sex"])
                 pbar.set_postfix(loss=loss.item())
 
         metrics = calculate_metrics(
             np.concatenate(preds_all),
             np.concatenate(targets_all),
+            modalities=modalities_all if modalities_all else None,
+            sexes=sexes_all if sexes_all else None,
         )
         metrics["loss"] = running_loss / len(self.val_loader)
 
@@ -449,6 +456,7 @@ class BrainAgeTrainer:
         
         running_loss: float = 0.0
         preds_all, targets_all = [], []
+        modalities_all, sexes_all = [], []
         
         with torch.no_grad():
             pbar = tqdm(
@@ -462,11 +470,17 @@ class BrainAgeTrainer:
                 running_loss += loss.item()
                 preds_all.append(preds.cpu().numpy())
                 targets_all.append(batch["age"].cpu().numpy())
+                if "modality" in batch:
+                    modalities_all.extend(batch["modality"])
+                if "sex" in batch:
+                    sexes_all.extend(batch["sex"])
                 pbar.set_postfix(loss=loss.item())
         
         metrics = calculate_metrics(
             np.concatenate(preds_all),
             np.concatenate(targets_all),
+            modalities=modalities_all if modalities_all else None,
+            sexes=sexes_all if sexes_all else None,
         )
         metrics["loss"] = running_loss / len(test_loader)
         

@@ -28,6 +28,8 @@ class BADataset(Dataset):
     ----------
     file_paths   : list of paths to .npy volumes
     age_labels   : same length list/array of float ages
+    modalities   : optional list of modalities per sample
+    sexes        : optional list of sexes per sample
     sample_wts   : optional per-sample weights
     transform    : callable transform to run *in the worker / CPU*
     cache_size   : 0  → no per-worker cache  (recommended)
@@ -39,14 +41,22 @@ class BADataset(Dataset):
         self,
         file_paths   : List[str | Path],
         age_labels   : List[float],
+        modalities   : Optional[List[str]] = None,
+        sexes        : Optional[List[str]] = None,
         sample_wts   : Optional[List[float]] = None,
         transform    = None,
         cache_size   : int = 0,        # 0 ⇒ off
         mode         : str = "train",
     ):
         assert len(file_paths) == len(age_labels), "len(paths) ≠ len(labels)"
+        if modalities is not None:
+            assert len(modalities) == len(file_paths), "len(modalities) ≠ len(paths)"
+        if sexes is not None:
+            assert len(sexes) == len(file_paths), "len(sexes) ≠ len(paths)"
         self.file_paths    = [str(p) for p in file_paths]
         self.age_labels    = age_labels
+        self.modalities    = modalities
+        self.sexes         = sexes
         self.sample_wts    = sample_wts
         self.transform     = transform
         self.mode          = mode.lower()
@@ -73,8 +83,11 @@ class BADataset(Dataset):
             "age":   torch.tensor(self.age_labels[idx], dtype=torch.float32),
         }
         if self.sample_wts is not None:
-            sample["weight"] = torch.tensor(self.sample_wts[idx],
-                                            dtype=torch.float32)
+            sample["weight"] = torch.tensor(self.sample_wts[idx], dtype=torch.float32)
+        if self.modalities is not None:
+            sample["modality"] = self.modalities[idx]
+        if self.sexes is not None:
+            sample["sex"] = self.sexes[idx]
 
         # ---- transform -------------------------------------------------
         if self.transform is not None and self.mode == "train":

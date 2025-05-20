@@ -31,9 +31,11 @@ def read_csv(
     image_key: str = "image_path",
     age_key: str = "age",
     weight_key: str = "sample_weight",
+    sex_key: str = "sex",
+    modalities_key: str = "modality",
 ) -> Tuple[List[str], List[float], List[float]]:
     df = pd.read_csv(csv_path)
-    paths, ages, weights = [], [], []
+    paths, ages, weights, sexes, modalities = [], [], [], [], []
     data_root = Path(data_root)  # Ensure data_root is a Path object
     for _, row in df.iterrows():
         rel_path = row[image_key]
@@ -43,7 +45,9 @@ def read_csv(
             paths.append(str(fpath))
             ages.append(float(row[age_key]))
             weights.append(float(row[weight_key]))
-    return paths, ages, weights
+            sexes.append(row[sex_key])
+            modalities.append(row[modalities_key])
+    return paths, ages, weights, sexes, modalities
 
 def load_checkpoint(model, checkpoint_path, device, logger):
     """

@@ -75,11 +75,14 @@ def main() -> None:
     # 5. ─── transforms (GPU-ready) ───────────────────────────── #
     logger.info("Initializing domain randomization transforms...")
     rand_cfg = cfg.get("domain_randomization", {})
-    transform = DomainRandomizer(
-        device=torch.device(device),
-        **rand_cfg,
-    )
-    logger.info("Domain randomizer initialized")
+    if rand_cfg.get("use_domain_randomization", False):
+        transform = DomainRandomizer(
+            device=torch.device(device),
+            **rand_cfg,)
+        
+        logger.info(f"Domain randomizer initialized:{rand_cfg.get('use_domain_randomization')}")
+    else:
+        transform = None
 
     # 6. ─── CSV → dataset / sampler ─────────────────────────── #
     logger.info("Reading CSV files...")
@@ -90,15 +93,15 @@ def main() -> None:
     
 
     logger.info(f"Reading train CSV from {train_csv}")
-    train_p, train_a, train_w = read_csv(
+    train_p, train_a, train_w, train_s, train_m = read_csv(
         train_csv,
         data_dir,
     )
-    val_p, val_a, val_w = read_csv(
+    val_p, val_a, val_w, val_s, val_m = read_csv(
         val_csv,
         data_dir,
     )
-    test_p, test_a, test_w = read_csv(
+    test_p, test_a, test_w, test_s, test_m = read_csv(
         test_csv,
         data_dir,
     )
