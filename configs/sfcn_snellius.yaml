@@ -37,70 +37,57 @@ model:
 # accepted by the new DomainRandomizer class.
 # -------------------------------------------------------------------------
 domain_randomization:
+  use_domain_randomization: false
   # ── progressive randomization ───────────────────────────────────
   progressive_epochs: 50                  # Number of epochs to reach full randomization
   progressive_start: 0.2                  # Starting probability multiplier (0.2 = 20% of final probs)
 
   # ── global toggles ────────────────────────────────────────────────────
-  augmentation_strength: "medium"        # optional meta-flag (not parsed)
   use_torchio: false                     # enable heavy TorchIO artefacts
   output_shape:        [182, 218, 182]   # None ⇒ keep full FoV
 
-  # ── per-transform probabilities (omit to use defaults) ───────────────
   transform_probs:
-    flip:        0.50
-    affine:      0.80
-    elastic:     0.0     # TorchIO elastic deformation
-    contrast:    0.60
-    gamma:       0.50
-    blur:        0.40
-    bias:        0.50
-    scale_int:   0.40     # RandScaleIntensityd
-    shift_int:   0.40     # RandShiftIntensityd
-    hist_shift:  0.30     # RandHistogramShiftd
-    noise:       0.30     # Gaussian noise
-    rician:      0.0     # Rician noise
-    gibbs:       0.0     # Gibbs ringing
-    resolution:  0.30     # RandomResolutionD
-    coarse_do:   0.0     # RandCoarseDropoutd
-    spike:       0.0     # TorchIO spike artefact
-    ghost:       0.0    # TorchIO ghosting
-    crop:        1.00     # RandSpatialCropd
+    flip: 1.00        # From flipping=True in BrainGenerator
+    affine: 1.00      # Enable affine transforms (scaling, rotation, shearing)
+    elastic: 1.00     # From nonlin_std > 0
+    contrast: 0.70    # Keep current
+    gamma: 0.50       # Keep current
+    blur: 0.40        # Keep current
+    bias: 1.00        # From bias_field_std > 0
+    scale_int: 0.40   # Keep current
+    shift_int: 0.40   # Keep current
+    hist_shift: 0.30  # Keep current
+    noise: 0.30       # Keep current
+    rician: 0.30      # Keep current
+    gibbs: 0.30       # Keep current
+    resolution: 1.00  # From randomise_res=True
+    coarse_do: 0.0    # Keep current
+    spike: 0.0        # Keep current
+    ghost: 0.0        # Keep current
+    crop: 1.00        # Keep current
 
   # ── geometric parameters ─────────────────────────────────────────────
-  enable_spatial:  true
-  scaling_range:   [0.5, 1.5]            # uniform per-axis scale
-  rotation_range:  15.0                  # degrees (±)
-  shearing_bounds: 0.05                  # shear factor
-  nonlinear_std:   5.5                   # (if you extend elastic)
+  enable_spatial: true
+  scaling_range: [0.8, 1.2]        # From scaling_bounds=0.2 (1±0.2)
+  rotation_range: 15.0             # From rotation_bounds=15
+  shearing_bounds: 0.012           # From shearing_bounds=0.012
+  nonlinear_std: 4.0               # From nonlin_std=4.0
+  translation_bounds: false        # From translation_bounds=False
 
   # ── intensity parameters ─────────────────────────────────────────────
-  contrast_range:  [0.6, 1.6]            # RandAdjustContrast & ScaleIntensity
-  log_gamma_std:   0.20                  # RandGammaD (log-space σ)
-  bias_field_range: [0.0, 0.4]           # RandBiasFieldd
-  shift_intensity_offsets: [-0.1, 0.1]   # RandShiftIntensityd
-  histogram_num_control_points: [5, 10]  # RandHistogramShiftd
-
-  # noise
-  noise_std_range:   [0.0, 0.07]         # Gaussian σ
-  rician_std_range:  [0.0, 0.07]         # Rician σ
-  gibbs_alpha_range: [0.0, 1.0]          # Gibbs α (0→none, 1→strong)
+  contrast_range: [0.6, 1.6]       # Keep current
+  log_gamma_std: 0.20             # Keep current
+  bias_field_range: [0.0, 0.7]     # From bias_field_std=0.7
+  shift_intensity_offsets: [-0.1, 0.1]  # Keep current
+  histogram_num_control_points: [5, 10]  # Keep current
 
   # ── resolution / simulation ──────────────────────────────────────────
   enable_simulation: true
-  max_res_iso:       3.0                 # upper isotropic voxel-size (mm)
-  resolution_range:  [1.0, 1.5]          # passed to RandomResolutionD
-  coarse_dropout_size: [20, 20, 20]      # voxel size of cut-out cubes
+  max_res_iso: 4.0                 # From max_res_iso=4.0
+  resolution_range: [1.0, 1.5]     # Keep current
+  coarse_dropout_size: [20, 20, 20]  # Keep current
 
-  # ── TorchIO artefacts (only used if `use_torchio: true`) ─────────────
-  enable_artifacts: true
-  elastic_max_disp:   5.0                # voxels, RandomElasticDeformation
-  spike_num_range:    [1, 6]
-  spike_intensity_range: [0.1, 0.6]
-  ghost_num_range:    [2, 10]
 
-  # ── misc / bookkeeping ───────────────────────────────────────────────
-  #max_augmentations_per_sample: 5        # (not implemented yet)
 
 # ──────────────────────────  TRAINING  ────────────────────────── #
 training:

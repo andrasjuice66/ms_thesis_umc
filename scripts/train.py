@@ -79,10 +79,9 @@ def main() -> None:
         transform = DomainRandomizer(
             device=torch.device(device),
             **rand_cfg,)
-        
-        logger.info(f"Domain randomizer initialized:{rand_cfg.get('use_domain_randomization')}")
     else:
         transform = None
+    logger.info(f"Domain randomizer initialized:{rand_cfg.get('use_domain_randomization')}")
 
     # 6. ─── CSV → dataset / sampler ─────────────────────────── #
     logger.info("Reading CSV files...")
