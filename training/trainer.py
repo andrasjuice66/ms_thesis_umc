@@ -302,6 +302,8 @@ class BrainAgeTrainer:
         metrics = calculate_metrics(
             np.concatenate(preds_all),
             np.concatenate(targets_all),
+            
+
         )
         metrics.update({
             "loss"      : running_loss / num_batches,

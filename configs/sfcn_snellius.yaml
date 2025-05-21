@@ -28,7 +28,7 @@ model:
   in_channels: 1
   dropout_rate: 0.5532
   use_attention: false                   
-  checkpoint: null #"checkpoints/sfcn_20250511_152522_epoch100.pt"  # path to checkpoint file
+  checkpoint: None #"/home/ajoos/brain_age_pred/output/checkpoints/brainagenext_20250519_160952/brainagenext_20250519_160952_epoch028.pt"  # path to checkpoint file
 
 # ────────────────  DOMAIN-RANDOMISATION / AUGS  ───────────────── #
 # -------------------------------------------------------------------------
@@ -106,13 +106,13 @@ training:
     steps_per_epoch: 534
 
   # losses
-  loss: "huber_mae"                        # mse | mae | huber | huber_mae | weighted_mse
+  loss: "mae"                        # mse | mae | huber | huber_mae | weighted_mse
   loss_params:
     delta: 1.0
     mae_weight: 0.5
 
   # misc
-  early_stopping_patience: 8
+  early_stopping_patience: 15
   gradient_accumulation_steps: 1
   use_amp: true                            # mixed precision if CUDA present
 
