@@ -28,7 +28,7 @@ model:
   in_channels: 1
   dropout_rate: 0.5532
   use_attention: false                   
-  checkpoint: None #"/home/ajoos/brain_age_pred/output/checkpoints/brainagenext_20250519_160952/brainagenext_20250519_160952_epoch028.pt"  # path to checkpoint file
+  checkpoint: "/home/ajoos/home/ajoos/ms_thesis_umc/output/checkpoints/sfcn_20250521_124903/sfcn_20250521_124903_epoch062.pt"
 
 # ────────────────  DOMAIN-RANDOMISATION / AUGS  ───────────────── #
 # -------------------------------------------------------------------------
@@ -49,7 +49,6 @@ domain_randomization:
   transform_probs:
     flip: 1.00        # From flipping=True in BrainGenerator
     affine: 1.00      # Enable affine transforms (scaling, rotation, shearing)
-    elastic: 1.00     # From nonlin_std > 0
     contrast: 0.70    # Keep current
     gamma: 0.50       # Keep current
     blur: 0.40        # Keep current
@@ -95,7 +94,7 @@ training:
   epochs: 100
 
   # optimiser & LR
-  learning_rate: 0.002193
+  learning_rate: 0.0007193 #0.002193
   weight_decay:  0.00001
   optimizer: "sgd"                       # adam | adamw | sgd | rmsprop | radam | novograd
   scheduler: "cosine"                      # cosine | plateau | onecycle | step | none
@@ -112,13 +111,13 @@ training:
     mae_weight: 0.5
 
   # misc
-  early_stopping_patience: 15
+  early_stopping_patience: 25
   gradient_accumulation_steps: 1
   use_amp: true                            # mixed precision if CUDA present
 
 # ────────────────────────────  OUTPUT  ────────────────────────── #
 output:
-  output_dir: "home/ajoos/ms_thesis_umc/output"
+  output_dir: "/home/ajoos/brain_age_pred/output"
   checkpoint_dir: "checkpoints"
   log_dir: "logs"
   experiment_name: null                   # auto-generate if left null
