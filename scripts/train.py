@@ -97,10 +97,14 @@ def main() -> None:
         train_csv,
         data_dir,
     )
+    logger.info(f"Reading val CSV from {val_csv}")
+
     val_p, val_a, val_w, val_s, val_m = read_csv(
         val_csv,
         data_dir,
     )
+    logger.info(f"Reading test CSV from {test_csv}")
+
     test_p, test_a, test_w, test_s, test_m = read_csv(
         test_csv,
         data_dir,
@@ -189,7 +193,7 @@ def main() -> None:
             dropout_rate=cfg.get("model.dropout_rate"),
         ).to(device)
     elif mtype == "sfcn_original":
-        logger.info("Creating SFCN model")
+        logger.info("Creating SFCN Original model")
         model = SFCNOriginal(
             in_channels=cfg.get("model.in_channels"),
             dropout_rate=cfg.get("model.dropout_rate"),

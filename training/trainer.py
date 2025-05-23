@@ -281,7 +281,13 @@ class BrainAgeTrainer:
             end_evt   = torch.cuda.Event(enable_timing=True)
             start_evt.record()
 
-            loss, preds = self._step(batch, train=True)
+            if self.use_amp:
+                with autocast(device_type=self.device.type):
+                    preds = self.model(imgs)
+                    loss  = self._compute_loss(preds, ages, wts)
+            else:
+                preds = self.model(imgs)
+                loss  = self._compute_loss(preds, ages, wts)
 
             loss = loss / self.grad_accum_steps
             if self.use_amp:
