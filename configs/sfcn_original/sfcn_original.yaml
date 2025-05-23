@@ -1,9 +1,9 @@
 # ────────────────────────────  DATA  ──────────────────────────── #
 data:
-  data_dir: "/scratch-shared/ajoos/"               # root that contains all images
-  train_csv: "/home/ajoos/brain_age_pred/data/labels/train.csv"
-  val_csv:   "/home/ajoos/brain_age_pred/data/labels/val.csv"
-  test_csv:  "/home/ajoos/brain_age_pred/data/labels/test.csv"
+  data_dir: "Data"               # root that contains all images
+  train_csv: "brain_age_pred/data/labels/train.csv"
+  val_csv:   "brain_age_pred/data/labels/val.csv"
+  test_csv:  "brain_age_pred/data/labels/test.csv"
 
   image_key:  "image_path"
   age_key:    "age"
@@ -17,7 +17,7 @@ data:
   preload: true
   num_workers: 8
   pin_memory: false
-  pin_memory_device: ""
+  pin_memory_device: "cpu"
   persistent_workers: true
   prefetch_factor: 4
   target_shape: [182, 218, 182]            # (D,H,W) after optional resize
@@ -26,9 +26,9 @@ data:
 model:
   type: "sfcn"                             # sfcn | resnet3d | efficientnet3d
   in_channels: 1
-  dropout_rate: 0.5532
+  dropout_rate: 0.55
   use_attention: false                   
-  checkpoint: "/home/ajoos/brain_age_pred/output/checkpoints/sfcn_20250522_104159/sfcn_20250522_104159_epoch057.pt"
+  checkpoint: null #"checkpoints/sfcn_20250511_152522_epoch100.pt"  # path to checkpoint file
 
 # ────────────────  DOMAIN-RANDOMISATION / AUGS  ───────────────── #
 # -------------------------------------------------------------------------
@@ -37,18 +37,18 @@ model:
 # accepted by the new DomainRandomizer class.
 # -------------------------------------------------------------------------
 domain_randomization:
-  use_domain_randomization: false
-  # ── progressive randomization ───────────────────────────────────
-  progressive_epochs: 50                  # Number of epochs to reach full randomization
-  progressive_start: 0.2                  # Starting probability multiplier (0.2 = 20% of final probs)
-
+  use_domain_randomization: false  # Enable domain randomization
+  
   # ── global toggles ────────────────────────────────────────────────────
-  use_torchio: false                     # enable heavy TorchIO artefacts
-  output_shape:        [182, 218, 182]   # None ⇒ keep full FoV
+  augmentation_strength: "medium"
+  use_torchio: false
+  output_shape: [182, 218, 182]  # Keep current output shape
 
+  # ── per-transform probabilities ───────────────
   transform_probs:
     flip: 1.00        # From flipping=True in BrainGenerator
     affine: 1.00      # Enable affine transforms (scaling, rotation, shearing)
+    elastic: 1.00     # From nonlin_std > 0
     contrast: 0.70    # Keep current
     gamma: 0.50       # Keep current
     blur: 0.40        # Keep current
@@ -86,15 +86,17 @@ domain_randomization:
   resolution_range: [1.0, 1.5]     # Keep current
   coarse_dropout_size: [20, 20, 20]  # Keep current
 
-
+  # ── misc / bookkeeping ───────────────────────────────────────────────
+  progressive_epochs: 50           # Keep current
+  progressive_start: 0.2           # Keep current
 
 # ──────────────────────────  TRAINING  ────────────────────────── #
 training:
   batch_size: 8
-  epochs: 100
+  epochs: 150
 
   # optimiser & LR
-  learning_rate: 0.00028 #0.002193
+  learning_rate: 0.0019
   weight_decay:  0.00001
   optimizer: "sgd"                       # adam | adamw | sgd | rmsprop | radam | novograd
   scheduler: "cosine"                      # cosine | plateau | onecycle | step | none
@@ -105,19 +107,18 @@ training:
     steps_per_epoch: 534
 
   # losses
-  loss: "mae"                        # mse | mae | huber | huber_mae | weighted_mse
+  loss: "huber_mae"                        # mse | mae | huber | huber_mae | weighted_mse
   loss_params:
     delta: 1.0
     mae_weight: 0.5
 
   # misc
-  early_stopping_patience: 25
+  early_stopping_patience: 8
   gradient_accumulation_steps: 1
   use_amp: true                            # mixed precision if CUDA present
 
 # ────────────────────────────  OUTPUT  ────────────────────────── #
 output:
-  output_dir: "/home/ajoos/brain_age_pred/output"
   checkpoint_dir: "checkpoints"
   log_dir: "logs"
   experiment_name: null                   # auto-generate if left null

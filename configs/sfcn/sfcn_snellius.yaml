@@ -1,0 +1,133 @@
+# ────────────────────────────  DATA  ──────────────────────────── #
+data:
+  data_dir: "/scratch-shared/ajoos/"               # root that contains all images
+  train_csv: "/home/ajoos/brain_age_pred/data/labels/train.csv"
+  val_csv:   "/home/ajoos/brain_age_pred/data/labels/val.csv"
+  test_csv:  "/home/ajoos/brain_age_pred/data/labels/test.csv"
+
+  image_key:  "image_path"
+  age_key:    "age"
+  weight_key: "sample_weight"             
+
+  # loading / caching
+  cache_dir: "data/cache"
+  cache_mode: "memory"   
+  cache_size: 0            
+  shared_cache: 0
+  preload: true
+  num_workers: 8
+  pin_memory: false
+  pin_memory_device: ""
+  persistent_workers: true
+  prefetch_factor: 4
+  target_shape: [182, 218, 182]            # (D,H,W) after optional resize
+
+# ───────────────────────────  MODEL  ──────────────────────────── #
+model:
+  type: "sfcn"                             # sfcn | resnet3d | efficientnet3d
+  in_channels: 1
+  dropout_rate: 0.5532
+  use_attention: false                   
+  checkpoint: "/home/ajoos/brain_age_pred/output/checkpoints/sfcn_20250522_104159/sfcn_20250522_104159_epoch057.pt"
+
+# ────────────────  DOMAIN-RANDOMISATION / AUGS  ───────────────── #
+# -------------------------------------------------------------------------
+# Domain-randomisation settings
+# Every key here maps 1-to-1 to a keyword argument or probability override
+# accepted by the new DomainRandomizer class.
+# -------------------------------------------------------------------------
+domain_randomization:
+  use_domain_randomization: false
+  # ── progressive randomization ───────────────────────────────────
+  progressive_epochs: 50                  # Number of epochs to reach full randomization
+  progressive_start: 0.2                  # Starting probability multiplier (0.2 = 20% of final probs)
+
+  # ── global toggles ────────────────────────────────────────────────────
+  use_torchio: false                     # enable heavy TorchIO artefacts
+  output_shape:        [182, 218, 182]   # None ⇒ keep full FoV
+
+  transform_probs:
+    flip: 1.00        # From flipping=True in BrainGenerator
+    affine: 1.00      # Enable affine transforms (scaling, rotation, shearing)
+    contrast: 0.70    # Keep current
+    gamma: 0.50       # Keep current
+    blur: 0.40        # Keep current
+    bias: 1.00        # From bias_field_std > 0
+    scale_int: 0.40   # Keep current
+    shift_int: 0.40   # Keep current
+    hist_shift: 0.30  # Keep current
+    noise: 0.30       # Keep current
+    rician: 0.30      # Keep current
+    gibbs: 0.30       # Keep current
+    resolution: 1.00  # From randomise_res=True
+    coarse_do: 0.0    # Keep current
+    spike: 0.0        # Keep current
+    ghost: 0.0        # Keep current
+    crop: 1.00        # Keep current
+
+  # ── geometric parameters ─────────────────────────────────────────────
+  enable_spatial: true
+  scaling_range: [0.8, 1.2]        # From scaling_bounds=0.2 (1±0.2)
+  rotation_range: 15.0             # From rotation_bounds=15
+  shearing_bounds: 0.012           # From shearing_bounds=0.012
+  nonlinear_std: 4.0               # From nonlin_std=4.0
+  translation_bounds: false        # From translation_bounds=False
+
+  # ── intensity parameters ─────────────────────────────────────────────
+  contrast_range: [0.6, 1.6]       # Keep current
+  log_gamma_std: 0.20             # Keep current
+  bias_field_range: [0.0, 0.7]     # From bias_field_std=0.7
+  shift_intensity_offsets: [-0.1, 0.1]  # Keep current
+  histogram_num_control_points: [5, 10]  # Keep current
+
+  # ── resolution / simulation ──────────────────────────────────────────
+  enable_simulation: true
+  max_res_iso: 4.0                 # From max_res_iso=4.0
+  resolution_range: [1.0, 1.5]     # Keep current
+  coarse_dropout_size: [20, 20, 20]  # Keep current
+
+
+
+# ──────────────────────────  TRAINING  ────────────────────────── #
+training:
+  batch_size: 8
+  epochs: 100
+
+  # optimiser & LR
+  learning_rate: 0.00028 #0.002193
+  weight_decay:  0.001
+  optimizer: "sgd"                       # adam | adamw | sgd | rmsprop | radam | novograd
+  scheduler: "cosine"                      # cosine | plateau | onecycle | step | none
+  scheduler_params:
+    T_max: 100
+    eta_min: 0.00001
+    epochs: 100
+    steps_per_epoch: 534
+
+  # losses
+  loss: "mae"                        # mse | mae | huber | huber_mae | weighted_mse
+  loss_params:
+    delta: 1.0
+    mae_weight: 0.5
+
+  # misc
+  early_stopping_patience: 25
+  gradient_accumulation_steps: 1
+  use_amp: true                            # mixed precision if CUDA present
+
+# ────────────────────────────  OUTPUT  ────────────────────────── #
+output:
+  output_dir: "/home/ajoos/brain_age_pred/output"
+  checkpoint_dir: "checkpoints"
+  log_dir: "logs"
+  experiment_name: null                   # auto-generate if left null
+
+# ─────────────────────────────  W&B  ──────────────────────────── #
+wandb:
+  use_wandb: true                         # still requires $WANDB_API env-var
+  project: "brainage-model-training"
+  entity: null
+
+# ───────────────────────── MISCELLANEOUS ───────────────────────── #
+seed: 42
+device: null                              # cuda if available, else cpu

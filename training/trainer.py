@@ -140,6 +140,20 @@ class BrainAgeTrainer:
         self.best_metric     = float("inf")       
         self.early_stop_counter = 0
 
+
+        # ─── support for soft-classification SFCN ────────────────────── #
+        # age grid & Gaussian-label bandwidth (σ) are configurable
+        self.age_min   = self.cfg.get("age_min", 20)
+        self.age_max   = self.cfg.get("age_max", 85)
+        self.soft_sigma = self.cfg.get("loss_params", {}).get("sigma", 1.0)
+
+        # tensor of bin centres, lives on the training device
+        self.bin_centres = torch.arange(
+            self.age_min,
+            self.age_max + 1,
+            device=self.device,
+            dtype=torch.float32,
+)
         # /--------- move model ----------/
         self.model.to(self.device)
         self.logger.info(f"Model: {self.model.__class__.__name__}")
@@ -161,47 +175,61 @@ class BrainAgeTrainer:
         weights: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """
-        Returns scalar loss; if `weighted_mse` is chosen or `weights`
-        tensor is provided we override reduction manually.
+        Handles both KL-divergence (soft-labels) and classic regression losses.
         """
+        if self.loss_name == "kl_div":
+            # outputs are log-probabilities, targets are probabilities
+            return self.criterion(outputs, targets)
+
         if self.loss_name == "weighted_mse" and weights is not None:
-            per_sample = F.mse_loss(
-                outputs.squeeze(), targets, reduction="none"
-            )
+            per_sample = F.mse_loss(outputs.squeeze(), targets, reduction="none")
             return _weighted_reduction(per_sample, weights)
-        # default: rely on criterion's internal reduction
+
         return self.criterion(outputs.squeeze(), targets)
 
     # ------------------------------------------------------------------ #
-    def _step(
-        self,
-        batch: Dict[str, torch.Tensor],
-        train: bool = True,
-    ) -> torch.Tensor:
-        """One forward/backward (if train) pass. Returns scalar loss."""
-        # First ensure all tensors are on the correct device
+    def _step(self, batch: Dict[str, torch.Tensor], train: bool = True):
         imgs = batch["image"].to(self.device, non_blocking=True)
         ages = batch["age"].float().to(self.device, non_blocking=True)
-        wts = batch.get("weight")
+        wts  = batch.get("weight")
         if wts is not None:
             wts = wts.to(self.device, non_blocking=True)
 
-        # Forward pass (with AMP if enabled)
+        # ─── forward (AMP or fp32) ───────────────────────────────── #
+        def fwd():
+            out = self.model(imgs)                       # logits or scalar
+            if self.loss_name == "kl_div":
+                tgt   = self._soft_label(ages)
+                loss  = self._compute_loss(out, tgt)     # KL
+                pred  = (out.exp() * self.bin_centres).sum(dim=1, keepdim=True)
+            else:
+                loss  = self._compute_loss(out, ages, wts)
+                pred  = out.detach()
+            return loss, pred
+
         if self.use_amp:
             with autocast(device_type=self.device.type):
-                preds = self.model(imgs)
-                loss = self._compute_loss(preds, ages, wts)
+                loss, pred = fwd()
         else:
-            preds = self.model(imgs)
-            loss = self._compute_loss(preds, ages, wts)
+            loss, pred = fwd()
 
+        # ─── backward / optim ────────────────────────────────────── #
         if train:
-            loss = loss / self.grad_accum_steps
+            loss_acc = loss / self.grad_accum_steps
             if self.use_amp:
-                self.scaler.scale(loss).backward()
+                self.scaler.scale(loss_acc).backward()
             else:
-                loss.backward()
-        return loss.detach(), preds.detach()
+                loss_acc.backward()
+        return loss.detach(), pred.detach()
+    
+    def _soft_label(self, ages: torch.Tensor) -> torch.Tensor:
+        """
+        Build a Gaussian target distribution for each age.
+        Returns shape (B, 66)  with rows summing to 1.
+        """
+        diff2 = (self.bin_centres - ages.unsqueeze(1)) ** 2
+        g = torch.exp(-0.5 * diff2 / (self.soft_sigma ** 2))
+        return g / (g.sum(dim=1, keepdim=True) + 1e-8)
 
     # ------------------------------------------------------------------ #
     def _optim_step(self) -> None:

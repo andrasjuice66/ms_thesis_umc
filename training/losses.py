@@ -89,6 +89,35 @@ class WeightedMSELoss(nn.Module):
         return torch.mean(weighted_squared_error)
 
 
+class KLDivergenceLoss(nn.Module):
+    """
+    KL Divergence loss for comparing probability distributions.
+    Assumes input is log-probabilities and target is probabilities.
+    """
+    def __init__(self, reduction: str = 'batchmean'):
+        """
+        Initialize the loss function.
+
+        Args:
+            reduction: Specifies the reduction to apply to the output: 'none' | 'batchmean' | 'sum' | 'mean'
+        """
+        super().__init__()
+        self.kl_div = nn.KLDivLoss(reduction=reduction)
+
+    def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        """
+        Calculate the KL divergence loss.
+
+        Args:
+            input: Log-probabilities (output of log_softmax)
+            target: Probabilities (output of softmax or one-hot)
+
+        Returns:
+            Loss value
+        """
+        return self.kl_div(input, target)
+
+
 def get_loss_function(loss_type: str, **kwargs) -> nn.Module:
     """
     Get the specified loss function.
@@ -112,7 +141,10 @@ def get_loss_function(loss_type: str, **kwargs) -> nn.Module:
             min_age=kwargs.get("min_age", 0.0),
             max_age=kwargs.get("max_age", 100.0),
             alpha=kwargs.get("alpha", 1.0)
-        )
+        ),
+        "kl_div": KLDivergenceLoss(
+            reduction=kwargs.get("reduction", "batchmean")
+        ),
     }
     
     if loss_type not in loss_functions:

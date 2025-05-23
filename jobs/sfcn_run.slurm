@@ -20,4 +20,4 @@ conda activate thesis
 
 # 3) launch training exactly as on your laptop
 cd $HOME/
-python -m brain_age_pred.scripts.train brain_age_pred/configs/sfcn_snellius.yaml
+python -m brain_age_pred.scripts.train brain_age_pred/configs/sfcn/sfcn_snellius.yaml
