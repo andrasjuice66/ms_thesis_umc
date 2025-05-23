@@ -242,16 +242,22 @@ class BrainAgeTrainer:
         self.optimizer.zero_grad(set_to_none=True)
 
 
-    def train_epoch(self, epoch: int) -> Dict[str, float]:
+    # ------------------------------------------------------------------ #
+    def train_epoch(self, epoch: int) -> dict[str, float]:
         """
-        One full training epoch **without** unnecessary synchronisation
-        or double device-transfer.  Returns a dict with loss/metrics +
-        average data- and GPU-times (seconds).
+        One training epoch that works for *both*
+        – regression models returning (B,) / (B,1)
+        – soft-classification models returning log-probs (B, n_bins)
+
+        All task-specific details are hidden inside `_step`.
         """
         self.model.train()
+        self.optimizer.zero_grad(set_to_none=True)
 
-        running_loss = 0.0
-        data_time_tot, gpu_time_tot = 0.0, 0.0
+        running_loss   = 0.0                      # for average epoch loss
+        data_time_tot  = 0.0
+        gpu_time_tot   = 0.0
+
         preds_all, targets_all = [], []
 
         pbar = tqdm(
@@ -261,92 +267,62 @@ class BrainAgeTrainer:
             desc=f"Epoch {epoch+1}/{self.epochs} [train]",
         )
 
-        self.optimizer.zero_grad(set_to_none=True)
-
         for step, batch in enumerate(pbar):
-
-            # ─── Host  ➜  Device  ───────────────────────────────────────── #
-            t0 = time.perf_counter()
-
-            imgs = batch["image"].to(self.device, non_blocking=True)
-            ages = batch["age"].to(self.device, non_blocking=True)
-            wts  = batch.get("weight")
-            if wts is not None:
-                wts = wts.to(self.device, non_blocking=True)
-
+            # --------------- host ➜ device time ------------------------ #
+            t0 = time.perf_counter()             
+            batch = {k: v.to(self.device, non_blocking=True) if
+                    torch.is_tensor(v) else v for k, v in batch.items()}
             data_time_tot += time.perf_counter() - t0
 
-            # ─── GPU compute  (timed with CUDA events)  ─────────────────── #
+            # ------------------- forward / backward -------------------- #
             start_evt = torch.cuda.Event(enable_timing=True)
             end_evt   = torch.cuda.Event(enable_timing=True)
             start_evt.record()
 
-            if self.use_amp:
-                with autocast(device_type=self.device.type):
-                    preds = self.model(imgs)
-                    loss  = self._compute_loss(preds, ages, wts)
-            else:
-                preds = self.model(imgs)
-                loss  = self._compute_loss(preds, ages, wts)
-
-            loss = loss / self.grad_accum_steps
-            if self.use_amp:
-                self.scaler.scale(loss).backward()
-            else:
-                loss.backward()
-
-            if (step + 1) % self.grad_accum_steps == 0:
-                if self.use_amp:
-                    self.scaler.step(self.optimizer)
-                    self.scaler.update()
-                else:
-                    self.optimizer.step()
-                self.optimizer.zero_grad(set_to_none=True)
+            loss, preds = self._step(batch, train=True)  
 
             end_evt.record()
-            torch.cuda.synchronize()                           # only for timing
-            gpu_time_tot += start_evt.elapsed_time(end_evt) / 1e3  # → seconds
+            torch.cuda.synchronize()
+            gpu_time_tot += start_evt.elapsed_time(end_evt) / 1e3  
 
-            # ─── bookkeeping & progress bar ────────────────────────────── #
-            running_loss += loss.item() * self.grad_accum_steps
-            preds_all.append(preds.detach().cpu().numpy())
-            targets_all.append(ages.detach().cpu().numpy())
+            # --------------- grad accumulation ------------------------ #
+            if (step + 1) % self.grad_accum_steps == 0:
+                self._optim_step()
 
-            pbar.set_postfix(
-                loss=f"{loss.item()*self.grad_accum_steps:.4f}",
-                data=f"{(data_time_tot/(step+1)):.3f}s",
-                gpu=f"{(gpu_time_tot/(step+1)):.3f}s",
-            )
+            # ---------------- bookkeeping ----------------------------- #
+            running_loss += loss.item()
+            preds_all.append(preds.cpu().numpy())
+            targets_all.append(batch["age"].cpu().numpy())
 
-        # ─── scheduler step (per-epoch) ─────────────────────────────────── #
+            pbar.set_postfix(loss=f"{loss.item():.4f}")
+
+        # last, if #batches is not divisible by grad_accum_steps
+        if (len(self.train_loader) % self.grad_accum_steps) != 0:
+            self._optim_step()
+
+        # ---------------- scheduler (per-epoch) ----------------------- #
         if self.scheduler is not None:
             self.scheduler.step()
 
-        # ─── aggregate metrics ──────────────────────────────────────────── #
-        num_batches   = len(self.train_loader)
-        avg_data_time = data_time_tot / num_batches
-        avg_gpu_time  = gpu_time_tot  / num_batches
+        # ---------------- Metrics & logging -------------------------- #
+        y_pred = np.concatenate(preds_all)
+        y_true = np.concatenate(targets_all)
 
-        metrics = calculate_metrics(
-            np.concatenate(preds_all),
-            np.concatenate(targets_all),
-            
-
-        )
+        metrics = calculate_metrics(y_pred, y_true)
         metrics.update({
-            "loss"      : running_loss / num_batches,
-            "data_time" : avg_data_time,
-            "gpu_time"  : avg_gpu_time,
+            "loss"      : running_loss / len(self.train_loader),
+            "data_time" : data_time_tot / len(self.train_loader),
+            "gpu_time"  : gpu_time_tot  / len(self.train_loader),
         })
 
-        # ─── logging ────────────────────────────────────────────────────── #
         self.logger.info(
             f"Epoch {epoch+1:03d} train | "
             f"loss={metrics['loss']:.4f}  mae={metrics['mae']:.3f}  "
-            f"data={avg_data_time:.3f}s  gpu={avg_gpu_time:.3f}s"
+            f"data={metrics['data_time']:.3f}s  gpu={metrics['gpu_time']:.3f}s"
         )
 
         return metrics
+
         # ------------------------------------------------------------------ #
     def validate(self, epoch: int) -> Dict[str, float]:
         self.model.eval()

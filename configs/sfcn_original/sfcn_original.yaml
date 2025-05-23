@@ -17,18 +17,20 @@ data:
   preload: true
   num_workers: 8
   pin_memory: false
-  pin_memory_device: "cpu"
+  pin_memory_device: ""
   persistent_workers: true
   prefetch_factor: 4
   target_shape: [182, 218, 182]            # (D,H,W) after optional resize
 
 # ───────────────────────────  MODEL  ──────────────────────────── #
 model:
-  type: "sfcn"                             # sfcn | resnet3d | efficientnet3d
+  type: "sfcn_original"                             # sfcn | resnet3d | efficientnet3d
   in_channels: 1
-  dropout_rate: 0.55
-  use_attention: false                   
-  checkpoint: null #"checkpoints/sfcn_20250511_152522_epoch100.pt"  # path to checkpoint file
+  dropout_rate: 0.5532
+  channels: [32, 64, 128, 256, 256, 64]
+  age_min: 20
+  age_max: 85
+  checkpoint: null #"/home/ajoos/brain_age_pred/output/checkpoints/sfcn_20250522_104159/sfcn_20250522_104159_epoch057.pt"
 
 # ────────────────  DOMAIN-RANDOMISATION / AUGS  ───────────────── #
 # -------------------------------------------------------------------------
@@ -37,18 +39,18 @@ model:
 # accepted by the new DomainRandomizer class.
 # -------------------------------------------------------------------------
 domain_randomization:
-  use_domain_randomization: false  # Enable domain randomization
-  
-  # ── global toggles ────────────────────────────────────────────────────
-  augmentation_strength: "medium"
-  use_torchio: false
-  output_shape: [182, 218, 182]  # Keep current output shape
+  use_domain_randomization: false
+  # ── progressive randomization ───────────────────────────────────
+  progressive_epochs: 50                  # Number of epochs to reach full randomization
+  progressive_start: 0.2                  # Starting probability multiplier (0.2 = 20% of final probs)
 
-  # ── per-transform probabilities ───────────────
+  # ── global toggles ────────────────────────────────────────────────────
+  use_torchio: false                     # enable heavy TorchIO artefacts
+  output_shape:        [182, 218, 182]   # None ⇒ keep full FoV
+
   transform_probs:
     flip: 1.00        # From flipping=True in BrainGenerator
     affine: 1.00      # Enable affine transforms (scaling, rotation, shearing)
-    elastic: 1.00     # From nonlin_std > 0
     contrast: 0.70    # Keep current
     gamma: 0.50       # Keep current
     blur: 0.40        # Keep current
@@ -86,39 +88,40 @@ domain_randomization:
   resolution_range: [1.0, 1.5]     # Keep current
   coarse_dropout_size: [20, 20, 20]  # Keep current
 
-  # ── misc / bookkeeping ───────────────────────────────────────────────
-  progressive_epochs: 50           # Keep current
-  progressive_start: 0.2           # Keep current
+
 
 # ──────────────────────────  TRAINING  ────────────────────────── #
 training:
   batch_size: 8
-  epochs: 150
+  epochs: 200
 
   # optimiser & LR
-  learning_rate: 0.0019
-  weight_decay:  0.00001
+  learning_rate: 0.001 #0.002193
+  weight_decay:  0.0001
   optimizer: "sgd"                       # adam | adamw | sgd | rmsprop | radam | novograd
   scheduler: "cosine"                      # cosine | plateau | onecycle | step | none
   scheduler_params:
     T_max: 100
-    eta_min: 0.00001
-    epochs: 100
+    eta_min: 0.0001
+    epochs: 150
     steps_per_epoch: 534
 
   # losses
-  loss: "huber_mae"                        # mse | mae | huber | huber_mae | weighted_mse
+  loss: "kl_div"                        # mse | mae | huber | huber_mae | weighted_mse, kl_div
   loss_params:
-    delta: 1.0
-    mae_weight: 0.5
-
+    reduction: "batchmean"
+    sigma: 1.0
   # misc
-  early_stopping_patience: 8
+  early_stopping_patience: 25
   gradient_accumulation_steps: 1
-  use_amp: true                            # mixed precision if CUDA present
+  use_amp: true    
+  
+  age_min: 20
+  age_max: 85
 
 # ────────────────────────────  OUTPUT  ────────────────────────── #
 output:
+  output_dir: "/brain_age_pred/output"
   checkpoint_dir: "checkpoints"
   log_dir: "logs"
   experiment_name: null                   # auto-generate if left null
