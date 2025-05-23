@@ -28,7 +28,7 @@ model:
   in_channels: 1
   dropout_rate: 0.5532
   use_attention: false                   
-  checkpoint: "/home/ajoos/home/ajoos/ms_thesis_umc/output/checkpoints/sfcn_20250521_124903/sfcn_20250521_124903_epoch062.pt"
+  checkpoint: "/home/ajoos/brain_age_pred/output/checkpoints/sfcn_20250522_104159/sfcn_20250522_104159_epoch057.pt"
 
 # ────────────────  DOMAIN-RANDOMISATION / AUGS  ───────────────── #
 # -------------------------------------------------------------------------
