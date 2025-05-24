@@ -6,9 +6,12 @@
 #SBATCH --mem=32G
 #SBATCH --time=10:00:00
 #SBATCH --output=/home/%u/logs/%x_%j.out   
-#SBATCH --mail-type=FAIL,END               
+#SBATCH --error=/home/%u/logs/%x_%j.err
+#SBATCH --mail-type=FAIL,END    
+#SBATCH --mail-user=a.g.joos@vu.student.nl
 
-set -euo pipefail
+set -x
+set -o pipefail
 
 # 1) activate your env
 source ~/.bashrc
