@@ -8,7 +8,7 @@
 #SBATCH --output=/home/%u/logs/%x_%j.out   
 #SBATCH --error=/home/%u/logs/%x_%j.err
 #SBATCH --mail-type=FAIL,END    
-#SBATCH --mail-user=a.g.joos@vu.student.nl
+#SBATCH --mail-user=a.g.joos@student.vu.nl
 
 set -x
 set -o pipefail

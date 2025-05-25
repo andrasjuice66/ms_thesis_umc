@@ -182,10 +182,19 @@ class BrainAgeTrainer:
             return self.criterion(outputs, targets)
 
         if self.loss_name == "weighted_mse" and weights is not None:
-            per_sample = F.mse_loss(outputs.squeeze(), targets, reduction="none")
+            # Ensure outputs are squeezed properly
+            outputs_squeezed = outputs.squeeze()
+            if outputs_squeezed.dim() == 0 and targets.dim() > 0:
+                outputs_squeezed = outputs_squeezed.unsqueeze(0)
+            per_sample = F.mse_loss(outputs_squeezed, targets, reduction="none")
             return _weighted_reduction(per_sample, weights)
 
-        return self.criterion(outputs.squeeze(), targets)
+        # Ensure proper shape for regression
+        outputs_squeezed = outputs.squeeze()
+        if outputs_squeezed.dim() == 0 and targets.dim() > 0:
+            outputs_squeezed = outputs_squeezed.unsqueeze(0)
+            
+        return self.criterion(outputs_squeezed, targets)
 
     # ------------------------------------------------------------------ #
     def _step(self, batch: Dict[str, torch.Tensor], train: bool = True):
@@ -204,7 +213,10 @@ class BrainAgeTrainer:
                 pred  = (out.exp() * self.bin_centres).sum(dim=1, keepdim=True)
             else:
                 loss  = self._compute_loss(out, ages, wts)
-                pred  = out.detach()
+                # Ensure proper shape for regression predictions
+                pred  = out.squeeze()
+                if pred.dim() == 0 and ages.dim() > 0:
+                    pred = pred.unsqueeze(0)
             return loss, pred
 
         if self.use_amp:
