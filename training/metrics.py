@@ -29,6 +29,21 @@ def calculate_metrics(
     predictions = predictions.reshape(-1)
     targets = targets.reshape(-1)
     
+    # DEBUG: Check for NaN values with detailed info
+    if np.isnan(predictions).any():
+        nan_count = np.isnan(predictions).sum()
+        total_count = len(predictions)
+        print(f"ERROR: Found {nan_count}/{total_count} NaN values in predictions!")
+        print(f"Predictions shape: {predictions.shape}")
+        print(f"Predictions min: {np.nanmin(predictions)}, max: {np.nanmax(predictions)}")
+        print(f"Non-NaN predictions range: {predictions[~np.isnan(predictions)][:10] if nan_count < total_count else 'All NaN!'}")
+        raise ValueError(f"Predictions contain {nan_count} NaN values out of {total_count} total predictions")
+    
+    if np.isnan(targets).any():
+        nan_count = np.isnan(targets).sum()
+        print(f"ERROR: Found {nan_count} NaN values in targets!")
+        raise ValueError(f"Targets contain {nan_count} NaN values")
+    
     # Calculate overall metrics
     mae = mean_absolute_error(targets, predictions)
     mse = mean_squared_error(targets, predictions)

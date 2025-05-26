@@ -207,6 +207,15 @@ class BrainAgeTrainer:
         # ─── forward (AMP or fp32) ───────────────────────────────── #
         def fwd():
             out = self.model(imgs)                       # logits or scalar
+            
+            # DEBUG: Check for NaN in model output
+            if torch.isnan(out).any():
+                print(f"NaN detected in model output! Shape: {out.shape}")
+                print(f"Output min: {out.min()}, max: {out.max()}")
+                print(f"Output contains {torch.isnan(out).sum()} NaN values")
+                print(f"Input image stats - min: {imgs.min()}, max: {imgs.max()}, mean: {imgs.mean()}")
+                raise ValueError("Model output contains NaN values")
+            
             if self.loss_name == "kl_div":
                 tgt   = self._soft_label(ages)
                 loss  = self._compute_loss(out, tgt)     # KL
@@ -217,6 +226,21 @@ class BrainAgeTrainer:
                 pred  = out.squeeze()
                 if pred.dim() == 0 and ages.dim() > 0:
                     pred = pred.unsqueeze(0)
+                
+                # DEBUG: Check for NaN in predictions
+                if torch.isnan(pred).any():
+                    print(f"NaN detected in predictions! Shape: {pred.shape}")
+                    print(f"Pred min: {pred.min()}, max: {pred.max()}")
+                    print(f"Predictions contain {torch.isnan(pred).sum()} NaN values")
+                    raise ValueError("Predictions contain NaN values")
+            
+            # DEBUG: Check for NaN in loss
+            if torch.isnan(loss):
+                print(f"NaN detected in loss!")
+                print(f"Loss value: {loss}")
+                print(f"Target ages - min: {ages.min()}, max: {ages.max()}")
+                raise ValueError("Loss is NaN")
+                
             return loss, pred
 
         if self.use_amp:
@@ -246,6 +270,14 @@ class BrainAgeTrainer:
     # ------------------------------------------------------------------ #
     def _optim_step(self) -> None:
         """Handles optimiser + scaler step for AMP."""
+        # Add gradient clipping to prevent exploding gradients
+        if self.use_amp:
+            # Unscale gradients before clipping when using AMP
+            self.scaler.unscale_(self.optimizer)
+        
+        # Clip gradients
+        torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+        
         if self.use_amp:
             self.scaler.step(self.optimizer)
             self.scaler.update()
