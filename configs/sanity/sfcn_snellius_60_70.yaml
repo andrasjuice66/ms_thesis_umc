@@ -47,7 +47,7 @@ domain_randomization:
   output_shape:        [182, 218, 182]   # None ⇒ keep full FoV
 
   transform_probs:
-    flip: 1.00        # From flipping=True in BrainGenerator
+    flip: 0.5        # From flipping=True in BrainGenerator
     affine: 1.00      # Enable affine transforms (scaling, rotation, shearing)
     contrast: 0.70    # Keep current
     gamma: 0.50       # Keep current

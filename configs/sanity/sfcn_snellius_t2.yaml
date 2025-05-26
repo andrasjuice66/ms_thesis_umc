@@ -47,19 +47,19 @@ domain_randomization:
   output_shape:        [182, 218, 182]   # None ⇒ keep full FoV
 
   transform_probs:
-    flip: 1.00        # From flipping=True in BrainGenerator
+    flip: 0.5        # From flipping=True in BrainGenerator
     affine: 1.00      # Enable affine transforms (scaling, rotation, shearing)
     contrast: 0.70    # Keep current
     gamma: 0.50       # Keep current
     blur: 0.40        # Keep current
-    bias: 1.00        # From bias_field_std > 0
+    bias: 0.70        # From bias_field_std > 0
     scale_int: 0.40   # Keep current
     shift_int: 0.40   # Keep current
     hist_shift: 0.30  # Keep current
     noise: 0.30       # Keep current
     rician: 0.30      # Keep current
     gibbs: 0.30       # Keep current
-    resolution: 1.00  # From randomise_res=True
+    resolution: 0.70  # From randomise_res=True
     coarse_do: 0.0    # Keep current
     spike: 0.0        # Keep current
     ghost: 0.0        # Keep current
