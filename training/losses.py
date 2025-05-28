@@ -46,8 +46,8 @@ class HuberMAELoss(nn.Module):
 
 class WeightedMSELoss(nn.Module):
     """
-    MSE loss with age-dependent weighting.
-    Gives higher weight to samples with extreme ages (young or old).
+    MSE loss with sample-specific weights.
+    Can use either auto-generated weights based on age extremity or external weights.
     """
     
     def __init__(self, min_age: float = 0.0, max_age: float = 100.0, alpha: float = 1.0):
@@ -57,7 +57,7 @@ class WeightedMSELoss(nn.Module):
         Args:
             min_age: Minimum expected age
             max_age: Maximum expected age
-            alpha: Weight factor
+            alpha: Weight factor for auto-generated weights
         """
         super().__init__()
         self.min_age = min_age
@@ -65,28 +65,77 @@ class WeightedMSELoss(nn.Module):
         self.alpha = alpha
         self.range = max_age - min_age
     
-    def forward(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    def forward(self, pred: torch.Tensor, target: torch.Tensor, weights: Optional[torch.Tensor] = None) -> torch.Tensor:
         """
         Calculate the loss.
         
         Args:
             pred: Predicted values
             target: Target values
+            weights: Optional sample-specific weights
             
         Returns:
             Loss value
         """
-        # Normalize ages to [0, 1]
-        normalized_target = (target - self.min_age) / self.range
-        
-        # Calculate weights: higher for extreme ages
-        weights = 1.0 + self.alpha * (2.0 * torch.abs(normalized_target - 0.5))
-        
-        # Calculate MSE with weights
+        # Calculate MSE without reduction
         squared_error = (pred - target) ** 2
+        
+        if weights is None:
+            # Use auto-generated weights based on age extremity
+            normalized_target = (target - self.min_age) / self.range
+            weights = 1.0 + self.alpha * (2.0 * torch.abs(normalized_target - 0.5))
+        
+        # Apply weights to squared errors
         weighted_squared_error = weights * squared_error
         
         return torch.mean(weighted_squared_error)
+
+
+class WeightedMAELoss(nn.Module):
+    """
+    MAE loss with sample-specific weights.
+    Can use either auto-generated weights based on age extremity or external weights.
+    """
+    
+    def __init__(self, min_age: float = 0.0, max_age: float = 100.0, alpha: float = 1.0):
+        """
+        Initialize the loss function.
+        
+        Args:
+            min_age: Minimum expected age
+            max_age: Maximum expected age
+            alpha: Weight factor for auto-generated weights
+        """
+        super().__init__()
+        self.min_age = min_age
+        self.max_age = max_age
+        self.alpha = alpha
+        self.range = max_age - min_age
+    
+    def forward(self, pred: torch.Tensor, target: torch.Tensor, weights: Optional[torch.Tensor] = None) -> torch.Tensor:
+        """
+        Calculate the loss.
+        
+        Args:
+            pred: Predicted values
+            target: Target values
+            weights: Optional sample-specific weights
+            
+        Returns:
+            Loss value
+        """
+        # Calculate MAE without reduction
+        absolute_error = torch.abs(pred - target)
+        
+        if weights is None:
+            # Use auto-generated weights based on age extremity
+            normalized_target = (target - self.min_age) / self.range
+            weights = 1.0 + self.alpha * (2.0 * torch.abs(normalized_target - 0.5))
+        
+        # Apply weights to absolute errors
+        weighted_absolute_error = weights * absolute_error
+        
+        return torch.mean(weighted_absolute_error)
 
 
 class KLDivergenceLoss(nn.Module):
@@ -138,6 +187,11 @@ def get_loss_function(loss_type: str, **kwargs) -> nn.Module:
             mae_weight=kwargs.get("mae_weight", 0.5)
         ),
         "weighted_mse": WeightedMSELoss(
+            min_age=kwargs.get("min_age", 0.0),
+            max_age=kwargs.get("max_age", 100.0),
+            alpha=kwargs.get("alpha", 1.0)
+        ),
+        "weighted_mae": WeightedMAELoss(
             min_age=kwargs.get("min_age", 0.0),
             max_age=kwargs.get("max_age", 100.0),
             alpha=kwargs.get("alpha", 1.0)
