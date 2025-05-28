@@ -78,7 +78,6 @@ def main() -> None:
     rand_cfg = cfg.get("domain_randomization", {})
     if rand_cfg.get("use_domain_randomization", False):
         transform = DomainRandomizer(
-            device=torch.device(device),
             **rand_cfg,
         )
         
