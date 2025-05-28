@@ -147,16 +147,10 @@ def main() -> None:
         test_csv,
         data_dir,
     )
+    
+    logger.info(f"Train={len(train_p)}  Val={len(val_p)}  Test={len(test_p)}")
+    logger.info(f"Sample weights from train: {train_w[0:10]}")
 
-    # Log age distribution for tumor simulation context
-    if rand_cfg.get("use_tumor_simulation", False) and rand_cfg.get("tumor_config", {}).get("use_age_based_segmentation", False):
-        logger.info("Age distribution in training data:")
-        train_ages = np.array(train_a)
-        age_ranges = rand_cfg.get("tumor_config", {}).get("age_ranges", {})
-        for age_group, (min_age, max_age) in age_ranges.items():
-            count = np.sum((train_ages >= min_age) & (train_ages < max_age))
-            percentage = (count / len(train_ages)) * 100
-            logger.info(f"  • {age_group} ({min_age}-{max_age}): {count} samples ({percentage:.1f}%)")
 
     logger.info("Initializing datasets...")
     logger.info("Creating training dataset")

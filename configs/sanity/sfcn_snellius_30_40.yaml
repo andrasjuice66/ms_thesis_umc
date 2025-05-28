@@ -1,9 +1,9 @@
 # ────────────────────────────  DATA  ──────────────────────────── #
 data:
-  data_dir: "Data"               # root that contains all images
-  train_csv: "brain_age_pred/data/labels/train_30_40.csv"
-  val_csv:   "brain_age_pred/data/labels/val_30_40.csv"
-  test_csv:  "brain_age_pred/data/labels/test_30_40.csv"
+  data_dir: "/scratch-shared/ajoos/"               # root that contains all images
+  train_csv: "/home/ajoos/brain_age_pred/data/labels/train_30_40.csv"
+  val_csv:   "/home/ajoos/brain_age_pred/data/labels/val_30_40.csv"
+  test_csv:  "/home/ajoos/brain_age_pred/data/labels/test_30_40.csv"
 
   image_key:  "image_path"
   age_key:    "age"
