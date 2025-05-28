@@ -181,20 +181,16 @@ class BrainAgeTrainer:
             # outputs are log-probabilities, targets are probabilities
             return self.criterion(outputs, targets)
 
-        if self.loss_name == "weighted_mse" and weights is not None:
-            # Ensure outputs are squeezed properly
-            outputs_squeezed = outputs.squeeze()
-            if outputs_squeezed.dim() == 0 and targets.dim() > 0:
-                outputs_squeezed = outputs_squeezed.unsqueeze(0)
-            per_sample = F.mse_loss(outputs_squeezed, targets, reduction="none")
-            return _weighted_reduction(per_sample, weights)
-
+        
         # Ensure proper shape for regression
         outputs_squeezed = outputs.squeeze()
         if outputs_squeezed.dim() == 0 and targets.dim() > 0:
             outputs_squeezed = outputs_squeezed.unsqueeze(0)
             
-        return self.criterion(outputs_squeezed, targets)
+        if weights is not None and self.loss_name in ["weighted_mse", "weighted_mae"]:
+            return self.criterion(outputs_squeezed, targets, weights)
+        else:
+            return self.criterion(outputs_squeezed, targets)
 
     # ------------------------------------------------------------------ #
     def _step(self, batch: Dict[str, torch.Tensor], train: bool = True):
