@@ -1,0 +1,22 @@
+# versio ned-hdf5
+iopath
+matplotlib
+nibabel
+numpy
+pandas
+Pillow
+pytest
+pytorch_msssim
+pytz
+PyYAML
+scipy
+seaborn
+setuptools
+SimpleITK
+simplejson
+scikit-image
+tabulate
+torch
+torchvision
+tqdm
+visdom

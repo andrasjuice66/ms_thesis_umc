@@ -7,3 +7,5 @@ HD_BET/
 # OtherRepos/
 # DataExp/
 *.pth
+*.pt
+__pycache__/

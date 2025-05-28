@@ -75,12 +75,12 @@ CSF_LABELS = [
 ]
 def main() -> None:
     # Hardcoded paths
-    t1_image = Path("C:/Projects/thesis_project/Data/brain_age_preprocessed/OpenNeuro/BoldVariability/sub-100_T1w.nii.gz") 
-    t2_image = Path("C:/Projects/thesis_project/Data/brain_age_preprocessed/CamCAN/sub-CC221031_T2w.nii.gz") 
-    flair_image = Path("C:/Projects/thesis_project/Data/brain_age_preprocessed/CamCAN/sub-CC210526_T2w.nii.gz")
+    young_image = Path("C:/Projects/thesis_project/Data/brain_age_preprocessed/OpenNeuro/BoldVariability/sub-146_T1w.nii.gz") 
+    middle_image = Path("C:/Projects/thesis_project/Data/brain_age_preprocessed/IXI/IXI048-HH-1326-T1.nii.gz") 
+    old_image = Path("C:/Projects/thesis_project/Data/brain_age_preprocessed/IXI/IXI252-HH-1693-T1.nii.gz")
 
-    images = [t1_image, t2_image, flair_image]
-    modalities = ["T1", "T2", "FLAIR"]  # List of modalities in same order as images
+    images = [young_image, middle_image, old_image]
+    modalities = ["1_40", "40_60", "60_85"]  # List of modalities in same order as images
     out_dir = Path("C:/Projects/thesis_project/brain_age_pred/data/templates")  # Changed to templates directory
     threads = 4
 

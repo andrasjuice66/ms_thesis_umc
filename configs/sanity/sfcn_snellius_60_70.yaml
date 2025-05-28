@@ -1,9 +1,9 @@
 # ────────────────────────────  DATA  ──────────────────────────── #
 data:
-  data_dir: "/scratch-shared/ajoos/"               # root that contains all images
-  train_csv: "/home/ajoos/brain_age_pred/data/labels/train_60_70.csv"
-  val_csv:   "/home/ajoos/brain_age_pred/data/labels/val_60_70.csv"
-  test_csv:  "/home/ajoos/brain_age_pred/data/labels/test_60_70.csv"
+  data_dir: "Data"               # root that contains all images
+  train_csv: "brain_age_pred/data/labels/train_60_70.csv"
+  val_csv:   "brain_age_pred/data/labels/val_60_70.csv"
+  test_csv:  "brain_age_pred/data/labels/test_60_70.csv"
 
   image_key:  "image_path"
   age_key:    "age"
@@ -28,7 +28,7 @@ model:
   in_channels: 1
   dropout_rate: 0.5532
   use_attention: false                   
-  checkpoint: "/home/ajoos/brain_age_pred/output/checkpoints/sfcn_20250522_104159/sfcn_20250522_104159_epoch057.pt"
+  checkpoint: null #"/home/ajoos/brain_age_pred/output/checkpoints/sfcn_20250522_104159/sfcn_20250522_104159_epoch057.pt"
 
 # ────────────────  DOMAIN-RANDOMISATION / AUGS  ───────────────── #
 # -------------------------------------------------------------------------
@@ -52,14 +52,14 @@ domain_randomization:
     contrast: 0.70    # Keep current
     gamma: 0.50       # Keep current
     blur: 0.40        # Keep current
-    bias: 1.00        # From bias_field_std > 0
+    bias: 0.70        # From bias_field_std > 0
     scale_int: 0.40   # Keep current
     shift_int: 0.40   # Keep current
     hist_shift: 0.30  # Keep current
     noise: 0.30       # Keep current
     rician: 0.30      # Keep current
     gibbs: 0.30       # Keep current
-    resolution: 1.00  # From randomise_res=True
+    resolution: 0.70  # From randomise_res=True
     coarse_do: 0.0    # Keep current
     spike: 0.0        # Keep current
     ghost: 0.0        # Keep current
@@ -117,7 +117,7 @@ training:
 
 # ────────────────────────────  OUTPUT  ────────────────────────── #
 output:
-  output_dir: "/home/ajoos/brain_age_pred/output"
+  output_dir: "brain_age_pred/output"
   checkpoint_dir: "checkpoints"
   log_dir: "logs"
   experiment_name: "sfcn_60_70"                   # auto-generate if left null

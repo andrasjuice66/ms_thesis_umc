@@ -1,0 +1,57 @@
+2025-05-28 10:29:36,698 - sfcn_t2 - INFO - Model: SFCN
+2025-05-28 10:29:36,711 - sfcn_t2 - INFO - Device: cuda
+2025-05-28 10:29:36,712 - sfcn_t2 - INFO - Training samples : 1903
+2025-05-28 10:29:36,713 - sfcn_t2 - INFO - Validation samples: 212
+2025-05-28 10:29:36,714 - sfcn_t2 - INFO - Use AMP: True
+2025-05-28 10:51:43,677 - sfcn_t2 - INFO - Epoch 001 train | loss=41.4406  mae=41.443  data=0.494s  gpu=4.494s
+2025-05-28 10:55:39,480 - sfcn_t2 - INFO - Epoch 001  val   | loss=35.2216  mae=35.522
+2025-05-28 11:15:18,899 - sfcn_t2 - INFO - Epoch 002 train | loss=28.5449  mae=28.546  data=0.460s  gpu=4.437s
+2025-05-28 11:16:33,318 - sfcn_t2 - INFO - Epoch 002  val   | loss=24.3131  mae=24.549
+2025-05-28 11:36:13,023 - sfcn_t2 - INFO - Epoch 003 train | loss=22.1921  mae=22.196  data=0.460s  gpu=4.437s
+2025-05-28 11:37:27,078 - sfcn_t2 - INFO - Epoch 003  val   | loss=22.9067  mae=23.138
+2025-05-28 11:57:05,125 - sfcn_t2 - INFO - Epoch 004 train | loss=18.9807  mae=18.982  data=0.454s  gpu=4.437s
+2025-05-28 11:58:19,410 - sfcn_t2 - INFO - Epoch 004  val   | loss=10.5747  mae=10.548
+2025-05-28 12:17:58,349 - sfcn_t2 - INFO - Epoch 005 train | loss=16.7406  mae=16.745  data=0.460s  gpu=4.435s
+2025-05-28 12:19:12,471 - sfcn_t2 - INFO - Epoch 005  val   | loss=11.9965  mae=12.089
+2025-05-28 12:38:55,665 - sfcn_t2 - INFO - Epoch 006 train | loss=15.9674  mae=15.967  data=0.479s  gpu=4.433s
+2025-05-28 12:40:09,471 - sfcn_t2 - INFO - Epoch 006  val   | loss=26.7988  mae=27.052
+2025-05-28 12:59:53,910 - sfcn_t2 - INFO - Epoch 007 train | loss=14.5644  mae=14.569  data=0.486s  gpu=4.433s
+2025-05-28 13:01:07,967 - sfcn_t2 - INFO - Epoch 007  val   | loss=17.9861  mae=18.156
+2025-05-28 13:20:46,355 - sfcn_t2 - INFO - Epoch 008 train | loss=13.9917  mae=13.992  data=0.461s  gpu=4.433s
+2025-05-28 13:22:00,568 - sfcn_t2 - INFO - Epoch 008  val   | loss=24.2118  mae=24.404
+2025-05-28 13:41:38,169 - sfcn_t2 - INFO - Epoch 009 train | loss=14.1234  mae=14.121  data=0.456s  gpu=4.433s
+2025-05-28 13:42:51,597 - sfcn_t2 - INFO - Epoch 009  val   | loss=18.8969  mae=19.052
+2025-05-28 14:02:19,245 - sfcn_t2 - INFO - Epoch 010 train | loss=13.4599  mae=13.455  data=0.420s  gpu=4.433s
+2025-05-28 14:03:32,669 - sfcn_t2 - INFO - Epoch 010  val   | loss=7.2047  mae=7.192
+2025-05-28 14:22:46,445 - sfcn_t2 - INFO - Epoch 011 train | loss=13.1125  mae=13.114  data=0.363s  gpu=4.432s
+2025-05-28 14:23:59,958 - sfcn_t2 - INFO - Epoch 011  val   | loss=27.2961  mae=27.533
+2025-05-28 14:43:16,035 - sfcn_t2 - INFO - Epoch 012 train | loss=13.3608  mae=13.358  data=0.365s  gpu=4.439s
+2025-05-28 14:44:30,044 - sfcn_t2 - INFO - Epoch 012  val   | loss=25.2013  mae=25.400
+2025-05-28 15:03:42,591 - sfcn_t2 - INFO - Epoch 013 train | loss=13.1523  mae=13.156  data=0.356s  gpu=4.435s
+2025-05-28 15:04:55,667 - sfcn_t2 - INFO - Epoch 013  val   | loss=16.8627  mae=16.984
+2025-05-28 15:24:13,292 - sfcn_t2 - INFO - Epoch 014 train | loss=12.7684  mae=12.767  data=0.365s  gpu=4.446s
+2025-05-28 15:25:26,874 - sfcn_t2 - INFO - Epoch 014  val   | loss=8.0523  mae=8.084
+2025-05-28 15:45:31,304 - sfcn_t2 - INFO - Epoch 015 train | loss=13.3557  mae=13.357  data=0.388s  gpu=4.618s
+2025-05-28 15:46:48,771 - sfcn_t2 - INFO - Epoch 015  val   | loss=20.6015  mae=20.590
+2025-05-28 16:06:28,113 - sfcn_t2 - INFO - Epoch 016 train | loss=12.7279  mae=12.727  data=0.356s  gpu=4.546s
+2025-05-28 16:07:42,545 - sfcn_t2 - INFO - Epoch 016  val   | loss=8.9030  mae=8.829
+2025-05-28 16:27:08,932 - sfcn_t2 - INFO - Epoch 017 train | loss=12.9536  mae=12.953  data=0.340s  gpu=4.507s
+2025-05-28 16:28:22,769 - sfcn_t2 - INFO - Epoch 017  val   | loss=12.4300  mae=12.511
+2025-05-28 16:47:46,778 - sfcn_t2 - INFO - Epoch 018 train | loss=12.4601  mae=12.460  data=0.331s  gpu=4.507s
+2025-05-28 16:49:01,181 - sfcn_t2 - INFO - Epoch 018  val   | loss=28.4881  mae=28.409
+2025-05-28 17:08:25,871 - sfcn_t2 - INFO - Epoch 019 train | loss=12.0917  mae=12.092  data=0.336s  gpu=4.507s
+2025-05-28 17:09:40,687 - sfcn_t2 - INFO - Epoch 019  val   | loss=7.2165  mae=7.213
+2025-05-28 17:29:05,757 - sfcn_t2 - INFO - Epoch 020 train | loss=12.5261  mae=12.522  data=0.336s  gpu=4.507s
+2025-05-28 17:30:20,071 - sfcn_t2 - INFO - Epoch 020  val   | loss=8.2502  mae=8.273
+2025-05-28 17:49:44,389 - sfcn_t2 - INFO - Epoch 021 train | loss=12.3745  mae=12.375  data=0.333s  gpu=4.507s
+2025-05-28 17:50:58,783 - sfcn_t2 - INFO - Epoch 021  val   | loss=13.3278  mae=13.260
+2025-05-28 18:10:24,555 - sfcn_t2 - INFO - Epoch 022 train | loss=12.0269  mae=12.024  data=0.338s  gpu=4.507s
+2025-05-28 18:11:39,108 - sfcn_t2 - INFO - Epoch 022  val   | loss=6.6613  mae=6.625
+2025-05-28 18:31:04,479 - sfcn_t2 - INFO - Epoch 023 train | loss=12.6207  mae=12.618  data=0.337s  gpu=4.507s
+2025-05-28 18:32:18,714 - sfcn_t2 - INFO - Epoch 023  val   | loss=24.7223  mae=24.687
+2025-05-28 18:51:44,552 - sfcn_t2 - INFO - Epoch 024 train | loss=12.3759  mae=12.378  data=0.339s  gpu=4.507s
+2025-05-28 18:52:59,017 - sfcn_t2 - INFO - Epoch 024  val   | loss=22.5416  mae=22.455
+2025-05-28 19:12:24,804 - sfcn_t2 - INFO - Epoch 025 train | loss=12.2940  mae=12.295  data=0.339s  gpu=4.507s
+2025-05-28 19:13:39,392 - sfcn_t2 - INFO - Epoch 025  val   | loss=6.9186  mae=6.929
+2025-05-28 19:33:05,115 - sfcn_t2 - INFO - Epoch 026 train | loss=11.4151  mae=11.415  data=0.337s  gpu=4.508s
+2025-05-28 19:34:21,366 - sfcn_t2 - INFO - Epoch 026  val   | loss=8.6056  mae=8.621

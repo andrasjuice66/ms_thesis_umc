@@ -73,16 +73,54 @@ def main() -> None:
     device = torch.device(cfg.get("device") or ("cuda" if torch.cuda.is_available() else "cpu"))
     logger.info(f"Using device: {device}")
 
-    # 5. ─── transforms (GPU-ready) ───────────────────────────── #
+    # 5. ─── transforms (GPU-ready) with tumor simulation ─────── #
     logger.info("Initializing domain randomization transforms...")
     rand_cfg = cfg.get("domain_randomization", {})
     if rand_cfg.get("use_domain_randomization", False):
         transform = DomainRandomizer(
             device=torch.device(device),
-            **rand_cfg,)
+            **rand_cfg,
+        )
+        
+        if rand_cfg.get("use_tumor_simulation", False):
+            tumor_cfg = rand_cfg.get("tumor_config", {})
+            logger.info(f"✓ Tumor simulation enabled with probability: {tumor_cfg.get('prob', 0.3)}")
+            
+            if tumor_cfg.get("use_age_based_segmentation", False):
+                logger.info("✓ Using age-based segmentation for tumor placement:")
+                seg_paths = tumor_cfg.get("segmentation_paths", {})
+                age_ranges = tumor_cfg.get("age_ranges", {})
+                
+                # Validate segmentation files exist
+                missing_files = []
+                for age_group, seg_path in seg_paths.items():
+                    if not Path(seg_path).exists():
+                        missing_files.append(f"{age_group}: {seg_path}")
+                    else:
+                        age_range = age_ranges.get(age_group, "unknown")
+                        logger.info(f"  • {age_group}: {seg_path} (ages {age_range})")
+                
+                if missing_files:
+                    logger.error("Missing segmentation files:")
+                    for missing in missing_files:
+                        logger.error(f"  ✗ {missing}")
+                    raise FileNotFoundError("Required segmentation files not found")
+                
+                logger.info("All segmentation files found and will be preloaded")
+            else:
+                logger.info("Using intensity-based brain mask for tumor placement")
+                
+            # Log tumor generation parameters
+            logger.info(f"Tumor parameters: perlin_res={tumor_cfg.get('perlin_res', [2,2,2])}, "
+                       f"size_range={tumor_cfg.get('tumor_size_factor_range', [0.5, 2.0])}, "
+                       f"fluid_dynamics={tumor_cfg.get('use_fluid_dynamics', True)}")
+        else:
+            logger.info("Tumor simulation disabled")
     else:
         transform = None
-    logger.info(f"Domain randomizer initialized:{rand_cfg.get('use_domain_randomization')}")
+        logger.info("Domain randomization disabled")
+    
+    logger.info(f"Domain randomizer initialized: {rand_cfg.get('use_domain_randomization', False)}")
 
     # 6. ─── CSV → dataset / sampler ─────────────────────────── #
     logger.info("Reading CSV files...")
@@ -110,6 +148,16 @@ def main() -> None:
         data_dir,
     )
 
+    # Log age distribution for tumor simulation context
+    if rand_cfg.get("use_tumor_simulation", False) and rand_cfg.get("tumor_config", {}).get("use_age_based_segmentation", False):
+        logger.info("Age distribution in training data:")
+        train_ages = np.array(train_a)
+        age_ranges = rand_cfg.get("tumor_config", {}).get("age_ranges", {})
+        for age_group, (min_age, max_age) in age_ranges.items():
+            count = np.sum((train_ages >= min_age) & (train_ages < max_age))
+            percentage = (count / len(train_ages)) * 100
+            logger.info(f"  • {age_group} ({min_age}-{max_age}): {count} samples ({percentage:.1f}%)")
+
     logger.info("Initializing datasets...")
     logger.info("Creating training dataset")
 
@@ -133,7 +181,6 @@ def main() -> None:
 
     logger.info("Creating test dataset")
     test_ds = BADataset(
-
         file_paths   = test_p,
         age_labels   = test_a,
         transform    = None,
