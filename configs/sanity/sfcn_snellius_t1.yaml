@@ -1,9 +1,9 @@
 # ────────────────────────────  DATA  ──────────────────────────── #
 data:
   data_dir: "Data"               # root that contains all images
-  train_csv: "brain_age_pred/data/labels/train_t2.csv"
-  val_csv:   "brain_age_pred/data/labels/val_t2.csv"
-  test_csv:  "brain_age_pred/data/labels/test_t2.csv"
+  train_csv: "brain_age_pred/data/labels/train_t1.csv"
+  val_csv:   "brain_age_pred/data/labels/val_t1.csv"
+  test_csv:  "brain_age_pred/data/labels/test_t1.csv"
 
   image_key:  "image_path"
   age_key:    "age"
