@@ -41,7 +41,7 @@ domain_randomization:
   device: "cuda"
   
   # Enable tumor simulation
-  use_tumor_simulation: true
+  use_tumor_simulation: false
   
   # Transform probabilities
   transform_probs:
