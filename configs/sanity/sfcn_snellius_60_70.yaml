@@ -36,8 +36,8 @@ model:
 # Every key here maps 1-to-1 to a keyword argument or probability override
 # accepted by the new DomainRandomizer class.
 # -------------------------------------------------------------------------
-domain_randomization:
-  use_domain_randomization: false
+domain_randomization: 
+  use_domain_randomization: true
   # ── progressive randomization ───────────────────────────────────
   progressive_epochs: 50                  # Number of epochs to reach full randomization
   progressive_start: 0.2                  # Starting probability multiplier (0.2 = 20% of final probs)

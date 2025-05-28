@@ -37,7 +37,7 @@ model:
 # accepted by the new DomainRandomizer class.
 # -------------------------------------------------------------------------
 domain_randomization:
-  use_domain_randomization: false
+  use_domain_randomization: true
   # ── progressive randomization ───────────────────────────────────
   progressive_epochs: 50                  # Number of epochs to reach full randomization
   progressive_start: 0.2                  # Starting probability multiplier (0.2 = 20% of final probs)
@@ -120,7 +120,7 @@ output:
   output_dir: "brain_age_pred/output"
   checkpoint_dir: "checkpoints"
   log_dir: "logs"
-  experiment_name: "sfcn_t2"                    # auto-generate if left null
+  experiment_name: "sfcn_t1"                    # auto-generate if left null
 
 # ─────────────────────────────  W&B  ──────────────────────────── #
 wandb:

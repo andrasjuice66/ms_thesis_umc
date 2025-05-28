@@ -9,7 +9,7 @@
 #SBATCH --error=/home/%u/run_logs/%x_%j.err
 #SBATCH --mail-type=FAIL,END               
 
-set -euo pipefail
+# set -euo pipefail
 
 # 1) activate your env
 source ~/.bashrc
