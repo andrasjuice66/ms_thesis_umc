@@ -165,15 +165,14 @@ domain_randomization:
     # Brain mask parameters (fallback when segmentation fails)
     brain_threshold: 0.1
 
-
 # ──────────────────────────  TRAINING  ────────────────────────── #
 training:
-  batch_size: 16
+  batch_size: 32
   epochs: 120
 
   # optimiser & LR
-  learning_rate: 0.001 #0.002193
-  weight_decay:  0.00001
+  learning_rate: 0.0022 #0.002193
+  weight_decay:  0.001
   optimizer: "sgd"                       # adam | adamw | sgd | rmsprop | radam | novograd
   scheduler: "cosine"                      # cosine | plateau | onecycle | step | none
   scheduler_params:
@@ -183,7 +182,7 @@ training:
     steps_per_epoch: 534
 
   # losses
-  loss: "huber_mae"                        # mse | mae | huber | huber_mae | weighted_mse
+  loss: "mae"                        # mse | mae | huber | huber_mae | weighted_mse
   loss_params:
     delta: 1.0
     mae_weight: 0.5

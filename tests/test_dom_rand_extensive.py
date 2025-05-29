@@ -594,10 +594,10 @@ class TransformationTester:
         print(f"Test image: {self.image_path}")
         
         try:
-            self.test_geometric_transforms()
-            self.test_intensity_transforms()
-            self.test_noise_and_artifacts()
-            self.test_torchio_transforms()
+            # self.test_geometric_transforms()
+            # self.test_intensity_transforms()
+            # self.test_noise_and_artifacts()
+            # self.test_torchio_transforms()
             self.test_parameter_variations()
             self.test_full_pipeline()
             
@@ -620,7 +620,7 @@ class TransformationTester:
 def main():
     """Main function to run the tests."""
     # Paths - modify these as needed
-    config_path = "C:/Projects/thesis_project/brain_age_pred/configs/sfcn/sfcn.yaml"
+    config_path = "C:/Projects/thesis_project/brain_age_pred/configs/sfcn/sfcn_dom_rand_tuning.yaml"
     
     # Check if config exists
     if not os.path.exists(config_path):
