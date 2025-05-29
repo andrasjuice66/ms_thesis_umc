@@ -28,7 +28,7 @@ model:
   in_channels: 1
   dropout_rate: 0.5532
   use_attention: false                   
-  checkpoint: null s#"/home/ajoos/brain_age_pred/output/checkpoints/sfcn_20250522_104159/sfcn_20250522_104159_epoch057.pt"
+  checkpoint: null #"/home/ajoos/brain_age_pred/output/checkpoints/sfcn_20250522_104159/sfcn_20250522_104159_epoch057.pt"
 
 # ────────────────  DOMAIN-RANDOMISATION / AUGS  ───────────────── #
 # -------------------------------------------------------------------------
@@ -115,10 +115,10 @@ domain_randomization:
 # ──────────────────────────  TRAINING  ────────────────────────── #
 training:
   batch_size: 32
-  epochs: 100
+  epochs: 120
 
   # optimiser & LR
-  learning_rate: 0.00028 #0.002193
+  learning_rate: 0.0022 #0.002193
   weight_decay:  0.001
   optimizer: "sgd"                       # adam | adamw | sgd | rmsprop | radam | novograd
   scheduler: "cosine"                      # cosine | plateau | onecycle | step | none
@@ -149,7 +149,7 @@ output:
 # ─────────────────────────────  W&B  ──────────────────────────── #
 wandb:
   use_wandb: true                         # still requires $WANDB_API env-var
-  project: "brain-age-pred-tumors"
+  project: "brainage-model-training"
   entity: null
 
 # ───────────────────────── MISCELLANEOUS ───────────────────────── #

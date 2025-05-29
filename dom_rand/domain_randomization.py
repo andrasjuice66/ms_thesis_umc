@@ -101,7 +101,8 @@ class DomainRandomizer:
         **unused,
     ):
         self.image_key     = image_key
-        self.device        = device
+        # Convert string device to torch.device object if needed
+        self.device        = torch.device(device) if isinstance(device, str) else device
         self.use_tio       = use_torchio
 
         # merge / override probabilities
