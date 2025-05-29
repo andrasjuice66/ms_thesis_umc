@@ -82,7 +82,7 @@ domain_randomization:
 
   # ── resolution / simulation ──────────────────────────────────────────
   enable_simulation: true
-  max_res_iso: 4.0                 # From max_res_iso=4.0
+  max_res_iso: 2.0                 # From max_res_iso=4.0
   resolution_range: [1.0, 1.5]     # Keep current
   coarse_dropout_size: [20, 20, 20]  # Keep current
 
@@ -90,7 +90,7 @@ domain_randomization:
 
 # ──────────────────────────  TRAINING  ────────────────────────── #
 training:
-  batch_size: 8
+  batch_size: 16 
   epochs: 100
 
   # optimiser & LR
@@ -105,7 +105,7 @@ training:
     steps_per_epoch: 534
 
   # losses
-  loss: "mae"                        # mse | mae | huber | huber_mae | weighted_mse
+  loss: "huber_mae"                        # mse | mae | huber | huber_mae | weighted_mse
   loss_params:
     delta: 1.0
     mae_weight: 0.5
