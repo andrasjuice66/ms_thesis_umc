@@ -37,7 +37,7 @@ model:
 # accepted by the new DomainRandomizer class.
 # -------------------------------------------------------------------------
 domain_randomization:
-  use_domain_randomization: true
+  use_domain_randomization: false
   use_tumor_simulation: false
 
   # Progressive randomization parameters
