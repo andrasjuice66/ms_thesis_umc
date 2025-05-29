@@ -129,7 +129,7 @@ training:
     steps_per_epoch: 534
 
   # losses
-  loss: "weighted_mae"                        # mse | mae | huber | huber_mae | weighted_mse
+  loss: "mae"                        # mse | mae | huber | huber_mae | weighted_mse
   loss_params:
     delta: 1.0
     mae_weight: 0.5
