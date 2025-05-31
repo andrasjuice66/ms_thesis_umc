@@ -1,0 +1,11 @@
+subject_id,image_path,sex,age,modality,dataset,5_year_age_bin,sample_weight
+sub-ON88753,brain_age_converted/NIMH_RV/sub-ON88753_ses-01_acq-forMEGCoregistration_T1w.nii.npy,male,30,t1,nimh_rv,30-34,0.1
+sub-CC220419,brain_age_converted/CamCAN/sub-CC220419_T1w.nii.npy,male,31,t1,camcan,30-34,0.1
+sub-ON09766,brain_age_converted/NIMH_RV/sub-ON09766_ses-01_acq-MPRAGE_T1w.nii.npy,female,32,t1,nimh_rv,30-34,0.1
+sub-ON97252,brain_age_converted/NIMH_RV/sub-ON97252_ses-01_acq-2dADNI2_rec-SCIC_FLAIR.nii.npy,female,33,flair,nimh_rv,30-34,0.1
+sub-CC220203,brain_age_converted/CamCAN/sub-CC220203_T1w.nii.npy,female,34,t1,camcan,30-34,0.1
+sub-CC220901,brain_age_converted/CamCAN/sub-CC220901_T1w.nii.npy,female,35,t1,camcan,35-39,0.1
+sub-ON13545,brain_age_converted/NIMH_RV/sub-ON13545_ses-01_acq-MPRAGE_T1w.nii.npy,female,36,t1,nimh_rv,35-39,0.1
+sub-CC222264,brain_age_converted/CamCAN/sub-CC222264_T2w.nii.npy,male,37,t2,camcan,35-39,0.1
+sub-CC222304,brain_age_converted/CamCAN/sub-CC222304_T1w.nii.npy,male,38,t1,camcan,35-39,0.1
+sub-ON04111,brain_age_converted/NIMH_RV/sub-ON04111_ses-01_acq-3dCUBE_FLAIR.nii.npy,female,39,flair,nimh_rv,35-39,0.1
