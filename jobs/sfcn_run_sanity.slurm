@@ -23,12 +23,12 @@ conda activate thesis
 cd $HOME/
 python -m brain_age_pred.scripts.train brain_age_pred/configs/sanity/sfcn_snellius_overfit.yaml
 
-python -m brain_age_pred.scripts.train brain_age_pred/configs/sanity/sfcn_snellius_t1.yaml
+# python -m brain_age_pred.scripts.train brain_age_pred/configs/sanity/sfcn_snellius_t1.yaml
 
-python -m brain_age_pred.scripts.train brain_age_pred/configs/sanity/sfcn_snellius_30_40.yaml
+# python -m brain_age_pred.scripts.train brain_age_pred/configs/sanity/sfcn_snellius_30_40.yaml
 
-python -m brain_age_pred.scripts.train brain_age_pred/configs/sanity/sfcn_snellius_60_70.yaml
+# python -m brain_age_pred.scripts.train brain_age_pred/configs/sanity/sfcn_snellius_60_70.yaml
 
-python -m brain_age_pred.scripts.train brain_age_pred/configs/sanity/sfcn_snellius_t2.yaml
+# python -m brain_age_pred.scripts.train brain_age_pred/configs/sanity/sfcn_snellius_t2.yaml
 
-python -m brain_age_pred.scripts.train brain_age_pred/configs/sanity/sfcn_snellius_t1_30_40.yaml
+# python -m brain_age_pred.scripts.train brain_age_pred/configs/sanity/sfcn_snellius_t1_30_40.yaml

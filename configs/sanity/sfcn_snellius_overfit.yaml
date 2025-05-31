@@ -120,7 +120,7 @@ output:
   output_dir: "brain_age_pred/output"
   checkpoint_dir: "checkpoints"
   log_dir: "logs"
-  experiment_name: "sfcn_30_40"                   # auto-generate if left null
+  experiment_name: "sfcn_overfit"                   # auto-generate if left null
 
 # ─────────────────────────────  W&B  ──────────────────────────── #
 wandb:

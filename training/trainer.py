@@ -342,6 +342,17 @@ class BrainAgeTrainer:
             preds_all.append(preds.cpu().numpy())
             targets_all.append(batch["age"].cpu().numpy())
 
+            # Convert predictions and targets to numpy for logging
+            preds_np = preds.cpu().numpy()
+            targets_np = batch["age"].cpu().numpy()
+
+            # Log detailed predictions for each sample in the batch
+            for i in range(len(preds_np)):
+                pred_age = preds_np[i]
+                target_age = targets_np[i]
+                abs_error = abs(pred_age - target_age)
+                self.logger.info(f"Batch {step}, Sample {i} | Predicted: {pred_age:.2f} | Target: {target_age:.2f} | Error: {abs_error:.2f}")
+
             pbar.set_postfix(loss=f"{loss.item():.4f}")
 
         # last, if #batches is not divisible by grad_accum_steps
@@ -368,6 +379,14 @@ class BrainAgeTrainer:
             f"loss={metrics['loss']:.4f}  mae={metrics['mae']:.3f}  "
             f"data={metrics['data_time']:.3f}s  gpu={metrics['gpu_time']:.3f}s"
         )
+
+        self.logger.info("\nEpoch Summary Statistics:")
+        self.logger.info(f"Min prediction: {y_pred.min():.2f}")
+        self.logger.info(f"Max prediction: {y_pred.max():.2f}")
+        self.logger.info(f"Mean prediction: {y_pred.mean():.2f}")
+        self.logger.info(f"Min target: {y_true.min():.2f}")
+        self.logger.info(f"Max target: {y_true.max():.2f}")
+        self.logger.info(f"Mean target: {y_true.mean():.2f}")
 
         return metrics
 
