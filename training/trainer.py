@@ -113,8 +113,6 @@ class BrainAgeTrainer:
 
         # /--------- optimiser / scheduler ---------/
         params = list(self.model.parameters())
-        # print("Modelllll parameters:", params)
-        #print("Number of model parameters:", sum(p.numel() for p in self.model.parameters()))
         self.optimizer = get_optimizer(
             params,
             optimizer_type = self.cfg.get("optimizer", "adamw"),
@@ -137,9 +135,8 @@ class BrainAgeTrainer:
 
         # /--------- early-stop bookkeeping ---------/
         self.best_val_loss      = float("inf")
-        self.best_metric     = float("inf")       
+        self.best_metric     = float("inf")
         self.early_stop_counter = 0
-
 
         # ─── support for soft-classification SFCN ────────────────────── #
         # age grid & Gaussian-label bandwidth (σ) are configurable
@@ -153,7 +150,14 @@ class BrainAgeTrainer:
             self.age_max + 1,
             device=self.device,
             dtype=torch.float32,
-)
+        )
+
+        # /--------- DEBUG: Store initial weights for tracking changes ---------/
+        self.initial_weights = {}
+        for name, param in self.model.named_parameters():
+            if param.requires_grad:
+                self.initial_weights[name] = param.data.clone()
+
         # /--------- move model ----------/
         self.model.to(self.device)
         self.logger.info(f"Model: {self.model.__class__.__name__}")
@@ -161,9 +165,165 @@ class BrainAgeTrainer:
         self.logger.info(f"Training samples : {len(train_loader.dataset)}")
         self.logger.info(f"Validation samples: {len(val_loader.dataset)}")
         self.logger.info(f"Use AMP: {self.use_amp}")
+        self.logger.info(f"Learning rate: {self.cfg.get('learning_rate', 1e-4)}")
+        self.logger.info(f"Total model parameters: {sum(p.numel() for p in self.model.parameters())}")
 
-        # print("Model parameters:", list(model.parameters()))
-        # print("Number of parameters:", sum(p.numel() for p in model.parameters()))
+        # /--------- DEBUG: Run initial sanity checks ---------/
+        self.check_data_sanity()
+
+        # /--------- DEBUG: Test single batch overfitting ---------/
+        if not self.test_single_batch_overfitting():
+            self.logger.error("CRITICAL: Model cannot overfit single batch!")
+            raise RuntimeError("Model cannot learn - check architecture/data")
+
+    # ------------------------------------------------------------------ #
+    #                        DEBUG METHODS                               #
+    # ------------------------------------------------------------------ #
+    def check_data_sanity(self):
+        """Check if data is reasonable"""
+        self.logger.info("=== DATA SANITY CHECK ===")
+        try:
+            batch = next(iter(self.train_loader))
+            imgs = batch["image"]
+            ages = batch["age"]
+
+            self.logger.info(f"Image shape: {imgs.shape}")
+            self.logger.info(f"Image stats: min={imgs.min():.3f}, max={imgs.max():.3f}, mean={imgs.mean():.3f}, std={imgs.std():.3f}")
+            self.logger.info(f"Ages: {ages}")
+            self.logger.info(f"Age stats: min={ages.min():.1f}, max={ages.max():.1f}, mean={ages.mean():.1f}, std={ages.std():.1f}")
+
+            # Check for NaN/inf
+            if torch.isnan(imgs).any() or torch.isinf(imgs).any():
+                self.logger.error("CRITICAL: Images contain NaN/inf!")
+                raise ValueError("Images contain NaN/inf")
+            if torch.isnan(ages).any() or torch.isinf(ages).any():
+                self.logger.error("CRITICAL: Ages contain NaN/inf!")
+                raise ValueError("Ages contain NaN/inf")
+
+            # Check if images are all zeros
+            if imgs.abs().sum() == 0:
+                self.logger.error("CRITICAL: All images are zeros!")
+                raise ValueError("All images are zeros")
+
+            self.logger.info("Data sanity check PASSED")
+        except Exception as e:
+            self.logger.error(f"Data sanity check FAILED: {e}")
+            raise
+
+    def test_single_batch_overfitting(self):
+        """Test if model can overfit to a single batch"""
+        self.logger.info("=== SINGLE BATCH OVERFITTING TEST ===")
+
+        # Save current state
+        original_state = self.model.state_dict()
+        original_optimizer_state = self.optimizer.state_dict()
+
+        try:
+            self.model.train()
+
+            # Get one batch
+            batch = next(iter(self.train_loader))
+            imgs = batch["image"].to(self.device)
+            ages = batch["age"].float().to(self.device)
+
+            self.logger.info(f"Testing with batch: images {imgs.shape}, ages {ages}")
+
+            initial_loss = None
+            for i in range(100):  # 100 steps on same batch
+                self.optimizer.zero_grad()
+                outputs = self.model(imgs)
+
+                # Handle output shape
+                if outputs.dim() > 1:
+                    outputs = outputs.squeeze()
+                if outputs.dim() == 0 and ages.dim() > 0:
+                    outputs = outputs.unsqueeze(0)
+
+                loss = F.mse_loss(outputs, ages)
+                loss.backward()
+
+                # Check gradients
+                total_grad_norm = 0
+                for param in self.model.parameters():
+                    if param.grad is not None:
+                        total_grad_norm += param.grad.data.norm(2).item() ** 2
+                total_grad_norm = total_grad_norm ** 0.5
+
+                self.optimizer.step()
+
+                if i == 0:
+                    initial_loss = loss.item()
+                    self.logger.info(f"Initial loss: {initial_loss:.6f}, grad_norm: {total_grad_norm:.6f}")
+
+                if i % 20 == 0:
+                    self.logger.info(f"Step {i}: Loss = {loss.item():.6f}, grad_norm: {total_grad_norm:.6f}")
+
+                # Early exit if loss becomes very small
+                if loss.item() < initial_loss * 0.01:
+                    self.logger.info(f"Early convergence at step {i}")
+                    break
+
+            final_loss = loss.item()
+            self.logger.info(f"Single batch test: Initial loss = {initial_loss:.6f}, Final loss = {final_loss:.6f}")
+            self.logger.info(f"Loss reduction ratio: {final_loss/initial_loss:.6f}")
+
+            success = final_loss < initial_loss * 0.1  # Should drop to <10% of initial
+            if success:
+                self.logger.info("Single batch overfitting test PASSED")
+            else:
+                self.logger.error("Single batch overfitting test FAILED - model cannot learn!")
+
+        except Exception as e:
+            self.logger.error(f"Single batch test failed with error: {e}")
+            success = False
+        finally:
+            # Restore original state
+            self.model.load_state_dict(original_state)
+            self.optimizer.load_state_dict(original_optimizer_state)
+
+        return success
+
+    def check_weight_changes(self, epoch):
+        """Check if model weights are actually changing"""
+        total_change = 0
+        max_change = 0
+        for name, param in self.model.named_parameters():
+            if param.requires_grad and name in self.initial_weights:
+                change = (param.data - self.initial_weights[name]).abs().sum().item()
+                total_change += change
+                max_change = max(max_change, change)
+
+        self.logger.info(f"Epoch {epoch}: Total weight change: {total_change:.6f}, Max change: {max_change:.6f}")
+
+        if total_change < 1e-8:
+            self.logger.warning("WARNING: Weights barely changing - possible learning issue!")
+
+        return total_change
+
+    def check_gradient_flow(self):
+        """Check gradient magnitudes"""
+        total_grad_norm = 0
+        max_grad_norm = 0
+        zero_grad_count = 0
+
+        for name, param in self.model.named_parameters():
+            if param.grad is not None:
+                grad_norm = param.grad.data.norm(2).item()
+                total_grad_norm += grad_norm ** 2
+                max_grad_norm = max(max_grad_norm, grad_norm)
+            else:
+                zero_grad_count += 1
+
+        total_grad_norm = total_grad_norm ** 0.5
+
+        self.logger.info(f"Gradient stats: total_norm={total_grad_norm:.6f}, max_norm={max_grad_norm:.6f}, zero_grads={zero_grad_count}")
+
+        if total_grad_norm < 1e-6:
+            self.logger.warning("WARNING: Gradients are extremely small - vanishing gradient problem!")
+        if total_grad_norm > 100:
+            self.logger.warning("WARNING: Gradients are very large - exploding gradient problem!")
+
+        return total_grad_norm
 
     # ------------------------------------------------------------------ #
     #                        internal helpers                             #
@@ -181,12 +341,11 @@ class BrainAgeTrainer:
             # outputs are log-probabilities, targets are probabilities
             return self.criterion(outputs, targets)
 
-        
         # Ensure proper shape for regression
         outputs_squeezed = outputs.squeeze()
         if outputs_squeezed.dim() == 0 and targets.dim() > 0:
             outputs_squeezed = outputs_squeezed.unsqueeze(0)
-            
+
         if weights is not None and self.loss_name in ["weighted_mse", "weighted_mae"]:
             return self.criterion(outputs_squeezed, targets, weights)
         else:
@@ -203,13 +362,7 @@ class BrainAgeTrainer:
         # ─── forward (AMP or fp32) ───────────────────────────────── #
         def fwd():
             out = self.model(imgs)                       # logits or scalar
-            
-            # Add requested debug logging
-            self.logger.info(f"Raw model output: {out}")
-            self.logger.info(f"Target ages: {ages}")
-            self.logger.info(f"Output shape: {out.shape}")
-            self.logger.info(f"Target shape: {ages.shape}")
-            
+
             # DEBUG: Check for NaN in model output
             if torch.isnan(out).any():
                 self.logger.error(f"NaN detected in model output! Shape: {out.shape}")
@@ -217,7 +370,7 @@ class BrainAgeTrainer:
                 self.logger.error(f"Output contains {torch.isnan(out).sum()} NaN values")
                 self.logger.error(f"Input image stats - min: {imgs.min()}, max: {imgs.max()}, mean: {imgs.mean()}")
                 raise ValueError("Model output contains NaN values")
-            
+
             if self.loss_name == "kl_div":
                 tgt   = self._soft_label(ages)
                 loss  = self._compute_loss(out, tgt)     # KL
@@ -228,23 +381,21 @@ class BrainAgeTrainer:
                 pred  = out.squeeze()
                 if pred.dim() == 0 and ages.dim() > 0:
                     pred = pred.unsqueeze(0)
-                
+
                 # DEBUG: Check for NaN in predictions
                 if torch.isnan(pred).any():
                     self.logger.error(f"NaN detected in predictions! Shape: {pred.shape}")
                     self.logger.error(f"Pred min: {pred.min()}, max: {pred.max()}")
                     self.logger.error(f"Predictions contain {torch.isnan(pred).sum()} NaN values")
                     raise ValueError("Predictions contain NaN values")
-                
-            
-            
+
             # DEBUG: Check for NaN in loss
             if torch.isnan(loss):
                 self.logger.error(f"NaN detected in loss!")
                 self.logger.error(f"Loss value: {loss}")
                 self.logger.error(f"Target ages - min: {ages.min()}, max: {ages.max()}")
                 raise ValueError("Loss is NaN")
-                
+
             return loss, pred
 
         if self.use_amp:
@@ -261,7 +412,7 @@ class BrainAgeTrainer:
             else:
                 loss_acc.backward()
         return loss.detach(), pred.detach()
-    
+
     def _soft_label(self, ages: torch.Tensor) -> torch.Tensor:
         """
         Build a Gaussian target distribution for each age.
@@ -274,21 +425,23 @@ class BrainAgeTrainer:
     # ------------------------------------------------------------------ #
     def _optim_step(self) -> None:
         """Handles optimiser + scaler step for AMP."""
+        # DEBUG: Check gradient flow before optimization
+        grad_norm = self.check_gradient_flow()
+
         # Add gradient clipping to prevent exploding gradients
         if self.use_amp:
             # Unscale gradients before clipping when using AMP
             self.scaler.unscale_(self.optimizer)
-        
+
         # Clip gradients
         torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
-        
+
         if self.use_amp:
             self.scaler.step(self.optimizer)
             self.scaler.update()
         else:
             self.optimizer.step()
         self.optimizer.zero_grad(set_to_none=True)
-
 
     # ------------------------------------------------------------------ #
     def train_epoch(self, epoch: int) -> dict[str, float]:
@@ -317,7 +470,7 @@ class BrainAgeTrainer:
 
         for step, batch in enumerate(pbar):
             # --------------- host ➜ device time ------------------------ #
-            t0 = time.perf_counter()             
+            t0 = time.perf_counter()
             batch = {k: v.to(self.device, non_blocking=True) if
                     torch.is_tensor(v) else v for k, v in batch.items()}
             data_time_tot += time.perf_counter() - t0
@@ -327,11 +480,11 @@ class BrainAgeTrainer:
             end_evt   = torch.cuda.Event(enable_timing=True)
             start_evt.record()
 
-            loss, preds = self._step(batch, train=True)  
+            loss, preds = self._step(batch, train=True)
 
             end_evt.record()
             torch.cuda.synchronize()
-            gpu_time_tot += start_evt.elapsed_time(end_evt) / 1e3  
+            gpu_time_tot += start_evt.elapsed_time(end_evt) / 1e3
 
             # --------------- grad accumulation ------------------------ #
             if (step + 1) % self.grad_accum_steps == 0:
@@ -346,12 +499,13 @@ class BrainAgeTrainer:
             preds_np = preds.cpu().numpy()
             targets_np = batch["age"].cpu().numpy()
 
-            # Log detailed predictions for each sample in the batch
-            for i in range(len(preds_np)):
-                pred_age = preds_np[i]
-                target_age = targets_np[i]
-                abs_error = abs(pred_age - target_age)
-                self.logger.info(f"Batch {step}, Sample {i} | Predicted: {pred_age:.2f} | Target: {target_age:.2f} | Error: {abs_error:.2f}")
+            # Log detailed predictions for first few batches only
+            if step < 3:  # Reduce logging spam
+                for i in range(len(preds_np)):
+                    pred_age = preds_np[i]
+                    target_age = targets_np[i]
+                    abs_error = abs(pred_age - target_age)
+                    self.logger.info(f"Batch {step}, Sample {i} | Predicted: {pred_age:.2f} | Target: {target_age:.2f} | Error: {abs_error:.2f}")
 
             pbar.set_postfix(loss=f"{loss.item():.4f}")
 
@@ -362,6 +516,10 @@ class BrainAgeTrainer:
         # ---------------- scheduler (per-epoch) ----------------------- #
         if self.scheduler is not None:
             self.scheduler.step()
+
+        # DEBUG: Check weight changes every 5 epochs
+        if epoch % 5 == 0:
+            self.check_weight_changes(epoch)
 
         # ---------------- Metrics & logging -------------------------- #
         y_pred = np.concatenate(preds_all)
@@ -380,17 +538,18 @@ class BrainAgeTrainer:
             f"data={metrics['data_time']:.3f}s  gpu={metrics['gpu_time']:.3f}s"
         )
 
-        self.logger.info("\nEpoch Summary Statistics:")
+        self.logger.info("Epoch Summary Statistics:")
         self.logger.info(f"Min prediction: {y_pred.min():.2f}")
         self.logger.info(f"Max prediction: {y_pred.max():.2f}")
         self.logger.info(f"Mean prediction: {y_pred.mean():.2f}")
         self.logger.info(f"Min target: {y_true.min():.2f}")
         self.logger.info(f"Max target: {y_true.max():.2f}")
         self.logger.info(f"Mean target: {y_true.mean():.2f}")
+        self.logger.info(f"Current LR: {self.optimizer.param_groups[0]['lr']:.2e}")
 
         return metrics
 
-        # ------------------------------------------------------------------ #
+    # ------------------------------------------------------------------ #
     def validate(self, epoch: int) -> Dict[str, float]:
         self.model.eval()
         running_loss: float = 0.0
@@ -500,20 +659,20 @@ class BrainAgeTrainer:
         return history
 
     def evaluate(
-        self, 
+        self,
         test_loader: DataLoader,
         checkpoint_path: Optional[str] = None,
     ) -> Dict[str, float]:
         """
         Evaluate the model on a test set.
-        
+
         Parameters
         ----------
         test_loader : DataLoader
             DataLoader for the test set
         checkpoint_path : Optional[str]
             Path to checkpoint to load. If None, uses current model state.
-            
+
         Returns
         -------
         Dict[str, float]
@@ -523,14 +682,14 @@ class BrainAgeTrainer:
             self.logger.info(f"Loading checkpoint from {checkpoint_path}")
             checkpoint = torch.load(checkpoint_path, map_location=self.device)
             self.model.load_state_dict(checkpoint["model_state_dict"])
-            
+
         self.model.eval()
         self.logger.info(f"Evaluating on {len(test_loader.dataset)} samples")
-        
+
         running_loss: float = 0.0
         preds_all, targets_all = [], []
         modalities_all, sexes_all = [], []
-        
+
         with torch.no_grad():
             pbar = tqdm(
                 test_loader,
@@ -548,7 +707,7 @@ class BrainAgeTrainer:
                 if "sex" in batch:
                     sexes_all.extend(batch["sex"])
                 pbar.set_postfix(loss=loss.item())
-        
+
         metrics = calculate_metrics(
             np.concatenate(preds_all),
             np.concatenate(targets_all),
@@ -556,15 +715,15 @@ class BrainAgeTrainer:
             sexes=sexes_all if sexes_all else None,
         )
         metrics["loss"] = running_loss / len(test_loader)
-        
+
         self.logger.info(
             f"Evaluation results | "
             f"loss={metrics['loss']:.4f}  mae={metrics['mae']:.3f}  "
             f"mse={metrics['mse']:.3f}  r2={metrics['r2']:.3f}"
         )
-        
+
         if self.use_wandb:
             log_dict = {f"test/{k}": v for k, v in metrics.items()}
             self.wandb.log(log_dict)
-            
+
         return metrics
