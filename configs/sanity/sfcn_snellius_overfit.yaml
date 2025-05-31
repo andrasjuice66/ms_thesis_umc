@@ -95,7 +95,7 @@ training:
   epochs: 100
 
   # optimiser & LR
-  learning_rate: 0.001 #0.002193
+  learning_rate: 0.00001 #0.002193
   weight_decay:  0.001
   optimizer: "sgd"                       # adam | adamw | sgd | rmsprop | radam | novograd
   scheduler: "cosine"                      # cosine | plateau | onecycle | step | none
@@ -114,7 +114,7 @@ training:
   # misc
   early_stopping_patience: 25
   gradient_accumulation_steps: 1
-  use_amp: true                            # mixed precision if CUDA present
+  use_amp: false                           # mixed precision if CUDA present
 
 # ────────────────────────────  OUTPUT  ────────────────────────── #
 output:
