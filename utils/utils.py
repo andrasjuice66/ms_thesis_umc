@@ -36,7 +36,7 @@ def read_csv(
 ) -> Tuple[List[str], List[float], List[float]]:
     df = pd.read_csv(csv_path)
     paths, ages, weights, sexes, modalities = [], [], [], [], []
-    data_root = Path(data_root)  # Ensure data_root is a Path object
+    data_root = Path(data_root)  # Essure data_root is a Path object
     for _, row in df.iterrows():
         rel_path = row[image_key]
         fpath = data_root / rel_path
