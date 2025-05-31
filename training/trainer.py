@@ -204,12 +204,18 @@ class BrainAgeTrainer:
         def fwd():
             out = self.model(imgs)                       # logits or scalar
             
+            # Add requested debug logging
+            self.logger.info(f"Raw model output: {out}")
+            self.logger.info(f"Target ages: {ages}")
+            self.logger.info(f"Output shape: {out.shape}")
+            self.logger.info(f"Target shape: {ages.shape}")
+            
             # DEBUG: Check for NaN in model output
             if torch.isnan(out).any():
-                print(f"NaN detected in model output! Shape: {out.shape}")
-                print(f"Output min: {out.min()}, max: {out.max()}")
-                print(f"Output contains {torch.isnan(out).sum()} NaN values")
-                print(f"Input image stats - min: {imgs.min()}, max: {imgs.max()}, mean: {imgs.mean()}")
+                self.logger.error(f"NaN detected in model output! Shape: {out.shape}")
+                self.logger.error(f"Output min: {out.min()}, max: {out.max()}")
+                self.logger.error(f"Output contains {torch.isnan(out).sum()} NaN values")
+                self.logger.error(f"Input image stats - min: {imgs.min()}, max: {imgs.max()}, mean: {imgs.mean()}")
                 raise ValueError("Model output contains NaN values")
             
             if self.loss_name == "kl_div":
@@ -225,16 +231,18 @@ class BrainAgeTrainer:
                 
                 # DEBUG: Check for NaN in predictions
                 if torch.isnan(pred).any():
-                    print(f"NaN detected in predictions! Shape: {pred.shape}")
-                    print(f"Pred min: {pred.min()}, max: {pred.max()}")
-                    print(f"Predictions contain {torch.isnan(pred).sum()} NaN values")
+                    self.logger.error(f"NaN detected in predictions! Shape: {pred.shape}")
+                    self.logger.error(f"Pred min: {pred.min()}, max: {pred.max()}")
+                    self.logger.error(f"Predictions contain {torch.isnan(pred).sum()} NaN values")
                     raise ValueError("Predictions contain NaN values")
+                
+            
             
             # DEBUG: Check for NaN in loss
             if torch.isnan(loss):
-                print(f"NaN detected in loss!")
-                print(f"Loss value: {loss}")
-                print(f"Target ages - min: {ages.min()}, max: {ages.max()}")
+                self.logger.error(f"NaN detected in loss!")
+                self.logger.error(f"Loss value: {loss}")
+                self.logger.error(f"Target ages - min: {ages.min()}, max: {ages.max()}")
                 raise ValueError("Loss is NaN")
                 
             return loss, pred
