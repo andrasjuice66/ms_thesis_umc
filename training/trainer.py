@@ -434,7 +434,7 @@ class BrainAgeTrainer:
             self.scaler.unscale_(self.optimizer)
 
         # Clip gradients
-        torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=10.0)
+        torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
 
         if self.use_amp:
             self.scaler.step(self.optimizer)
