@@ -1,4 +1,4 @@
-import os
+
 import time
 import json
 import logging
@@ -21,7 +21,7 @@ import logging.handlers
 
 class BrainAgeTrainer:
     """
-    Comprehensive trainer for brain age prediction with detailed metrics and wandb integration.
+    Comprehensive trainer for brain age prediction with detailed metrics, wandb integration, and gradient debugging.
     """
     
     def __init__(
@@ -39,6 +39,7 @@ class BrainAgeTrainer:
         wandb_entity: Optional[str] = None,
         wandb_config: Optional[Dict] = None,
         experiment_name: str = "experiment",
+        debug_gradients: bool = True,
     ):
         self.model = model
         self.train_loader = train_loader
@@ -53,6 +54,7 @@ class BrainAgeTrainer:
         self.wandb_entity = wandb_entity
         self.wandb_config = wandb_config
         self.experiment_name = experiment_name
+        self.debug_gradients = debug_gradients
         
         # Training state
         self.current_epoch = 0
@@ -60,6 +62,12 @@ class BrainAgeTrainer:
         self.best_epoch = 0
         self.early_stopping_counter = 0
         self.history = {"train": [], "val": []}
+        
+        # Debug state
+        self._debug_step = 0
+        self.activations = {}
+        self.gradients = {}
+        self.prev_params = {}
         
         # Setup logger with wandb integration
         self.logger = setup_logger(
@@ -82,10 +90,16 @@ class BrainAgeTrainer:
         self._setup_loss_function()
         self._setup_amp()
         
+        # Setup debugging hooks if enabled
+        if self.debug_gradients:
+            self._setup_debug_hooks()
+        
         # Age brackets for detailed analysis (10-year gaps)
         self.age_brackets = [(20, 30), (30, 40), (40, 50), (50, 60), (60, 70), (70, 80), (80, 90)]
         
         self.logger.info(f"BrainAgeTrainer initialized for {experiment_name}")
+        if self.debug_gradients:
+            self.logger.info("Gradient debugging enabled")
         
     def _setup_optimizer(self):
         """Setup optimizer based on config."""
@@ -161,6 +175,150 @@ class BrainAgeTrainer:
             self.logger.info("AMP enabled")
         else:
             self.scaler = None
+    
+    def _setup_debug_hooks(self):
+        """Setup hooks for debugging activations and gradients."""
+        def get_activation(name):
+            def hook(model, input, output):
+                self.activations[name] = output.detach()
+            return hook
+
+        def get_gradient(name):
+            def hook(grad):
+                self.gradients[name] = grad.detach()
+            return hook
+
+        # Register hooks for Conv3d and Linear layers
+        for name, module in self.model.named_modules():
+            if isinstance(module, (nn.Conv3d, nn.Linear)):
+                module.register_forward_hook(get_activation(name))
+                if hasattr(module, 'weight') and module.weight is not None:
+                    module.weight.register_hook(get_gradient(f"{name}_weight"))
+                if hasattr(module, 'bias') and module.bias is not None:
+                    module.bias.register_hook(get_gradient(f"{name}_bias"))
+    
+    def log_gradient_norms(self):
+        """Log gradient norms for each layer."""
+        total_norm = 0
+        param_count = 0
+        gradient_dict = {}
+        dead_params = 0
+        total_params = 0
+
+        for name, param in self.model.named_parameters():
+            if param.grad is not None:
+                param_norm = param.grad.data.norm(2).item()
+                total_norm += param_norm ** 2
+                param_count += 1
+                gradient_dict[f"grad_norm/{name}"] = param_norm
+                
+                # Check for dead gradients
+                if param_norm < 1e-8:
+                    dead_params += param.numel()
+                total_params += param.numel()
+            else:
+                gradient_dict[f"grad_norm/{name}"] = 0.0
+                dead_params += param.numel() if param.numel() else 0
+                total_params += param.numel() if param.numel() else 0
+
+        total_norm = total_norm ** 0.5 if param_count > 0 else 0
+        gradient_dict["grad_norm/total"] = total_norm
+        gradient_dict["grad_norm/dead_ratio"] = dead_params / total_params if total_params > 0 else 0
+
+        return gradient_dict
+    
+    def track_parameter_changes(self):
+        """Track parameter changes between updates."""
+        changes = {}
+        total_change = 0
+        param_count = 0
+        
+        for name, param in self.model.named_parameters():
+            if name in self.prev_params:
+                change = torch.norm(param.data - self.prev_params[name]).item()
+                changes[f"param_change/{name}"] = change
+                total_change += change
+                param_count += 1
+        
+        if param_count > 0:
+            changes["param_change/total"] = total_change
+            changes["param_change/average"] = total_change / param_count
+        
+        return changes
+    
+    def log_activations_and_gradients(self):
+        """Log statistics of activations and gradients."""
+        stats = {}
+
+        # Activation statistics
+        for name, activation in self.activations.items():
+            if activation is not None:
+                stats[f"activation_mean/{name}"] = activation.mean().item()
+                stats[f"activation_std/{name}"] = activation.std().item()
+                stats[f"activation_max/{name}"] = activation.max().item()
+                stats[f"activation_min/{name}"] = activation.min().item()
+                
+                # Check for dead activations (all zeros)
+                dead_ratio = (activation == 0).float().mean().item()
+                stats[f"activation_dead_ratio/{name}"] = dead_ratio
+
+        # Gradient statistics from hooks
+        for name, gradient in self.gradients.items():
+            if gradient is not None:
+                stats[f"hook_gradient_mean/{name}"] = gradient.mean().item()
+                stats[f"hook_gradient_std/{name}"] = gradient.std().item()
+                stats[f"hook_gradient_max/{name}"] = gradient.max().item()
+                stats[f"hook_gradient_min/{name}"] = gradient.min().item()
+
+        return stats
+    
+    def debug_training_step(self, batch_idx, loss):
+        """Comprehensive debugging for training step."""
+        debug_freq = self.config.get("debug_frequency", 10)
+        
+        if batch_idx % debug_freq == 0:
+            debug_stats = {}
+            
+            # 1. Loss debugging
+            debug_stats["debug/loss"] = loss.item()
+            debug_stats["debug/step"] = self._debug_step
+            
+            # 2. Gradient norms
+            grad_stats = self.log_gradient_norms()
+            debug_stats.update(grad_stats)
+            
+            # 3. Parameter changes (if we have previous params)
+            if self.prev_params:
+                param_changes = self.track_parameter_changes()
+                debug_stats.update(param_changes)
+            
+            # 4. Activation and gradient statistics
+            if self.debug_gradients:
+                act_grad_stats = self.log_activations_and_gradients()
+                debug_stats.update(act_grad_stats)
+            
+            # 5. Learning rate
+            if self.optimizer.param_groups:
+                debug_stats["debug/learning_rate"] = self.optimizer.param_groups[0]["lr"]
+            
+            # Console logging for immediate feedback
+            print(f"\\n=== DEBUG STEP {self._debug_step} (Batch {batch_idx}) ===")
+            print(f"Loss: {loss.item():.6f}")
+            print(f"Total Grad Norm: {debug_stats.get('grad_norm/total', 0):.2e}")
+            print(f"Dead Gradient Ratio: {debug_stats.get('grad_norm/dead_ratio', 0):.4f}")
+            if 'param_change/total' in debug_stats:
+                print(f"Total Param Change: {debug_stats['param_change/total']:.2e}")
+            print("=" * 50)
+            
+            # WandB logging
+            if self.use_wandb:
+                wandb.log(debug_stats, step=self._debug_step)
+        
+        self._debug_step += 1
+    
+    def save_parameter_snapshot(self):
+        """Save current parameters for change tracking."""
+        self.prev_params = {name: param.clone().detach() for name, param in self.model.named_parameters()}
             
     def _compute_metrics(self, predictions: np.ndarray, targets: np.ndarray, 
                         modalities: Optional[List[str]] = None, 
@@ -213,7 +371,7 @@ class BrainAgeTrainer:
         return metrics
         
     def _train_epoch(self) -> Dict[str, float]:
-        """Train for one epoch."""
+        """Train for one epoch with comprehensive debugging."""
         self.model.train()
         total_loss = 0.0
         total_samples = 0
@@ -231,6 +389,10 @@ class BrainAgeTrainer:
             batch_size = images.size(0)
             total_samples += batch_size
             
+            # Save parameter snapshot for change tracking
+            if self.debug_gradients and batch_idx % self.config.get("debug_frequency", 10) == 0:
+                self.save_parameter_snapshot()
+            
             # Forward pass
             if self.use_amp:
                 with torch.cuda.amp.autocast():
@@ -247,12 +409,20 @@ class BrainAgeTrainer:
             if self.use_amp:
                 self.scaler.scale(loss).backward()
                 if (batch_idx + 1) % gradient_accumulation_steps == 0:
+                    # Debug before optimizer step
+                    if self.debug_gradients:
+                        self.debug_training_step(batch_idx, loss)
+                    
                     self.scaler.step(self.optimizer)
                     self.scaler.update()
                     self.optimizer.zero_grad()
             else:
                 loss.backward()
                 if (batch_idx + 1) % gradient_accumulation_steps == 0:
+                    # Debug before optimizer step
+                    if self.debug_gradients:
+                        self.debug_training_step(batch_idx, loss)
+                    
                     self.optimizer.step()
                     self.optimizer.zero_grad()
                     
@@ -522,3 +692,4 @@ class BrainAgeTrainer:
                 self.logger.info(f"  Ages {min_age}-{max_age}: {metrics[bracket_key]:.4f}")
                 
         return metrics
+
