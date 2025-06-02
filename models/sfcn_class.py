@@ -23,6 +23,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+
 # ──────────────────────── helper block ───────────────────────── #
 class _ConvBlock(nn.Sequential):
     """
@@ -49,7 +50,7 @@ class _ConvBlock(nn.Sequential):
 
 
 # ──────────────────────────   model   ────────────────────────── #
-class SFCNOriginal(nn.Module):
+class SFCNClass(nn.Module):
     """
     SFCN for brain-age prediction as a soft-classification problem.
 

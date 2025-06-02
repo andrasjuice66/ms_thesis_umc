@@ -310,7 +310,7 @@ class DomainRandomizer:
             RandFlipd(
                 keys=[self.image_key],
                 prob=self.prob["flip"],
-                spatial_axis=0,
+                spatial_axis=(0, 1, 2),
             ),
             RandAffined(
                 keys=[self.image_key],

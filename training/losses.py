@@ -143,7 +143,7 @@ class KLDivergenceLoss(nn.Module):
     KL Divergence loss for comparing probability distributions.
     Assumes input is log-probabilities and target is probabilities.
     """
-    def __init__(self, reduction: str = 'batchmean'):
+    def __init__(self, reduction: str = 'sum'):
         """
         Initialize the loss function.
 
@@ -165,6 +165,42 @@ class KLDivergenceLoss(nn.Module):
             Loss value
         """
         return self.kl_div(input, target)
+
+
+class CustomKLDivergenceLoss(nn.Module):
+    """
+    Custom KL Divergence loss that:
+    1. Averages by batch size (0th dimension)
+    2. Adds small epsilon to target distribution to prevent log(0)
+    """
+    def __init__(self, epsilon: float = 1e-16):
+        """
+        Initialize the loss function.
+
+        Args:
+            epsilon: Small value to add to target distribution to prevent log(0)
+        """
+        super().__init__()
+        self.epsilon = epsilon
+        self.kl_div = nn.KLDivLoss(reduction='sum')
+
+    def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        """
+        Calculate the custom KL divergence loss.
+
+        Args:
+            input: Log-probabilities (output of log_softmax)
+            target: Probabilities (output of softmax or one-hot)
+
+        Returns:
+            Loss value averaged by batch size
+        """
+        # Add small epsilon to prevent log(0)
+        target = target + self.epsilon
+        # Calculate loss and average by batch size
+        n = target.shape[0]
+        loss = self.kl_div(input, target) / n
+        return loss
 
 
 def get_loss_function(loss_type: str, **kwargs) -> nn.Module:
@@ -196,8 +232,11 @@ def get_loss_function(loss_type: str, **kwargs) -> nn.Module:
             max_age=kwargs.get("max_age", 100.0),
             alpha=kwargs.get("alpha", 1.0)
         ),
-        "kl_div": KLDivergenceLoss(
-            reduction=kwargs.get("reduction", "batchmean")
+        # "kl_div": KLDivergenceLoss(
+        #     reduction=kwargs.get("reduction", "batchmean")
+        # ),
+        "kl_div": CustomKLDivergenceLoss(
+            epsilon=kwargs.get("epsilon", 1e-16)
         ),
     }
     

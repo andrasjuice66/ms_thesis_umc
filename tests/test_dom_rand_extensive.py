@@ -121,7 +121,7 @@ class TransformationTester:
         axes[0].axis('off')
         
         # Flip X-axis
-        flip_transform = RandFlipd(keys=[self.image_key], prob=1.0, spatial_axis=0)
+        flip_transform = RandFlipd(keys=[self.image_key], prob=1.0, spatial_axis=1)
         sample = {self.image_key: self.original_image.clone()}
         flipped = flip_transform(sample)[self.image_key]
         flip_slice = self._get_center_slice(flipped)

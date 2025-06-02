@@ -142,15 +142,21 @@ class BrainAgeTrainer:
         # age grid & Gaussian-label bandwidth (σ) are configurable
         self.age_min   = self.cfg.get("age_min", 20)
         self.age_max   = self.cfg.get("age_max", 85)
+
+        self.bin_step  = self.cfg.get("bin_step", 1)           
         self.soft_sigma = self.cfg.get("loss_params", {}).get("sigma", 1.0)
 
-        # tensor of bin centres, lives on the training device
-        self.bin_centres = torch.arange(
+        # bin edges and centres, now half-integer centred like num2vect
+        edges = torch.arange(                      
             self.age_min,
-            self.age_max + 1,
+            self.age_max + self.bin_step,            # inclusive right edge
+            self.bin_step,
             device=self.device,
             dtype=torch.float32,
         )
+        self.bin_edges   = edges                         # length = n_bins+1
+        self.bin_centres = edges[:-1] + self.bin_step / 2     
+        self.n_bins      = len(self.bin_centres)    
 
         # /--------- DEBUG: Store initial weights for tracking changes ---------/
         self.initial_weights = {}
@@ -391,14 +397,37 @@ class BrainAgeTrainer:
                 loss_acc.backward()
         return loss.detach(), pred.detach()
 
+
     def _soft_label(self, ages: torch.Tensor) -> torch.Tensor:
         """
-        Build a Gaussian target distribution for each age.
-        Returns shape (B, 66)  with rows summing to 1.
+        Exact replica of num2vect (σ>0 branch).
+
+        For each age a:
+            P_i = Φ(x₂) − Φ(x₁) ,   x₁ = c_i − Δ/2 ,  x₂ = c_i + Δ/2
+        where Φ is the Gaussian CDF with std = self.soft_sigma.
+        Output shape: (B , n_bins) ,   rows sum to 1.
         """
-        diff2 = (self.bin_centres - ages.unsqueeze(1)) ** 2
-        g = torch.exp(-0.5 * diff2 / (self.soft_sigma ** 2))
-        return g / (g.sum(dim=1, keepdim=True) + 1e-8)
+        if self.soft_sigma == 0:
+            # "hard" label → class index (still returned as one-hot for KL loss)
+            idx = torch.clamp(
+                torch.floor((ages - self.age_min) / self.bin_step).long(),
+                0, self.n_bins - 1,
+            )
+            return F.one_hot(idx, num_classes=self.n_bins).float()
+
+        # vectorised CDF computation
+        left  = self.bin_centres - self.bin_step / 2        # (n_bins,)
+        right = self.bin_centres + self.bin_step / 2
+
+        # Φ((x – μ)/σ)  using torch.erf
+        sqrt2 = math.sqrt(2.0)
+        def Φ(x):
+            return 0.5 * (1 + torch.erf(x / (self.soft_sigma * sqrt2)))
+
+        cdf_left  = Φ((left .unsqueeze(0) - ages.unsqueeze(1)))
+        cdf_right = Φ((right.unsqueeze(0) - ages.unsqueeze(1)))
+        probs = cdf_right - cdf_left                          # (B , n_bins)
+        return probs / (probs.sum(dim=1, keepdim=True) + 1e-8)
 
     # ------------------------------------------------------------------ #
     def _optim_step(self) -> None:

@@ -21,7 +21,7 @@ from brain_age_pred.configs.config import Config
 from brain_age_pred.dom_rand.dataset import BADataset          
 from brain_age_pred.dom_rand.domain_randomization import DomainRandomizer
 from brain_age_pred.models.sfcn import SFCN
-from brain_age_pred.models.sfcn_original import SFCNOriginal
+from brain_age_pred.models.sfcn_class import SFCNClass
 from brain_age_pred.models.brainagenext import BrainAgeNeXt
 from brain_age_pred.training.trainer import BrainAgeTrainer
 from brain_age_pred.utils.logger import setup_logger
@@ -248,9 +248,9 @@ def main() -> None:
             age_min=cfg.get("model.age_min"),
             age_max=cfg.get("model.age_max"),
         ).to(device)
-    elif mtype == "sfcn_original":
-        logger.info("Creating SFCN Original model")
-        model = SFCNOriginal(
+    elif mtype == "sfcn_class":
+        logger.info("Creating SFCN Class model")
+        model = SFCNClass(
             in_channels=cfg.get("model.in_channels"),
             dropout_rate=cfg.get("model.dropout_rate"),
             channels=cfg.get("model.channels", (32, 64, 128, 256, 256, 64)),

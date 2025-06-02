@@ -18,6 +18,7 @@ import logging
 import numpy as np
 import torch
 from torch.utils.data import Dataset
+from monai.transforms import CenterSpatialCropd
 
 __all__ = ["BADataset"]
 
@@ -60,6 +61,9 @@ class BADataset(Dataset):
         self.sample_wts    = sample_wts
         self.transform     = transform
         self.mode          = mode.lower()
+        
+        # Center spatial crop that will be applied to all samples
+        self.center_crop = CenterSpatialCropd(keys=["image"], roi_size=(160, 192, 160))
 
         # --- local per-process cache (OrderedDict) ---------------------- #
         self.cache_size    = max(0, cache_size)
@@ -89,6 +93,9 @@ class BADataset(Dataset):
         if self.sexes is not None:
             sample["sex"] = self.sexes[idx]
 
+        # ---- always apply center crop ------------------------------------
+        sample = self.center_crop(sample)
+        
         # ---- transform -------------------------------------------------
         if self.transform is not None and self.mode == "train":
             sample = self.transform(sample)
