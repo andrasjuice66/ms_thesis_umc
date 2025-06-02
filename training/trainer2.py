@@ -389,11 +389,25 @@ class BrainAgeTrainer:
             batch_size = images.size(0)
             total_samples += batch_size
             
-            # Save parameter snapshot for change tracking
+            # === CRITICAL DEBUG: Save parameter snapshot BEFORE any computation ===
+            if batch_idx == 0:  # First batch of epoch
+                print(f"\\n=== EPOCH {self.current_epoch} BATCH {batch_idx} PARAMETER DEBUG ===")
+                # Save a few key parameters for comparison
+                self.debug_params_before = {}
+                param_count = 0
+                for name, param in self.model.named_parameters():
+                    if param_count < 3:  # Just first 3 parameters
+                        self.debug_params_before[name] = param.clone().detach()
+                        print(f"BEFORE - {name}: mean={param.mean().item():.6f}, std={param.std().item():.6f}")
+                    param_count += 1
+                    if param_count >= 3:
+                        break
+            
+            # Save parameter snapshot for change tracking (existing debug)
             if self.debug_gradients and batch_idx % self.config.get("debug_frequency", 10) == 0:
                 self.save_parameter_snapshot()
             
-            # Forward pass
+            # === FORWARD PASS ===
             if self.use_amp:
                 with torch.cuda.amp.autocast():
                     outputs = self.model(images)
@@ -405,27 +419,162 @@ class BrainAgeTrainer:
             # Scale loss for gradient accumulation
             loss = loss / gradient_accumulation_steps
             
-            # Backward pass
+            # === CRITICAL DEBUG: Check loss and gradients ===
+            if batch_idx == 0:
+                print(f"Loss before backward: {loss.item():.6f}")
+                print(f"Loss requires_grad: {loss.requires_grad}")
+                print(f"Model training mode: {self.model.training}")
+            
+            # === BACKWARD PASS ===
             if self.use_amp:
                 self.scaler.scale(loss).backward()
                 if (batch_idx + 1) % gradient_accumulation_steps == 0:
+                    # === CRITICAL DEBUG: Check gradients before optimizer step ===
+                    if batch_idx == 0:
+                        print("\\n=== GRADIENT CHECK BEFORE OPTIMIZER STEP ===")
+                        grad_count = 0
+                        for name, param in self.model.named_parameters():
+                            if grad_count < 3:
+                                if param.grad is not None:
+                                    grad_norm = param.grad.norm().item()
+                                    print(f"GRAD - {name}: norm={grad_norm:.2e}, mean={param.grad.mean().item():.2e}")
+                                else:
+                                    print(f"GRAD - {name}: NO GRADIENT!")
+                            grad_count += 1
+                            if grad_count >= 3:
+                                break
+                    
                     # Debug before optimizer step
                     if self.debug_gradients:
                         self.debug_training_step(batch_idx, loss)
                     
+                    # === CRITICAL DEBUG: Check optimizer state ===
+                    if batch_idx == 0:
+                        print(f"\\nOptimizer LR: {self.optimizer.param_groups[0]['lr']}")
+                        print(f"Optimizer state_dict keys: {list(self.optimizer.state_dict().keys())}")
+                    
+                    # === OPTIMIZER STEP ===
                     self.scaler.step(self.optimizer)
                     self.scaler.update()
                     self.optimizer.zero_grad()
+                    
+                    # === CRITICAL DEBUG: Check parameters AFTER optimizer step ===
+                    if batch_idx == 0:
+                        print("\\n=== PARAMETER CHECK AFTER OPTIMIZER STEP ===")
+                        total_change = 0.0
+                        param_count = 0
+                        for name, param in self.model.named_parameters():
+                            if param_count < 3 and name in self.debug_params_before:
+                                old_param = self.debug_params_before[name]
+                                change = torch.norm(param - old_param).item()
+                                total_change += change
+                                print(f"AFTER - {name}: change={change:.2e}")
+                                print(f"AFTER - {name}: mean={param.mean().item():.6f}, std={param.std().item():.6f}")
+                            param_count += 1
+                            if param_count >= 3:
+                                break
+                        print(f"TOTAL PARAMETER CHANGE: {total_change:.2e}")
+                        
+                        # Additional check: verify optimizer actually ran
+                        print(f"\\nOptimizer step count check:")
+                        if hasattr(self.optimizer, 'state'):
+                            print(f"Optimizer has state: {len(self.optimizer.state) > 0}")
+                            if len(self.optimizer.state) > 0:
+                                first_param_id = next(iter(self.optimizer.state.keys()))
+                                state = self.optimizer.state[first_param_id]
+                                print(f"First param state keys: {list(state.keys())}")
+                        
             else:
                 loss.backward()
                 if (batch_idx + 1) % gradient_accumulation_steps == 0:
+                    # === CRITICAL DEBUG: Check gradients before optimizer step ===
+                    if batch_idx == 0:
+                        print("\\n=== GRADIENT CHECK BEFORE OPTIMIZER STEP ===")
+                        grad_count = 0
+                        total_grad_norm = 0.0
+                        for name, param in self.model.named_parameters():
+                            if grad_count < 3:
+                                if param.grad is not None:
+                                    grad_norm = param.grad.norm().item()
+                                    total_grad_norm += grad_norm
+                                    print(f"GRAD - {name}: norm={grad_norm:.2e}, mean={param.grad.mean().item():.2e}")
+                                    print(f"GRAD - {name}: max={param.grad.max().item():.2e}, min={param.grad.min().item():.2e}")
+                                else:
+                                    print(f"GRAD - {name}: NO GRADIENT!")
+                            grad_count += 1
+                            if grad_count >= 3:
+                                break
+                        print(f"TOTAL GRAD NORM (first 3 layers): {total_grad_norm:.2e}")
+                    
                     # Debug before optimizer step
                     if self.debug_gradients:
                         self.debug_training_step(batch_idx, loss)
                     
+                    # === CRITICAL DEBUG: Check optimizer state ===
+                    if batch_idx == 0:
+                        print(f"\\nOptimizer type: {type(self.optimizer).__name__}")
+                        print(f"Optimizer LR: {self.optimizer.param_groups[0]['lr']}")
+                        print(f"Optimizer weight_decay: {self.optimizer.param_groups[0].get('weight_decay', 'N/A')}")
+                        print(f"Number of param groups: {len(self.optimizer.param_groups)}")
+                        print(f"Number of parameters in first group: {len(self.optimizer.param_groups[0]['params'])}")
+                    
+                    # === SAVE PARAMS BEFORE OPTIMIZER STEP ===
+                    if batch_idx == 0:
+                        params_before_step = {}
+                        for name, param in self.model.named_parameters():
+                            params_before_step[name] = param.clone().detach()
+                    
+                    # === OPTIMIZER STEP ===
+                    print(f"\\n=== CALLING OPTIMIZER.STEP() ===")
                     self.optimizer.step()
+                    print(f"=== OPTIMIZER.STEP() COMPLETED ===")
+                    
+                    # === CRITICAL DEBUG: Check parameters AFTER optimizer step ===
+                    if batch_idx == 0:
+                        print("\\n=== PARAMETER CHECK AFTER OPTIMIZER STEP ===")
+                        total_change = 0.0
+                        max_change = 0.0
+                        param_count = 0
+                        
+                        for name, param in self.model.named_parameters():
+                            if name in params_before_step:
+                                old_param = params_before_step[name]
+                                change = torch.norm(param - old_param).item()
+                                total_change += change
+                                max_change = max(max_change, change)
+                                
+                                if param_count < 3:
+                                    print(f"CHANGE - {name}: {change:.2e}")
+                                    print(f"AFTER  - {name}: mean={param.mean().item():.6f}, std={param.std().item():.6f}")
+                                    
+                                    # Check if any values actually changed
+                                    diff = param - old_param
+                                    nonzero_changes = (diff.abs() > 1e-10).sum().item()
+                                    total_elements = param.numel()
+                                    print(f"ELEMENTS CHANGED - {name}: {nonzero_changes}/{total_elements} ({100*nonzero_changes/total_elements:.2f}%)")
+                                
+                                param_count += 1
+                        
+                        print(f"\\nSUMMARY:")
+                        print(f"TOTAL PARAMETER CHANGE: {total_change:.2e}")
+                        print(f"MAX SINGLE PARAM CHANGE: {max_change:.2e}")
+                        
+                        # Check if gradients were consumed
+                        print(f"\\nGRADIENT CHECK AFTER OPTIMIZER STEP:")
+                        for name, param in self.model.named_parameters():
+                            if param.grad is not None:
+                                print(f"WARNING: {name} still has gradients after step!")
+                            break  # Just check first param
+                    
+                    # === ZERO GRADIENTS ===
                     self.optimizer.zero_grad()
                     
+                    # === FINAL VERIFICATION ===
+                    if batch_idx == 0:
+                        print(f"\\n=== FINAL VERIFICATION ===")
+                        print(f"Gradients zeroed: {all(p.grad is None or p.grad.norm().item() < 1e-10 for p in self.model.parameters() if p.grad is not None)}")
+                        print("=" * 80)
+                        
             total_loss += loss.item() * gradient_accumulation_steps * batch_size
             
             # Collect predictions for metrics
@@ -455,7 +604,6 @@ class BrainAgeTrainer:
             sexes if sexes else None
         )
         metrics["loss"] = avg_loss
-        
         return metrics
         
     def _validate_epoch(self) -> Dict[str, float]:
