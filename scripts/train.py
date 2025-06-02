@@ -245,8 +245,8 @@ def main() -> None:
         model = SFCN(
             in_channels=cfg.get("model.in_channels"),
             dropout_rate=cfg.get("model.dropout_rate"),
-            age_min=cfg.get("model.age_min"),
-            age_max=cfg.get("model.age_max"),
+            age_min=cfg.get("age_min"),
+            age_max=cfg.get("age_max"),
         ).to(device)
     elif mtype == "sfcn_class":
         logger.info("Creating SFCN Class model")
@@ -254,8 +254,8 @@ def main() -> None:
             in_channels=cfg.get("model.in_channels"),
             dropout_rate=cfg.get("model.dropout_rate"),
             channels=cfg.get("model.channels", (32, 64, 128, 256, 256, 64)),
-            age_min=cfg.get("model.age_min", 20),
-            age_max=cfg.get("model.age_max", 85),
+            age_min=cfg.get("age_min"),
+            age_max=cfg.get("age_max"),
         ).to(device)
     elif mtype == "brainagenext":
         logger.info("Creating BrainAgeNext model...")

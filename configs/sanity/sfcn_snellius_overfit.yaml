@@ -20,7 +20,10 @@ data:
   pin_memory_device: ""
   persistent_workers: true
   prefetch_factor: 4
-  target_shape: [182, 218, 182]            # (D,H,W) after optional resize
+  target_shape: [160, 192, 160]            # (D,H,W) after optional resize
+
+age_min: 30
+age_max: 39
 
 # ───────────────────────────  MODEL  ──────────────────────────── #
 model:
@@ -29,8 +32,7 @@ model:
   dropout_rate: 0.0
   use_attention: false                   
   checkpoint: null #"/home/ajoos/brain_age_pred/output/checkpoints/sfcn_20250522_104159/sfcn_20250522_104159_epoch057.pt"
-  age_min: 30
-  age_max: 39
+
 # ────────────────  DOMAIN-RANDOMISATION / AUGS  ───────────────── #
 # -------------------------------------------------------------------------
 # Domain-randomisation settings

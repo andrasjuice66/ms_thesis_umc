@@ -140,8 +140,8 @@ class BrainAgeTrainer:
 
         # ─── support for soft-classification SFCN ────────────────────── #
         # age grid & Gaussian-label bandwidth (σ) are configurable
-        self.age_min   = self.cfg.get("age_min", 20)
-        self.age_max   = self.cfg.get("age_max", 85)
+        self.age_min   = self.cfg.get("age_min")
+        self.age_max   = self.cfg.get("age_max")
 
         self.bin_step  = self.cfg.get("bin_step", 1)           
         self.soft_sigma = self.cfg.get("loss_params", {}).get("sigma", 1.0)
