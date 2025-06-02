@@ -23,7 +23,7 @@ from brain_age_pred.dom_rand.domain_randomization import DomainRandomizer
 from brain_age_pred.models.sfcn import SFCN
 from brain_age_pred.models.sfcn_original import SFCNOriginal
 from brain_age_pred.models.brainagenext import BrainAgeNeXt
-from brain_age_pred.training.trainer2 import BrainAgeTrainer
+from brain_age_pred.training.trainer2 import BrainAgeTrainer, BrainAgeTrainerDebug
 from brain_age_pred.utils.logger import setup_logger
 from brain_age_pred.utils.utils import set_seed, read_csv, load_checkpoint
 from torch.utils.data import WeightedRandomSampler, DataLoader
@@ -288,7 +288,7 @@ def main() -> None:
     # 8. ─── trainer ──────────────────────────────────────────── #
     logger.info("Initializing trainer...")
     print(f"Trainer config: {cfg.get('training')}")
-    trainer = BrainAgeTrainer(
+    trainer = BrainAgeTrainerDebug(
         model          = model,
         train_loader   = train_loader,
         val_loader     = val_loader,

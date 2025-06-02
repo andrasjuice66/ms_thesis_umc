@@ -1,4 +1,4 @@
-
+import os
 import time
 import json
 import logging
@@ -21,7 +21,7 @@ import logging.handlers
 
 class BrainAgeTrainer:
     """
-    Comprehensive trainer for brain age prediction with detailed metrics, wandb integration, and gradient debugging.
+    Comprehensive trainer for brain age prediction with detailed metrics and wandb integration.
     """
     
     def __init__(
@@ -39,7 +39,6 @@ class BrainAgeTrainer:
         wandb_entity: Optional[str] = None,
         wandb_config: Optional[Dict] = None,
         experiment_name: str = "experiment",
-        debug_gradients: bool = True,
     ):
         self.model = model
         self.train_loader = train_loader
@@ -54,7 +53,6 @@ class BrainAgeTrainer:
         self.wandb_entity = wandb_entity
         self.wandb_config = wandb_config
         self.experiment_name = experiment_name
-        self.debug_gradients = debug_gradients
         
         # Training state
         self.current_epoch = 0
@@ -62,12 +60,6 @@ class BrainAgeTrainer:
         self.best_epoch = 0
         self.early_stopping_counter = 0
         self.history = {"train": [], "val": []}
-        
-        # Debug state
-        self._debug_step = 0
-        self.activations = {}
-        self.gradients = {}
-        self.prev_params = {}
         
         # Setup logger with wandb integration
         self.logger = setup_logger(
@@ -90,16 +82,10 @@ class BrainAgeTrainer:
         self._setup_loss_function()
         self._setup_amp()
         
-        # Setup debugging hooks if enabled
-        if self.debug_gradients:
-            self._setup_debug_hooks()
-        
         # Age brackets for detailed analysis (10-year gaps)
         self.age_brackets = [(20, 30), (30, 40), (40, 50), (50, 60), (60, 70), (70, 80), (80, 90)]
         
         self.logger.info(f"BrainAgeTrainer initialized for {experiment_name}")
-        if self.debug_gradients:
-            self.logger.info("Gradient debugging enabled")
         
     def _setup_optimizer(self):
         """Setup optimizer based on config."""
@@ -175,150 +161,6 @@ class BrainAgeTrainer:
             self.logger.info("AMP enabled")
         else:
             self.scaler = None
-    
-    def _setup_debug_hooks(self):
-        """Setup hooks for debugging activations and gradients."""
-        def get_activation(name):
-            def hook(model, input, output):
-                self.activations[name] = output.detach()
-            return hook
-
-        def get_gradient(name):
-            def hook(grad):
-                self.gradients[name] = grad.detach()
-            return hook
-
-        # Register hooks for Conv3d and Linear layers
-        for name, module in self.model.named_modules():
-            if isinstance(module, (nn.Conv3d, nn.Linear)):
-                module.register_forward_hook(get_activation(name))
-                if hasattr(module, 'weight') and module.weight is not None:
-                    module.weight.register_hook(get_gradient(f"{name}_weight"))
-                if hasattr(module, 'bias') and module.bias is not None:
-                    module.bias.register_hook(get_gradient(f"{name}_bias"))
-    
-    def log_gradient_norms(self):
-        """Log gradient norms for each layer."""
-        total_norm = 0
-        param_count = 0
-        gradient_dict = {}
-        dead_params = 0
-        total_params = 0
-
-        for name, param in self.model.named_parameters():
-            if param.grad is not None:
-                param_norm = param.grad.data.norm(2).item()
-                total_norm += param_norm ** 2
-                param_count += 1
-                gradient_dict[f"grad_norm/{name}"] = param_norm
-                
-                # Check for dead gradients
-                if param_norm < 1e-8:
-                    dead_params += param.numel()
-                total_params += param.numel()
-            else:
-                gradient_dict[f"grad_norm/{name}"] = 0.0
-                dead_params += param.numel() if param.numel() else 0
-                total_params += param.numel() if param.numel() else 0
-
-        total_norm = total_norm ** 0.5 if param_count > 0 else 0
-        gradient_dict["grad_norm/total"] = total_norm
-        gradient_dict["grad_norm/dead_ratio"] = dead_params / total_params if total_params > 0 else 0
-
-        return gradient_dict
-    
-    def track_parameter_changes(self):
-        """Track parameter changes between updates."""
-        changes = {}
-        total_change = 0
-        param_count = 0
-        
-        for name, param in self.model.named_parameters():
-            if name in self.prev_params:
-                change = torch.norm(param.data - self.prev_params[name]).item()
-                changes[f"param_change/{name}"] = change
-                total_change += change
-                param_count += 1
-        
-        if param_count > 0:
-            changes["param_change/total"] = total_change
-            changes["param_change/average"] = total_change / param_count
-        
-        return changes
-    
-    def log_activations_and_gradients(self):
-        """Log statistics of activations and gradients."""
-        stats = {}
-
-        # Activation statistics
-        for name, activation in self.activations.items():
-            if activation is not None:
-                stats[f"activation_mean/{name}"] = activation.mean().item()
-                stats[f"activation_std/{name}"] = activation.std().item()
-                stats[f"activation_max/{name}"] = activation.max().item()
-                stats[f"activation_min/{name}"] = activation.min().item()
-                
-                # Check for dead activations (all zeros)
-                dead_ratio = (activation == 0).float().mean().item()
-                stats[f"activation_dead_ratio/{name}"] = dead_ratio
-
-        # Gradient statistics from hooks
-        for name, gradient in self.gradients.items():
-            if gradient is not None:
-                stats[f"hook_gradient_mean/{name}"] = gradient.mean().item()
-                stats[f"hook_gradient_std/{name}"] = gradient.std().item()
-                stats[f"hook_gradient_max/{name}"] = gradient.max().item()
-                stats[f"hook_gradient_min/{name}"] = gradient.min().item()
-
-        return stats
-    
-    def debug_training_step(self, batch_idx, loss):
-        """Comprehensive debugging for training step."""
-        debug_freq = self.config.get("debug_frequency", 10)
-        
-        if batch_idx % debug_freq == 0:
-            debug_stats = {}
-            
-            # 1. Loss debugging
-            debug_stats["debug/loss"] = loss.item()
-            debug_stats["debug/step"] = self._debug_step
-            
-            # 2. Gradient norms
-            grad_stats = self.log_gradient_norms()
-            debug_stats.update(grad_stats)
-            
-            # 3. Parameter changes (if we have previous params)
-            if self.prev_params:
-                param_changes = self.track_parameter_changes()
-                debug_stats.update(param_changes)
-            
-            # 4. Activation and gradient statistics
-            if self.debug_gradients:
-                act_grad_stats = self.log_activations_and_gradients()
-                debug_stats.update(act_grad_stats)
-            
-            # 5. Learning rate
-            if self.optimizer.param_groups:
-                debug_stats["debug/learning_rate"] = self.optimizer.param_groups[0]["lr"]
-            
-            # Console logging for immediate feedback
-            print(f"\\n=== DEBUG STEP {self._debug_step} (Batch {batch_idx}) ===")
-            print(f"Loss: {loss.item():.6f}")
-            print(f"Total Grad Norm: {debug_stats.get('grad_norm/total', 0):.2e}")
-            print(f"Dead Gradient Ratio: {debug_stats.get('grad_norm/dead_ratio', 0):.4f}")
-            if 'param_change/total' in debug_stats:
-                print(f"Total Param Change: {debug_stats['param_change/total']:.2e}")
-            print("=" * 50)
-            
-            # WandB logging
-            if self.use_wandb:
-                wandb.log(debug_stats, step=self._debug_step)
-        
-        self._debug_step += 1
-    
-    def save_parameter_snapshot(self):
-        """Save current parameters for change tracking."""
-        self.prev_params = {name: param.clone().detach() for name, param in self.model.named_parameters()}
             
     def _compute_metrics(self, predictions: np.ndarray, targets: np.ndarray, 
                         modalities: Optional[List[str]] = None, 
@@ -369,9 +211,9 @@ class BrainAgeTrainer:
                     metrics[f"mae_sex_{sex}"] = sex_mae
                     
         return metrics
-        
+    
     def _train_epoch(self) -> Dict[str, float]:
-        """Train for one epoch with comprehensive debugging."""
+        """Train for one epoch."""
         self.model.train()
         total_loss = 0.0
         total_samples = 0
@@ -389,25 +231,7 @@ class BrainAgeTrainer:
             batch_size = images.size(0)
             total_samples += batch_size
             
-            # === CRITICAL DEBUG: Save parameter snapshot BEFORE any computation ===
-            if batch_idx == 0:  # First batch of epoch
-                print(f"\\n=== EPOCH {self.current_epoch} BATCH {batch_idx} PARAMETER DEBUG ===")
-                # Save a few key parameters for comparison
-                self.debug_params_before = {}
-                param_count = 0
-                for name, param in self.model.named_parameters():
-                    if param_count < 3:  # Just first 3 parameters
-                        self.debug_params_before[name] = param.clone().detach()
-                        print(f"BEFORE - {name}: mean={param.mean().item():.6f}, std={param.std().item():.6f}")
-                    param_count += 1
-                    if param_count >= 3:
-                        break
-            
-            # Save parameter snapshot for change tracking (existing debug)
-            if self.debug_gradients and batch_idx % self.config.get("debug_frequency", 10) == 0:
-                self.save_parameter_snapshot()
-            
-            # === FORWARD PASS ===
+            # Forward pass
             if self.use_amp:
                 with torch.cuda.amp.autocast():
                     outputs = self.model(images)
@@ -419,162 +243,19 @@ class BrainAgeTrainer:
             # Scale loss for gradient accumulation
             loss = loss / gradient_accumulation_steps
             
-            # === CRITICAL DEBUG: Check loss and gradients ===
-            if batch_idx == 0:
-                print(f"Loss before backward: {loss.item():.6f}")
-                print(f"Loss requires_grad: {loss.requires_grad}")
-                print(f"Model training mode: {self.model.training}")
-            
-            # === BACKWARD PASS ===
+            # Backward pass
             if self.use_amp:
                 self.scaler.scale(loss).backward()
                 if (batch_idx + 1) % gradient_accumulation_steps == 0:
-                    # === CRITICAL DEBUG: Check gradients before optimizer step ===
-                    if batch_idx == 0:
-                        print("\\n=== GRADIENT CHECK BEFORE OPTIMIZER STEP ===")
-                        grad_count = 0
-                        for name, param in self.model.named_parameters():
-                            if grad_count < 3:
-                                if param.grad is not None:
-                                    grad_norm = param.grad.norm().item()
-                                    print(f"GRAD - {name}: norm={grad_norm:.2e}, mean={param.grad.mean().item():.2e}")
-                                else:
-                                    print(f"GRAD - {name}: NO GRADIENT!")
-                            grad_count += 1
-                            if grad_count >= 3:
-                                break
-                    
-                    # Debug before optimizer step
-                    if self.debug_gradients:
-                        self.debug_training_step(batch_idx, loss)
-                    
-                    # === CRITICAL DEBUG: Check optimizer state ===
-                    if batch_idx == 0:
-                        print(f"\\nOptimizer LR: {self.optimizer.param_groups[0]['lr']}")
-                        print(f"Optimizer state_dict keys: {list(self.optimizer.state_dict().keys())}")
-                    
-                    # === OPTIMIZER STEP ===
                     self.scaler.step(self.optimizer)
                     self.scaler.update()
                     self.optimizer.zero_grad()
-                    
-                    # === CRITICAL DEBUG: Check parameters AFTER optimizer step ===
-                    if batch_idx == 0:
-                        print("\\n=== PARAMETER CHECK AFTER OPTIMIZER STEP ===")
-                        total_change = 0.0
-                        param_count = 0
-                        for name, param in self.model.named_parameters():
-                            if param_count < 3 and name in self.debug_params_before:
-                                old_param = self.debug_params_before[name]
-                                change = torch.norm(param - old_param).item()
-                                total_change += change
-                                print(f"AFTER - {name}: change={change:.2e}")
-                                print(f"AFTER - {name}: mean={param.mean().item():.6f}, std={param.std().item():.6f}")
-                            param_count += 1
-                            if param_count >= 3:
-                                break
-                        print(f"TOTAL PARAMETER CHANGE: {total_change:.2e}")
-                        
-                        # Additional check: verify optimizer actually ran
-                        print(f"\\nOptimizer step count check:")
-                        if hasattr(self.optimizer, 'state'):
-                            print(f"Optimizer has state: {len(self.optimizer.state) > 0}")
-                            if len(self.optimizer.state) > 0:
-                                first_param_id = next(iter(self.optimizer.state.keys()))
-                                state = self.optimizer.state[first_param_id]
-                                print(f"First param state keys: {list(state.keys())}")
-                        
             else:
                 loss.backward()
                 if (batch_idx + 1) % gradient_accumulation_steps == 0:
-                    # === CRITICAL DEBUG: Check gradients before optimizer step ===
-                    if batch_idx == 0:
-                        print("\\n=== GRADIENT CHECK BEFORE OPTIMIZER STEP ===")
-                        grad_count = 0
-                        total_grad_norm = 0.0
-                        for name, param in self.model.named_parameters():
-                            if grad_count < 3:
-                                if param.grad is not None:
-                                    grad_norm = param.grad.norm().item()
-                                    total_grad_norm += grad_norm
-                                    print(f"GRAD - {name}: norm={grad_norm:.2e}, mean={param.grad.mean().item():.2e}")
-                                    print(f"GRAD - {name}: max={param.grad.max().item():.2e}, min={param.grad.min().item():.2e}")
-                                else:
-                                    print(f"GRAD - {name}: NO GRADIENT!")
-                            grad_count += 1
-                            if grad_count >= 3:
-                                break
-                        print(f"TOTAL GRAD NORM (first 3 layers): {total_grad_norm:.2e}")
-                    
-                    # Debug before optimizer step
-                    if self.debug_gradients:
-                        self.debug_training_step(batch_idx, loss)
-                    
-                    # === CRITICAL DEBUG: Check optimizer state ===
-                    if batch_idx == 0:
-                        print(f"\\nOptimizer type: {type(self.optimizer).__name__}")
-                        print(f"Optimizer LR: {self.optimizer.param_groups[0]['lr']}")
-                        print(f"Optimizer weight_decay: {self.optimizer.param_groups[0].get('weight_decay', 'N/A')}")
-                        print(f"Number of param groups: {len(self.optimizer.param_groups)}")
-                        print(f"Number of parameters in first group: {len(self.optimizer.param_groups[0]['params'])}")
-                    
-                    # === SAVE PARAMS BEFORE OPTIMIZER STEP ===
-                    if batch_idx == 0:
-                        params_before_step = {}
-                        for name, param in self.model.named_parameters():
-                            params_before_step[name] = param.clone().detach()
-                    
-                    # === OPTIMIZER STEP ===
-                    print(f"\\n=== CALLING OPTIMIZER.STEP() ===")
                     self.optimizer.step()
-                    print(f"=== OPTIMIZER.STEP() COMPLETED ===")
-                    
-                    # === CRITICAL DEBUG: Check parameters AFTER optimizer step ===
-                    if batch_idx == 0:
-                        print("\\n=== PARAMETER CHECK AFTER OPTIMIZER STEP ===")
-                        total_change = 0.0
-                        max_change = 0.0
-                        param_count = 0
-                        
-                        for name, param in self.model.named_parameters():
-                            if name in params_before_step:
-                                old_param = params_before_step[name]
-                                change = torch.norm(param - old_param).item()
-                                total_change += change
-                                max_change = max(max_change, change)
-                                
-                                if param_count < 3:
-                                    print(f"CHANGE - {name}: {change:.2e}")
-                                    print(f"AFTER  - {name}: mean={param.mean().item():.6f}, std={param.std().item():.6f}")
-                                    
-                                    # Check if any values actually changed
-                                    diff = param - old_param
-                                    nonzero_changes = (diff.abs() > 1e-10).sum().item()
-                                    total_elements = param.numel()
-                                    print(f"ELEMENTS CHANGED - {name}: {nonzero_changes}/{total_elements} ({100*nonzero_changes/total_elements:.2f}%)")
-                                
-                                param_count += 1
-                        
-                        print(f"\\nSUMMARY:")
-                        print(f"TOTAL PARAMETER CHANGE: {total_change:.2e}")
-                        print(f"MAX SINGLE PARAM CHANGE: {max_change:.2e}")
-                        
-                        # Check if gradients were consumed
-                        print(f"\\nGRADIENT CHECK AFTER OPTIMIZER STEP:")
-                        for name, param in self.model.named_parameters():
-                            if param.grad is not None:
-                                print(f"WARNING: {name} still has gradients after step!")
-                            break  # Just check first param
-                    
-                    # === ZERO GRADIENTS ===
                     self.optimizer.zero_grad()
                     
-                    # === FINAL VERIFICATION ===
-                    if batch_idx == 0:
-                        print(f"\\n=== FINAL VERIFICATION ===")
-                        print(f"Gradients zeroed: {all(p.grad is None or p.grad.norm().item() < 1e-10 for p in self.model.parameters() if p.grad is not None)}")
-                        print("=" * 80)
-                        
             total_loss += loss.item() * gradient_accumulation_steps * batch_size
             
             # Collect predictions for metrics
@@ -604,6 +285,7 @@ class BrainAgeTrainer:
             sexes if sexes else None
         )
         metrics["loss"] = avg_loss
+        
         return metrics
         
     def _validate_epoch(self) -> Dict[str, float]:
@@ -841,3 +523,159 @@ class BrainAgeTrainer:
                 
         return metrics
 
+
+
+# ======================================
+# Instrumented version of BrainAgeTrainer with extensive
+# gradient-flow debugging utilities. Save this file as
+# `brain_age_trainer_debug.py` next to your project and
+# import `BrainAgeTrainerDebug` instead of `BrainAgeTrainer`.
+# --------------------------------------
+#  Usage example
+#  -------------
+#  from brain_age_trainer_debug import BrainAgeTrainerDebug
+#  trainer = BrainAgeTrainerDebug(model, train_loader, val_loader,
+#                                 test_loader, config, device,
+#                                 checkpoint_dir, log_dir,
+#                                 use_wandb=True)
+#  history = trainer.train()
+# ======================================
+from typing import Dict, Any, List, Optional
+import numpy as np
+import torch
+import wandb
+
+class BrainAgeTrainerDebug(BrainAgeTrainer):
+    """Extension of BrainAgeTrainer that prints / logs detailed gradient-flow
+    statistics and activation distributions each optimisation step.
+    Designed for quick sanity-checks (e.g., over-fitting 10 MRI volumes).
+    """
+
+    def __init__(self, *args, gradient_print_freq: int = 1, **kwargs):
+        """Extra argument
+        Parameters
+        ----------
+        gradient_print_freq : int
+            Frequency (in optimiser steps) at which gradient statistics are
+            reported. Set to 1 for every step; increase to reduce verbosity.
+        """
+        super().__init__(*args, **kwargs)
+        self._grad_step_idx = 0
+        self.gradient_print_freq = gradient_print_freq
+
+    # ------------------------------------------------------------------
+    #  Internal helpers
+    # ------------------------------------------------------------------
+    @torch.no_grad()
+    def _collect_grad_stats(self):
+        """Return dictionaries with gradient norms and zero-grad counts."""
+        grad_norms: Dict[str, float] = {}
+        zero_grads = 0
+        total_params = 0
+        for name, p in self.model.named_parameters():
+            if p.grad is None:
+                continue
+            g = p.grad.detach()
+            total_params += g.numel()
+            zero_grads += (g == 0).sum().item()
+            grad_norms[name] = g.norm().item()
+        return grad_norms, zero_grads, total_params
+
+    @torch.no_grad()
+    def _log_gradient_flow(self):
+        """Print / log gradient norms & zero-gradient percentage."""
+        grad_norms, zero_grads, total = self._collect_grad_stats()
+        max_norm = max(grad_norms.values()) if grad_norms else 0.0
+        mean_norm = float(np.mean(list(grad_norms.values()))) if grad_norms else 0.0
+        pct_zero = 100.0 * zero_grads / total if total else 0.0
+
+        msg = (f"[Grad-Flow] step={self._grad_step_idx:04d} | max_norm={max_norm:.3e} "
+               f"| mean_norm={mean_norm:.3e} | zero_grad={pct_zero:.2f}%")
+        self.logger.info(msg)
+
+        # Optional: log histogram to WandB
+        if self.use_wandb and (self._grad_step_idx % self.gradient_print_freq == 0):
+            wandb_data = {
+                "grad_flow/max_norm": max_norm,
+                "grad_flow/mean_norm": mean_norm,
+                "grad_flow/zero_grad_pct": pct_zero,
+                "grad_flow/step": self._grad_step_idx,
+            }
+            # Also send per-layer norms (only small models, else comment out)
+            for k, v in grad_norms.items():
+                wandb_data[f"grad_norm/{k}"] = v
+            wandb.log(wandb_data, step=self._grad_step_idx)
+
+    # ------------------------------------------------------------------
+    #  Override training step to insert debug hooks
+    # ------------------------------------------------------------------
+    def _train_epoch(self) -> Dict[str, float]:
+        self.model.train()
+        total_loss = 0.0
+        total_samples = 0
+        predictions, targets, modalities, sexes = [], [], [], []
+
+        gradient_accumulation_steps = self.config.get("gradient_accumulation_steps", 1)
+
+        for batch_idx, batch in enumerate(self.train_loader):
+            imgs = batch["image"].to(self.device, non_blocking=True)
+            ages = batch["age"].to(self.device, non_blocking=True)
+            bsz = imgs.size(0)
+            total_samples += bsz
+
+            # Forward
+            if self.use_amp:
+                with torch.cuda.amp.autocast():
+                    outs = self.model(imgs)
+                    loss = self.criterion(outs.squeeze(), ages)
+            else:
+                outs = self.model(imgs)
+                loss = self.criterion(outs.squeeze(), ages)
+
+            loss_scaled = loss / gradient_accumulation_steps
+
+            # Backward
+            if self.use_amp:
+                self.scaler.scale(loss_scaled).backward()
+            else:
+                loss_scaled.backward()
+
+            # Optimiser step & zero-grad every accumulation interval
+            if (batch_idx + 1) % gradient_accumulation_steps == 0:
+                if self.use_amp:
+                    self.scaler.step(self.optimizer)
+                    self.scaler.update()
+                else:
+                    self.optimizer.step()
+                self.optimizer.zero_grad()
+
+                # ------------------------------------------------------
+                #  DEBUG: gradient-flow statistics
+                # ------------------------------------------------------
+                if (self._grad_step_idx % self.gradient_print_freq) == 0:
+                    self._log_gradient_flow()
+                self._grad_step_idx += 1
+
+            total_loss += loss.item() * bsz
+
+            # Collect preds for epoch-level metrics
+            with torch.no_grad():
+                predictions.extend(outs.squeeze().cpu().numpy())
+                targets.extend(ages.cpu().numpy())
+                if "modality" in batch:
+                    modalities.extend(batch["modality"])
+                if "sex" in batch:
+                    sexes.extend(batch["sex"])
+
+        # Scheduler (if not ReduceLROnPlateau)
+        if self.scheduler and not isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+            if not isinstance(self.scheduler, torch.optim.lr_scheduler.OneCycleLR):
+                self.scheduler.step()
+
+        avg_loss = total_loss / total_samples
+        metrics = self._compute_metrics(np.array(predictions), np.array(targets),
+                                        modalities if modalities else None,
+                                        sexes if sexes else None)
+        metrics["loss"] = avg_loss
+
+        return metrics
