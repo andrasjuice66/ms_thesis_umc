@@ -26,7 +26,7 @@ data:
 model:
   type: "sfcn"                             # sfcn | resnet3d | efficientnet3d
   in_channels: 1
-  dropout_rate: 0.0 #.5532
+  dropout_rate: 0.1532
   use_attention: false                   
   checkpoint: null #"/home/ajoos/brain_age_pred/output/checkpoints/sfcn_20250522_104159/sfcn_20250522_104159_epoch057.pt"
   age_min: 30
@@ -97,7 +97,7 @@ training:
   # optimiser & LR
   learning_rate: 0.0001 #0.002193
   weight_decay:  0.001
-  optimizer: "sgd"                       # adam | adamw | sgd | rmsprop | radam | novograd
+  optimizer: "adam"                       # adam | adamw | sgd | rmsprop | radam | novograd
   scheduler: "cosine"                      # cosine | plateau | onecycle | step | none
   scheduler_params:
     T_max: 100
