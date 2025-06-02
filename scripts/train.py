@@ -23,7 +23,7 @@ from brain_age_pred.dom_rand.domain_randomization import DomainRandomizer
 from brain_age_pred.models.sfcn import SFCN
 from brain_age_pred.models.sfcn_original import SFCNOriginal
 from brain_age_pred.models.brainagenext import BrainAgeNeXt
-from brain_age_pred.training.trainer import BrainAgeTrainer
+from brain_age_pred.training.trainer2 import BrainAgeTrainer
 from brain_age_pred.utils.logger import setup_logger
 from brain_age_pred.utils.utils import set_seed, read_csv, load_checkpoint
 from torch.utils.data import WeightedRandomSampler, DataLoader
@@ -165,28 +165,34 @@ def main() -> None:
         file_paths   = train_p,
         age_labels   = train_a,
         sample_wts   = train_w,
+        sexes        = train_s,
+        modalities   = train_m,
         transform    = transform,
         mode         = "train",
         cache_size   = cfg.get("data.cache_size", 0),
-        )
+    )
     
     logger.info("Creating validation dataset")
     val_ds   = BADataset(
         file_paths   = val_p,
         age_labels   = val_a,
+        sexes        = val_s,
+        modalities   = val_m,
         transform    = None,
         mode         = "val",
         cache_size   = cfg.get("data.cache_size", 0),
-        )
+    )
 
     logger.info("Creating test dataset")
     test_ds = BADataset(
         file_paths   = test_p,
         age_labels   = test_a,
+        sexes        = test_s,
+        modalities   = test_m,
         transform    = None,
         mode         = "test",
         cache_size   = cfg.get("data.cache_size", 0),
-        )
+    )
 
     logger.info("Setting up sampler...")
 
