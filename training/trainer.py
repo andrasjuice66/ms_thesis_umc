@@ -362,15 +362,7 @@ class BrainAgeTrainer:
         # ─── forward (AMP or fp32) ───────────────────────────────── #
         def fwd():
             out = self.model(imgs)                       # logits or scalar
-
-            # DEBUG: Check for NaN in model output
-            if torch.isnan(out).any():
-                self.logger.error(f"NaN detected in model output! Shape: {out.shape}")
-                self.logger.error(f"Output min: {out.min()}, max: {out.max()}")
-                self.logger.error(f"Output contains {torch.isnan(out).sum()} NaN values")
-                self.logger.error(f"Input image stats - min: {imgs.min()}, max: {imgs.max()}, mean: {imgs.mean()}")
-                raise ValueError("Model output contains NaN values")
-
+            
             if self.loss_name == "kl_div":
                 tgt   = self._soft_label(ages)
                 loss  = self._compute_loss(out, tgt)     # KL
@@ -381,20 +373,6 @@ class BrainAgeTrainer:
                 pred  = out.squeeze()
                 if pred.dim() == 0 and ages.dim() > 0:
                     pred = pred.unsqueeze(0)
-
-                # DEBUG: Check for NaN in predictions
-                if torch.isnan(pred).any():
-                    self.logger.error(f"NaN detected in predictions! Shape: {pred.shape}")
-                    self.logger.error(f"Pred min: {pred.min()}, max: {pred.max()}")
-                    self.logger.error(f"Predictions contain {torch.isnan(pred).sum()} NaN values")
-                    raise ValueError("Predictions contain NaN values")
-
-            # DEBUG: Check for NaN in loss
-            if torch.isnan(loss):
-                self.logger.error(f"NaN detected in loss!")
-                self.logger.error(f"Loss value: {loss}")
-                self.logger.error(f"Target ages - min: {ages.min()}, max: {ages.max()}")
-                raise ValueError("Loss is NaN")
 
             return loss, pred
 

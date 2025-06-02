@@ -652,14 +652,11 @@ class BrainAgeTrainerDebug(BrainAgeTrainer):
                     self.scaler.update()
                 else:
                     self.optimizer.step()
-                self.optimizer.zero_grad()
 
-                # ------------------------------------------------------
-                #  DEBUG: gradient-flow statistics
-                # ------------------------------------------------------
                 if (self._grad_step_idx % self.gradient_print_freq) == 0:
                     self._log_gradient_flow()
                 self._grad_step_idx += 1
+                self.optimizer.zero_grad()
 
             total_loss += loss.item() * bsz
 
