@@ -473,18 +473,6 @@ class BrainAgeTrainer:
             preds_all.append(preds.cpu().numpy())
             targets_all.append(batch["age"].cpu().numpy())
 
-            # Convert predictions and targets to numpy for logging
-            preds_np = preds.cpu().numpy()
-            targets_np = batch["age"].cpu().numpy()
-
-            # Log detailed predictions for first few batches only
-            if step < 3:  # Reduce logging spam
-                for i in range(len(preds_np)):
-                    pred_age = preds_np[i]
-                    target_age = targets_np[i]
-                    abs_error = abs(pred_age - target_age)
-                    self.logger.info(f"Batch {step}, Sample {i} | Predicted: {pred_age:.2f} | Target: {target_age:.2f} | Error: {abs_error:.2f}")
-
             pbar.set_postfix(loss=f"{loss.item():.4f}")
 
         # last, if #batches is not divisible by grad_accum_steps
