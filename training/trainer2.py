@@ -14,7 +14,10 @@ from torch.optim.lr_scheduler import CosineAnnealingLR, ReduceLROnPlateau, OneCy
 from torch.utils.data import DataLoader
 from scipy.stats import pearsonr
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from brain_age_pred.utils.logger import setup_logger
 import wandb
+from brain_age_pred.utils.wandb_logger import WandbLogger
+import logging.handlers
 
 class BrainAgeTrainer:
     """
@@ -58,8 +61,20 @@ class BrainAgeTrainer:
         self.early_stopping_counter = 0
         self.history = {"train": [], "val": []}
         
-        # Setup logger
-        self.logger = logging.getLogger("BrainAgeTrainer")
+        # Setup logger with wandb integration
+        self.logger = setup_logger(
+            name=self.experiment_name,
+            log_file=self.log_dir / f"{self.experiment_name}.log"
+        )
+        
+        # Add wandb handler to logger if wandb is enabled
+        if use_wandb:
+            self.wandb = WandbLogger(
+                project = wandb_project,
+                entity  = wandb_entity,
+                name    = self.exp_name,
+                config  = wandb_config or {},
+            )
         
         # Initialize training components
         self._setup_optimizer()
