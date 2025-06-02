@@ -71,8 +71,6 @@ class SFCN(nn.Module):
         in_channels: int = 1,
         dropout_rate: Union[float, None] = 0.3,
         channels: Sequence[int] = (32, 64, 128, 256, 256, 64),
-        age_min=20,
-        age_max=85,
         **_ignored,                             # swallow extra YAML keys (e.g. 'type')
     ) -> None:
         super().__init__()
@@ -101,14 +99,6 @@ class SFCN(nn.Module):
         head.append(nn.Conv3d(in_ch, 1, kernel_size=1))    # (N,1,1,1,1)
         self.head = nn.Sequential(*head)
 
-        # Add learnable scaling layer
-        self.age_range = age_max - age_min
-        self.age_min = age_min
-        self.age_scaler = nn.Linear(1, 1)
-        # Initialize with reasonable defaults
-        self.age_scaler.weight.data.fill_(self.age_range / 10)  # Assume raw output in roughly [-5,5]
-        self.age_scaler.bias.data.fill_((age_min + age_max) / 2)  # Center at middle of range
-
         # weight initialisation
         self.apply(self._init_weights)
 
@@ -136,5 +126,4 @@ class SFCN(nn.Module):
         """
         x = self.feature_extractor(x)
         x = self.head(x)          # (N,1,1,1,1)
-        x = x.flatten(1)          # (N,1)
-        return self.age_scaler(x) # Apply learnable scaling to target age range
+        return x.flatten(1)       # (N,1)
