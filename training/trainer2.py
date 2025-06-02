@@ -562,6 +562,8 @@ class BrainAgeTrainerDebug(BrainAgeTrainer):
         super().__init__(*args, **kwargs)
         self._grad_step_idx = 0
         self.gradient_print_freq = gradient_print_freq
+        # Add a global step counter for wandb logging
+        self._global_step = 0
 
     # ------------------------------------------------------------------
     #  Internal helpers
@@ -599,12 +601,15 @@ class BrainAgeTrainerDebug(BrainAgeTrainer):
                 "grad_flow/max_norm": max_norm,
                 "grad_flow/mean_norm": mean_norm,
                 "grad_flow/zero_grad_pct": pct_zero,
-                "grad_flow/step": self._grad_step_idx,
+                # Use global step instead of grad_step_idx
+                "grad_flow/step": self._global_step,
             }
             # Also send per-layer norms (only small models, else comment out)
             for k, v in grad_norms.items():
                 wandb_data[f"grad_norm/{k}"] = v
-            wandb.log(wandb_data, step=self._grad_step_idx)
+            wandb.log(wandb_data, step=self._global_step)
+            # Increment global step after logging
+            self._global_step += 1
 
     # ------------------------------------------------------------------
     #  Override training step to insert debug hooks
@@ -679,3 +684,38 @@ class BrainAgeTrainerDebug(BrainAgeTrainer):
         metrics["loss"] = avg_loss
 
         return metrics
+
+    def _log_metrics(self, train_metrics: Dict[str, float], val_metrics: Dict[str, float]):
+        """Log metrics to wandb and console."""
+        # Console logging remains the same
+        self.logger.info(
+            f"Epoch {self.current_epoch:3d} | "
+            f"Train Loss: {train_metrics['loss']:.4f} | "
+            f"Train MAE: {train_metrics['mae']:.4f} | "
+            f"Val Loss: {val_metrics['loss']:.4f} | "
+            f"Val MAE: {val_metrics['mae']:.4f} | "
+            f"Val R²: {val_metrics['r2']:.4f} | "
+            f"Val Corr: {val_metrics['correlation']:.4f}"
+        )
+        
+        # WandB logging - use global step instead of epoch
+        if self.use_wandb:
+            wandb_log = {}
+            
+            # Add train metrics with prefix
+            for key, value in train_metrics.items():
+                wandb_log[f"train/{key}"] = value
+                
+            # Add validation metrics with prefix
+            for key, value in val_metrics.items():
+                wandb_log[f"val/{key}"] = value
+                
+            # Add learning rate
+            if self.optimizer.param_groups:
+                wandb_log["learning_rate"] = self.optimizer.param_groups[0]["lr"]
+                
+            wandb_log["epoch"] = self.current_epoch
+            # Use global step instead of epoch
+            wandb.log(wandb_log, step=self._global_step)
+            # Increment global step after logging
+            self._global_step += 1
