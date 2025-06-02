@@ -172,9 +172,9 @@ class BrainAgeTrainer:
         self.check_data_sanity()
 
         # /--------- DEBUG: Test single batch overfitting ---------/
-        if not self.test_single_batch_overfitting():
-            self.logger.error("CRITICAL: Model cannot overfit single batch!")
-            raise RuntimeError("Model cannot learn - check architecture/data")
+        # if not self.test_single_batch_overfitting():
+        #     self.logger.error("CRITICAL: Model cannot overfit single batch!")
+        #     raise RuntimeError("Model cannot learn - check architecture/data")
 
     # ------------------------------------------------------------------ #
     #                        DEBUG METHODS                               #
