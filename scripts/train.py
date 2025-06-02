@@ -311,7 +311,7 @@ def main() -> None:
         logger.info("Beginning training loop")
         history = trainer.train()
         logger.info(f"Training finished in {time.time()-t0:.1f}s")
-        json.dump(history, open(ckpt_dir/"history.json","w"), indent=2)
+        # json.dump(history, open(ckpt_dir/"history.json","w"), indent=2)
         if use_wandb: wandb.log({"train/duration_s": time.time()-t0})
         best_val = trainer.best_metric       
         if np.isinf(best_val):                     

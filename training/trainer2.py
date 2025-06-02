@@ -72,7 +72,7 @@ class BrainAgeTrainer:
             self.wandb = WandbLogger(
                 project = wandb_project,
                 entity  = wandb_entity,
-                name    = self.exp_name,
+                name    = self.experiment_name,
                 config  = wandb_config or {},
             )
         
