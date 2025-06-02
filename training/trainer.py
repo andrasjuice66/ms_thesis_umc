@@ -69,6 +69,8 @@ class BrainAgeTrainer:
         log_dir: str | Path = "logs",
         use_wandb: bool = False,
         wandb_project: str = "brain-age",
+        age_min: int = 20,
+        age_max: int = 85,
         wandb_entity: Optional[str] = None,
         wandb_config: Optional[Dict[str, Any]] = None,
         experiment_name: Optional[str] = None,
@@ -138,13 +140,12 @@ class BrainAgeTrainer:
         self.best_metric     = float("inf")
         self.early_stop_counter = 0
 
-        # ─── support for soft-classification SFCN ────────────────────── #
-        # age grid & Gaussian-label bandwidth (σ) are configurable
-        self.age_min   = self.cfg.get("age_min")
-        self.age_max   = self.cfg.get("age_max")
 
         self.bin_step  = self.cfg.get("bin_step", 1)           
         self.soft_sigma = self.cfg.get("loss_params", {}).get("sigma", 1.0)
+
+        self.age_min = age_min
+        self.age_max = age_max
 
         # bin edges and centres, now half-integer centred like num2vect
         edges = torch.arange(                      

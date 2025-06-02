@@ -21,9 +21,8 @@ data:
   persistent_workers: true
   prefetch_factor: 4
   target_shape: [160, 192, 160]            # (D,H,W) after optional resize
-
-age_min: 30
-age_max: 39
+  age_min: 30
+  age_max: 39
 
 # ───────────────────────────  MODEL  ──────────────────────────── #
 model:
