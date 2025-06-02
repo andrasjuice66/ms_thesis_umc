@@ -26,7 +26,7 @@ data:
 model:
   type: "sfcn"                             # sfcn | resnet3d | efficientnet3d
   in_channels: 1
-  dropout_rate: 0.5532
+  dropout_rate: 0.0
   use_attention: false                   
   checkpoint: null #"/home/ajoos/brain_age_pred/output/checkpoints/sfcn_20250522_104159/sfcn_20250522_104159_epoch057.pt"
 
@@ -94,7 +94,7 @@ training:
   epochs: 100
 
   # optimiser & LR
-  learning_rate: 0.0022 #0.002193
+  learning_rate: 0.001 #0.002193
   weight_decay:  0.001
   optimizer: "sgd"                       # adam | adamw | sgd | rmsprop | radam | novograd
   scheduler: "cosine"                      # cosine | plateau | onecycle | step | none
@@ -105,7 +105,7 @@ training:
     steps_per_epoch: 534
 
   # losses
-  loss: "huber_mae"                        # mse | mae | huber | huber_mae | weighted_mse
+  loss: "mse"                        # mse | mae | huber | huber_mae | weighted_mse
   loss_params:
     delta: 1.0
     mae_weight: 0.5
@@ -120,12 +120,12 @@ output:
   output_dir: "brain_age_pred/output"
   checkpoint_dir: "checkpoints"
   log_dir: "logs"
-  experiment_name: "sfcn_t1_30_40"                   # auto-generate if left null
+  experiment_name: null    # auto-generate if left null
 
 # ─────────────────────────────  W&B  ──────────────────────────── #
 wandb:
   use_wandb: true                         # still requires $WANDB_API env-var
-  project: "brainage-model-sanity"
+  project: "brainage-model-t1_30_40"
   entity: null
 
 # ───────────────────────── MISCELLANEOUS ───────────────────────── #

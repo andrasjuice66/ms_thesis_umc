@@ -21,7 +21,7 @@ conda activate thesis
 
 # 3) launch training exactly as on your laptop
 cd $HOME/
-python -m brain_age_pred.scripts.train brain_age_pred/configs/sanity/sfcn_snellius_overfit.yaml
+# python -m brain_age_pred.scripts.train brain_age_pred/configs/sanity/sfcn_snellius_overfit.yaml
 
 # python -m brain_age_pred.scripts.train brain_age_pred/configs/sanity/sfcn_snellius_t1.yaml
 
@@ -31,4 +31,4 @@ python -m brain_age_pred.scripts.train brain_age_pred/configs/sanity/sfcn_snelli
 
 # python -m brain_age_pred.scripts.train brain_age_pred/configs/sanity/sfcn_snellius_t2.yaml
 
-# python -m brain_age_pred.scripts.train brain_age_pred/configs/sanity/sfcn_snellius_t1_30_40.yaml
+python -m brain_age_pred.scripts.train brain_age_pred/configs/sanity/sfcn_snellius_t1_30_40.yaml
