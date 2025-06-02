@@ -91,7 +91,7 @@ domain_randomization:
 
 # ──────────────────────────  TRAINING  ────────────────────────── #
 training:
-  batch_size: 4
+  batch_size: 10
   epochs: 100
 
   # optimiser & LR
