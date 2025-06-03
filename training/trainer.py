@@ -140,6 +140,9 @@ class BrainAgeTrainer:
         self.best_metric     = float("inf")
         self.early_stop_counter = 0
 
+        self.best_val_mae = float("inf")  # Best validation MAE
+        self.best_mae_epoch = -1  # Epoch with best validation MAE
+        self.best_mae_checkpoint_path = None  # Path to best MAE checkpoint
 
         self.bin_step  = self.cfg.get("bin_step", 1)
         self.soft_sigma = self.cfg.get("loss_params", {}).get("sigma", 1.0)
@@ -175,120 +178,44 @@ class BrainAgeTrainer:
         self.logger.info(f"Learning rate: {self.cfg.get('learning_rate', 1e-4)}")
         self.logger.info(f"Total model parameters: {sum(p.numel() for p in self.model.parameters())}")
 
-        # /--------- DEBUG: Run initial sanity checks ---------/
-        self.check_data_sanity()
 
-        # /--------- DEBUG: Test single batch overfitting ---------/
-        # if not self.test_single_batch_overfitting():
-        #     self.logger.error("CRITICAL: Model cannot overfit single batch!")
-        #     raise RuntimeError("Model cannot learn - check architecture/data")
+    # -------------------------------------------------- #
+    #            gradient / weight diagnostics           #
+    # -------------------------------------------------- #
+    def _log_grad_stats(
+        self,
+        tag: str = "",
+        log_each_param: bool = False,        # set True if you want per-layer lines
+    ) -> None:
+        """
+        Prints global ‖g‖, ‖w‖ and lr·‖g‖ (the actual step size).
+        Optionally logs per-parameter norms and g/w ratios at DEBUG level.
+        """
+        g_norm2 = 0.0
+        w_norm2 = 0.0
+        for name, p in self.model.named_parameters():
+            if p.grad is None:
+                continue
+            g2 = p.grad.pow(2).sum().item()
+            w2 = p.data.pow(2).sum().item()
+            g_norm2 += g2
+            w_norm2 += w2
 
-    # ------------------------------------------------------------------ #
-    #                        DEBUG METHODS                               #
-    # ------------------------------------------------------------------ #
-    def check_data_sanity(self):
-        """Check if data is reasonable"""
-        self.logger.info("=== DATA SANITY CHECK ===")
-        try:
-            batch = next(iter(self.train_loader))
-            imgs = batch["image"]
-            ages = batch["age"]
+            if log_each_param and w2 > 0:
+                ratio = math.sqrt(g2) / (math.sqrt(w2) + 1e-12)
+                self.logger.debug(
+                    f"{name:40s}  ‖g‖={math.sqrt(g2):9.2f}  "
+                    f"‖w‖={math.sqrt(w2):9.2f}  g/w={ratio:7.4f}"
+                )
 
-            self.logger.info(f"Image shape: {imgs.shape}")
-            self.logger.info(f"Image stats: min={imgs.min():.3f}, max={imgs.max():.3f}, mean={imgs.mean():.3f}, std={imgs.std():.3f}")
-            self.logger.info(f"Ages: {ages}")
-            self.logger.info(f"Age stats: min={ages.min():.1f}, max={ages.max():.1f}, mean={ages.mean():.1f}, std={ages.std():.1f}")
+        g_norm = math.sqrt(g_norm2)
+        w_norm = math.sqrt(w_norm2) + 1e-12
+        step   = self.optimizer.param_groups[0]["lr"] * g_norm
+        self.logger.info(
+            f"{tag} GLOBAL  ‖g‖={g_norm:.2e}  ‖w‖={w_norm:.2e}  "
+            f"step={step:.2e}  g/w={g_norm/w_norm:.2e}"
+        )
 
-            # Check for NaN/inf
-            if torch.isnan(imgs).any() or torch.isinf(imgs).any():
-                self.logger.error("CRITICAL: Images contain NaN/inf!")
-                raise ValueError("Images contain NaN/inf")
-            if torch.isnan(ages).any() or torch.isinf(ages).any():
-                self.logger.error("CRITICAL: Ages contain NaN/inf!")
-                raise ValueError("Ages contain NaN/inf")
-
-            # Check if images are all zeros
-            if imgs.abs().sum() == 0:
-                self.logger.error("CRITICAL: All images are zeros!")
-                raise ValueError("All images are zeros")
-
-            self.logger.info("Data sanity check PASSED")
-        except Exception as e:
-            self.logger.error(f"Data sanity check FAILED: {e}")
-            raise
-
-    def test_single_batch_overfitting(self):
-        """Test if model can overfit to a single batch"""
-        self.logger.info("=== SINGLE BATCH OVERFITTING TEST ===")
-
-        # Save current state
-        original_state = self.model.state_dict()
-        original_optimizer_state = self.optimizer.state_dict()
-
-        try:
-            self.model.train()
-
-            # Get one batch
-            batch = next(iter(self.train_loader))
-            imgs = batch["image"].to(self.device)
-            ages = batch["age"].float().to(self.device)
-
-            self.logger.info(f"Testing with batch: images {imgs.shape}, ages {ages}")
-
-            initial_loss = None
-            for i in range(100):  # 100 steps on same batch
-                self.optimizer.zero_grad()
-                outputs = self.model(imgs)
-
-                # Handle output shape
-                if outputs.dim() > 1:
-                    outputs = outputs.squeeze()
-                if outputs.dim() == 0 and ages.dim() > 0:
-                    outputs = outputs.unsqueeze(0)
-
-                loss = F.mse_loss(outputs, ages)
-                loss.backward()
-
-                # Check gradients
-                total_grad_norm = 0
-                for param in self.model.parameters():
-                    if param.grad is not None:
-                        total_grad_norm += param.grad.data.norm(2).item() ** 2
-                total_grad_norm = total_grad_norm ** 0.5
-
-                self.optimizer.step()
-
-                if i == 0:
-                    initial_loss = loss.item()
-                    self.logger.info(f"Initial loss: {initial_loss:.6f}, grad_norm: {total_grad_norm:.6f}")
-
-                if i % 20 == 0:
-                    self.logger.info(f"Step {i}: Loss = {loss.item():.6f}, grad_norm: {total_grad_norm:.6f}")
-
-                # Early exit if loss becomes very small
-                if loss.item() < initial_loss * 0.01:
-                    self.logger.info(f"Early convergence at step {i}")
-                    break
-
-            final_loss = loss.item()
-            self.logger.info(f"Single batch test: Initial loss = {initial_loss:.6f}, Final loss = {final_loss:.6f}")
-            self.logger.info(f"Loss reduction ratio: {final_loss/initial_loss:.6f}")
-
-            success = final_loss < initial_loss * 0.1  # Should drop to <10% of initial
-            if success:
-                self.logger.info("Single batch overfitting test PASSED")
-            else:
-                self.logger.error("Single batch overfitting test FAILED - model cannot learn!")
-
-        except Exception as e:
-            self.logger.error(f"Single batch test failed with error: {e}")
-            success = False
-        finally:
-            # Restore original state
-            self.model.load_state_dict(original_state)
-            self.optimizer.load_state_dict(original_optimizer_state)
-
-        return success
 
     def check_weight_changes(self, epoch):
         """Check if model weights are actually changing"""
@@ -307,34 +234,7 @@ class BrainAgeTrainer:
 
         return total_change
 
-    def check_gradient_flow(self):
-        """Check gradient magnitudes"""
-        total_grad_norm = 0
-        max_grad_norm = 0
-        zero_grad_count = 0
 
-        for name, param in self.model.named_parameters():
-            if param.grad is not None:
-                grad_norm = param.grad.data.norm(2).item()
-                total_grad_norm += grad_norm ** 2
-                max_grad_norm = max(max_grad_norm, grad_norm)
-            else:
-                zero_grad_count += 1
-
-        total_grad_norm = total_grad_norm ** 0.5
-
-        self.logger.info(f"Gradient stats: total_norm={total_grad_norm:.6f}, max_norm={max_grad_norm:.6f}, zero_grads={zero_grad_count}")
-
-        if total_grad_norm < 1e-6:
-            self.logger.warning("WARNING: Gradients are extremely small - vanishing gradient problem!")
-        if total_grad_norm > 100:
-            self.logger.warning("WARNING: Gradients are very large - exploding gradient problem!")
-
-        return total_grad_norm
-
-    # ------------------------------------------------------------------ #
-    #                        internal helpers                             #
-    # ------------------------------------------------------------------ #
     def _compute_loss(
         self,
         outputs: torch.Tensor,
@@ -410,11 +310,11 @@ class BrainAgeTrainer:
         # integer centres → half-year boundaries
         left  = self.bin_centres - self.bin_step / 2     # (n_bins,)
         right = self.bin_centres + self.bin_step / 2
-
+        
         sqrt2 = math.sqrt(2.0)
         Φ = lambda x: 0.5 * (1 + torch.erf(x / (self.soft_sigma * sqrt2)))
 
-        cdf_left  = Φ((left .unsqueeze(0) - ages.unsqueeze(1)))
+        cdf_left  = Φ((left.unsqueeze(0) - ages.unsqueeze(1)))
         cdf_right = Φ((right.unsqueeze(0) - ages.unsqueeze(1)))
         probs = cdf_right - cdf_left                      # (B , n_bins)
         return probs / (probs.sum(dim=1, keepdim=True) + 1e-8)
@@ -422,16 +322,19 @@ class BrainAgeTrainer:
     # ------------------------------------------------------------------ #
     def _optim_step(self) -> None:
         """Handles optimiser + scaler step for AMP."""
-        # DEBUG: Check gradient flow before optimization
-        grad_norm = self.check_gradient_flow()
 
         # Add gradient clipping to prevent exploding gradients
         if self.use_amp:
             # Unscale gradients before clipping when using AMP
             self.scaler.unscale_(self.optimizer)
 
+        self._log_grad_stats(tag="[pre-clip]")
         # Clip gradients
         torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+
+        self._log_grad_stats(tag="[post-clip]")
+
+
 
         if self.use_amp:
             self.scaler.step(self.optimizer)
@@ -579,26 +482,58 @@ class BrainAgeTrainer:
         self,
         epoch: int,
         val_loss: float,
-        is_best: bool = False,
+        val_mae: float = None,
+        is_best_loss: bool = False,
+        is_best_mae: bool = False,
     ) -> None:
+        """
+        Save model checkpoint with options for best loss and best MAE versions.
+        
+        Parameters
+        ----------
+        epoch : int
+            Current epoch number
+        val_loss : float
+            Validation loss value
+        val_mae : float, optional
+            Validation MAE value
+        is_best_loss : bool, default=False
+            Whether this checkpoint has the best validation loss so far
+        is_best_mae : bool, default=False
+            Whether this checkpoint has the best validation MAE so far
+        """
         ckpt = {
             "epoch": epoch,
             "model_state_dict": self.model.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
             "scheduler_state_dict": self.scheduler.state_dict() if self.scheduler else None,
             "val_loss": val_loss,
+            "val_mae": val_mae,
         }
+        
+        # Save regular epoch checkpoint
         fname = self.ckpt_dir / f"{self.exp_name}_epoch{epoch:03d}.pt"
         torch.save(ckpt, fname)
-        if is_best:
-            best_name = self.ckpt_dir / f"{self.exp_name}_best.pt"
-            torch.save(ckpt, best_name)
+        
+        # Save best loss checkpoint
+        if is_best_loss:
+            best_loss_name = self.ckpt_dir / f"{self.exp_name}_best_loss.pt"
+            torch.save(ckpt, best_loss_name)
+        
+        # Save best MAE checkpoint
+        if is_best_mae:
+            best_mae_name = self.ckpt_dir / f"{self.exp_name}_best_mae.pt"
+            torch.save(ckpt, best_mae_name)
+            self.best_mae_checkpoint_path = str(best_mae_name)
+            self.logger.info(f"Saved best MAE checkpoint: {self.best_mae_checkpoint_path}")
 
     # ------------------------------------------------------------------ #
-    def train(self) -> Dict[str, List[float]]:
+    def train(self) -> Dict[str, Any]:
         """
         Full training loop.  Returns history dict that contains:
             train_loss, val_loss, train_mae, val_mae, learning_rate
+        
+        Also returns information about the best model based on validation MAE.
         """
         history = {k: [] for k in
                    ("train_loss", "val_loss", "train_mae", "val_mae", "lr")}
@@ -624,16 +559,30 @@ class BrainAgeTrainer:
                 log_dict["lr"] = self.optimizer.param_groups[0]["lr"]
                 self.wandb.log(log_dict, step=epoch+1)
 
-            # checkpoint & early-stopping
-            is_best = vl_metrics["loss"] < self.best_val_loss
-            if is_best:
+            # Check for best validation loss
+            is_best_loss = vl_metrics["loss"] < self.best_val_loss
+            if is_best_loss:
                 self.best_val_loss = vl_metrics["loss"]
+            
+            # Check for best validation MAE (the metric we really care about)
+            is_best_mae = vl_metrics["mae"] < self.best_val_mae
+            if is_best_mae:
+                self.best_val_mae = vl_metrics["mae"]
+                self.best_mae_epoch = epoch
+                self.best_metric = vl_metrics["mae"]  # Keep this for backward compatibility
+                self.logger.info(f"New best validation MAE: {self.best_val_mae:.4f} at epoch {epoch+1}")
 
-            if vl_metrics["mae"] < self.best_metric:   # <─ NEW
-                self.best_metric = vl_metrics["mae"]   # <─ NEW
-
-            self.early_stop_counter = 0 if is_best else self.early_stop_counter + 1
-            self._save_checkpoint(epoch, vl_metrics["loss"], is_best=is_best)
+            # Early stopping uses loss, not MAE (keeping original behavior)
+            self.early_stop_counter = 0 if is_best_loss else self.early_stop_counter + 1
+            
+            # Save checkpoint with both loss and MAE info
+            self._save_checkpoint(
+                epoch, 
+                vl_metrics["loss"],
+                vl_metrics["mae"],
+                is_best_loss=is_best_loss,
+                is_best_mae=is_best_mae
+            )
 
             if self.early_stop_counter >= self.early_stopping_patience:
                 self.logger.info(
@@ -641,7 +590,19 @@ class BrainAgeTrainer:
                 )
                 break
 
-        return history
+        # Log summary information about best MAE
+        self.logger.info(f"Training completed")
+        self.logger.info(f"Best validation MAE: {self.best_val_mae:.4f} achieved at epoch {self.best_mae_epoch+1}")
+        
+        # Return both the history and information about the best model
+        return {
+            "history": history,
+            "best_mae_info": {
+                "value": self.best_val_mae,
+                "epoch": self.best_mae_epoch,
+                "checkpoint_path": self.best_mae_checkpoint_path
+            }
+        }
 
     def evaluate(
         self,

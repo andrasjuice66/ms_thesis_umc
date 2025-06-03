@@ -39,7 +39,7 @@ model:
 # accepted by the new DomainRandomizer class.
 # -------------------------------------------------------------------------
 domain_randomization:
-  use_domain_randomization: false
+  use_domain_randomization: true
   use_tumor_simulation: false
 
   # Progressive randomization parameters
@@ -80,8 +80,6 @@ domain_randomization:
     spike: 0.2
     ghost: 0.3
     
-    # Other transforms
-    crop: 1.0
 
   
   
@@ -117,7 +115,7 @@ domain_randomization:
   coarse_dropout_holes: 8  # Number of dropout holes
   
   # Spatial crop parameters
-  output_shape: [182, 218, 182]  # Final shape after transformations
+  output_shape: [160, 192, 160]  # Final shape after transformations
   random_center: true  # Use random center for spatial crop
   
   # TorchIO specific parameters
@@ -168,19 +166,22 @@ domain_randomization:
 
 # ──────────────────────────  TRAINING  ────────────────────────── #
 training:
-  batch_size: 8
+  batch_size: 16
   epochs: 200
 
   # optimiser & LR
-  learning_rate: 0.0022 #0.002193
+  learning_rate: 0.001 #0.002193
   weight_decay:  0.001
   optimizer: "sgd"                       # adam | adamw | sgd | rmsprop | radam | novograd
-  scheduler: "cosine"                      # cosine | plateau | onecycle | step | none
+  scheduler: "step"                      # cosine | plateau | onecycle | step | none
   scheduler_params:
     T_max: 100
     eta_min: 0.00001
-    epochs: 100
+    epochs: 200
     steps_per_epoch: 534
+
+    step_size: 30
+    gamma: 0.3
 
   # losses
   loss: "kl_div"                        # mse | mae | huber | huber_mae | weighted_mse
@@ -191,7 +192,7 @@ training:
   # misc
   early_stopping_patience: 100
   gradient_accumulation_steps: 1
-  use_amp: true                            # mixed precision if CUDA present
+  use_amp: false                            # mixed precision if CUDA present
 
 # ────────────────────────────  OUTPUT  ────────────────────────── #
 output:

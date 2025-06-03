@@ -216,8 +216,7 @@ def main() -> None:
     train_loader = torch.utils.data.DataLoader(
         train_ds,
         batch_size = cfg.get("training.batch_size", 8),
-        # sampler    = sampler,
-        shuffle=True,  # Simple shuffle #Quick debug
+        sampler    = sampler,
         **dl_kwargs,
     )
 
@@ -311,13 +310,26 @@ def main() -> None:
     try:
         t0 = time.time()
         logger.info("Beginning training loop")
-        history = trainer.train()
+        
+        # Updated: receive the enhanced return value from trainer.train()
+        training_results = trainer.train()
+        history = training_results["history"]
+        best_mae_info = training_results["best_mae_info"]
+        
         logger.info(f"Training finished in {time.time()-t0:.1f}s")
         json.dump(history, open(ckpt_dir/"history.json","w"), indent=2)
-        if use_wandb: wandb.log({"train/duration_s": time.time()-t0})
-        best_val = trainer.best_metric       
+        json.dump(best_mae_info, open(ckpt_dir/"best_mae_info.json","w"), indent=2)
+        
+        if use_wandb: 
+            wandb.log({"train/duration_s": time.time()-t0})
+            wandb.log({
+                "best_val_mae": best_mae_info["value"], 
+                "best_val_mae_epoch": best_mae_info["epoch"] + 1
+            })
+        
+        best_val = best_mae_info["value"]
         if np.isinf(best_val):                     
-            raise Exception("Best validation metric is not yet set")
+            raise Exception("Best validation MAE is not yet set")
         
     except Exception:
         logger.error(f"Training failed")
@@ -325,16 +337,23 @@ def main() -> None:
 
     # 10. ─── evaluate ─────────────────────────────────────── #
     try:
-        logger.info("Evaluating model...")
-        metrics = trainer.evaluate(test_loader)
-        logger.info(f"Evaluation results: {metrics}")
-        if use_wandb: wandb.log({"test/metrics": metrics})
+        logger.info("Evaluating model using best MAE checkpoint...")
+        best_mae_checkpoint = best_mae_info["checkpoint_path"]
+        logger.info(f"Loading best checkpoint from epoch {best_mae_info['epoch']+1} with MAE {best_mae_info['value']:.4f}")
+        
+        metrics = trainer.evaluate(test_loader, checkpoint_path=best_mae_checkpoint)
+        logger.info(f"Test evaluation results using best MAE model: {metrics}")
+        
+        if use_wandb: 
+            wandb.log({"test/metrics": metrics})
+            wandb.log({"test/using_best_mae_checkpoint": best_mae_checkpoint})
+        
     except Exception as e:
         logger.error(f"Eval failed: {e}")
     finally:
         if use_wandb: wandb.finish()
         logger.info("All done.")
-        return float(best_val)      
+        return float(best_val)
 
 if __name__ == "__main__":
     sys.exit(main())
