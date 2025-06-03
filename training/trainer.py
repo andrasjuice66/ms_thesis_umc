@@ -328,12 +328,8 @@ class BrainAgeTrainer:
             # Unscale gradients before clipping when using AMP
             self.scaler.unscale_(self.optimizer)
 
-        self._log_grad_stats(tag="[pre-clip]")
         # Clip gradients
         torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
-
-        self._log_grad_stats(tag="[post-clip]")
-
 
 
         if self.use_amp:
@@ -542,6 +538,7 @@ class BrainAgeTrainer:
             # This line already exists and will now trigger probability updates
             if hasattr(self.train_loader.dataset.transform, "current_epoch"):
                 self.train_loader.dataset.transform.current_epoch = epoch
+            self.logger.info(f"Epoch progressive: {epoch+1}/{self.epochs}")
 
             tr_metrics = self.train_epoch(epoch)
             vl_metrics = self.validate(epoch)

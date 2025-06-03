@@ -28,7 +28,7 @@ data:
 model:
   type: "sfcn_class"                             # sfcn | resnet3d | efficientnet3d
   in_channels: 1
-  dropout_rate: 0.0
+  dropout_rate: 0.1
   use_attention: false                   
   checkpoint: null #"/home/ajoos/brain_age_pred/output/checkpoints/sfcn_20250522_104159/sfcn_20250522_104159_epoch057.pt"
 
@@ -45,6 +45,8 @@ domain_randomization:
   # Progressive randomization parameters
   progressive_epochs: 50  # Number of epochs for progressive randomization
   progressive_start: 0.2  # Initial probability scaling factor
+  augmentation_strength: 0.5
+
 
   image_key: "image"  # Key for the image in the data dictionary
     
@@ -55,8 +57,7 @@ domain_randomization:
 
     # Geometric transforms
     flip: 0.5
-    affine: 0.9
-    elastic: 0.4  # TorchIO transform
+    affine: 0.7
     
     # Intensity transforms
     contrast: 0.6
@@ -66,19 +67,16 @@ domain_randomization:
     hist_shift: 0.3  # Histogram shift
     
     # Noise/artifact transforms
-    blur: 0.4
+    blur: 0.2
     bias: 0.5
     noise: 0.4
     rician: 0.3
     gibbs: 0.3
     
     # Resolution/dropout transforms
-    resolution: 0.5
-    coarse_do: 0.3
+    resolution: 0.1
+    coarse_do: 0.0
     
-    # TorchIO specific artifacts
-    spike: 0.2
-    ghost: 0.3
     
 
   
@@ -172,7 +170,7 @@ training:
   # optimiser & LR
   learning_rate: 0.001 #0.002193
   weight_decay:  0.001
-  optimizer: "sgd"                       # adam | adamw | sgd | rmsprop | radam | novograd
+  optimizer: "adamw"                       # adam | adamw | sgd | rmsprop | radam | novograd
   scheduler: "step"                      # cosine | plateau | onecycle | step | none
   scheduler_params:
     T_max: 100
@@ -192,7 +190,7 @@ training:
   # misc
   early_stopping_patience: 100
   gradient_accumulation_steps: 1
-  use_amp: false                            # mixed precision if CUDA present
+  use_amp: true                            # mixed precision if CUDA present
 
 # ────────────────────────────  OUTPUT  ────────────────────────── #
 output:

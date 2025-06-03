@@ -51,7 +51,6 @@ class DomainRandomizer:
         # geometric
         "flip"      : 0.5,
         "affine"    : 0.8,
-        "elastic"   : 0.4,   # TorchIO
         # intensity
         "contrast"  : 0.6,
         "gamma"     : 0.5,
@@ -67,8 +66,7 @@ class DomainRandomizer:
         "resolution": 0.5,
         "coarse_do" : 0.3,
         # heavy artefacts
-        "spike"     : 0.2,   # TorchIO
-        "ghost"     : 0.3,   # TorchIO
+
         # misc
         "crop"      : 1.0,
     }
