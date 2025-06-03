@@ -72,7 +72,7 @@ class SFCNClass(nn.Module):
         in_channels: int = 1,
         channels: Sequence[int] = (32, 64, 128, 256, 256, 64),
         age_min: int = 20,
-        age_max: int = 85,
+        age_max: int = 80,
         dropout_rate: float = 0.5,
     ) -> None:
         super().__init__()
