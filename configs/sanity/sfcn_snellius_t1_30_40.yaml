@@ -22,7 +22,7 @@ data:
   prefetch_factor: 4
   target_shape: [160, 192, 160]            # (D,H,W) after optional resize
   age_min: 30
-  age_max: 40
+  age_max: 41
 
 # ───────────────────────────  MODEL  ──────────────────────────── #
 model:
