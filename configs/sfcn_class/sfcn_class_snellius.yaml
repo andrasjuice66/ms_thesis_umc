@@ -97,7 +97,7 @@ domain_randomization:
   noise_mean: 0.5  # Mean for Gaussian noise
   noise_std: 0.08  # Standard deviation for Gaussian noise
   rician_std: 0.08  # Standard deviation for Rician noise
-  gibbs_alpha: [0.0, 1.5]  # Alpha range for Gibbs noise
+  gibbs_alpha: [0.0, 1.0]  # Alpha range for Gibbs noise
   
   # Blur parameters
   blur_sigma: [0.5, 2.0]  # Sigma range for Gaussian smoothing
