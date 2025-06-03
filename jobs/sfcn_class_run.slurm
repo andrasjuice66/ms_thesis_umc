@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=sfcn
-#SBATCH --partition=gpu_a100            
-#SBATCH --gres=gpu:a100:1
+#SBATCH --partition=gpu_h100            
+#SBATCH --gres=gpu:h100:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
 #SBATCH --time=10:00:00
@@ -23,4 +23,4 @@ conda activate thesis
 
 # 3) launch training exactly as on your laptop
 cd $HOME/
-python -m brain_age_pred.scripts.train brain_age_pred/configs/sfcn_original/sfcn_original_snellius.yaml
+python -m brain_age_pred.scripts.train brain_age_pred/configs/sfcn_class/sfcn_class_snellius.yaml
