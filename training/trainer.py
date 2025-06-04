@@ -70,7 +70,7 @@ class BrainAgeTrainer:
         use_wandb: bool = False,
         wandb_project: str = "brain-age",
         age_min: int = 20,
-        age_max: int = 85,
+        age_max: int = 80,
         wandb_entity: Optional[str] = None,
         wandb_config: Optional[Dict[str, Any]] = None,
         experiment_name: Optional[str] = None,
@@ -162,12 +162,6 @@ class BrainAgeTrainer:
         )
         self.n_bins = len(self.bin_centres)
 
-        # /--------- DEBUG: Store initial weights for tracking changes ---------/
-        self.initial_weights = {}
-        for name, param in self.model.named_parameters():
-            if param.requires_grad:
-                self.initial_weights[name] = param.data.clone()
-
         # /--------- move model ----------/
         self.model.to(self.device)
         self.logger.info(f"Model: {self.model.__class__.__name__}")
@@ -178,61 +172,6 @@ class BrainAgeTrainer:
         self.logger.info(f"Learning rate: {self.cfg.get('learning_rate', 1e-4)}")
         self.logger.info(f"Total model parameters: {sum(p.numel() for p in self.model.parameters())}")
 
-
-    # -------------------------------------------------- #
-    #            gradient / weight diagnostics           #
-    # -------------------------------------------------- #
-    def _log_grad_stats(
-        self,
-        tag: str = "",
-        log_each_param: bool = False,        # set True if you want per-layer lines
-    ) -> None:
-        """
-        Prints global ‖g‖, ‖w‖ and lr·‖g‖ (the actual step size).
-        Optionally logs per-parameter norms and g/w ratios at DEBUG level.
-        """
-        g_norm2 = 0.0
-        w_norm2 = 0.0
-        for name, p in self.model.named_parameters():
-            if p.grad is None:
-                continue
-            g2 = p.grad.pow(2).sum().item()
-            w2 = p.data.pow(2).sum().item()
-            g_norm2 += g2
-            w_norm2 += w2
-
-            if log_each_param and w2 > 0:
-                ratio = math.sqrt(g2) / (math.sqrt(w2) + 1e-12)
-                self.logger.debug(
-                    f"{name:40s}  ‖g‖={math.sqrt(g2):9.2f}  "
-                    f"‖w‖={math.sqrt(w2):9.2f}  g/w={ratio:7.4f}"
-                )
-
-        g_norm = math.sqrt(g_norm2)
-        w_norm = math.sqrt(w_norm2) + 1e-12
-        step   = self.optimizer.param_groups[0]["lr"] * g_norm
-        self.logger.info(
-            f"{tag} GLOBAL  ‖g‖={g_norm:.2e}  ‖w‖={w_norm:.2e}  "
-            f"step={step:.2e}  g/w={g_norm/w_norm:.2e}"
-        )
-
-
-    def check_weight_changes(self, epoch):
-        """Check if model weights are actually changing"""
-        total_change = 0
-        max_change = 0
-        for name, param in self.model.named_parameters():
-            if param.requires_grad and name in self.initial_weights:
-                change = (param.data - self.initial_weights[name]).abs().sum().item()
-                total_change += change
-                max_change = max(max_change, change)
-
-        self.logger.info(f"Epoch {epoch}: Total weight change: {total_change:.6f}, Max change: {max_change:.6f}")
-
-        if total_change < 1e-8:
-            self.logger.warning("WARNING: Weights barely changing - possible learning issue!")
-
-        return total_change
 
 
     def _compute_loss(
@@ -400,10 +339,6 @@ class BrainAgeTrainer:
         # ---------------- scheduler (per-epoch) ----------------------- #
         if self.scheduler is not None:
             self.scheduler.step()
-
-        # DEBUG: Check weight changes every 5 epochs
-        if epoch % 5 == 0:
-            self.check_weight_changes(epoch)
 
         # ---------------- Metrics & logging -------------------------- #
         y_pred = np.concatenate(preds_all)
