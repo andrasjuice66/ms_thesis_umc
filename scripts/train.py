@@ -265,7 +265,9 @@ def main() -> None:
             kernel_size=cfg.get("model.kernel_size", 3),
             deep_supervision=cfg.get("model.deep_supervision", True),
             feature_size=cfg.get("model.feature_size", 512),
-            hidden_size=cfg.get("model.hidden_size", 64)
+            hidden_size=cfg.get("model.hidden_size", 64),
+            age_min=cfg.get("data.age_min"),
+            age_max=cfg.get("data.age_max"),
         ).to(device)
     print(f"Model hyperparameters: {cfg.get('model')}")
 
