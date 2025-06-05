@@ -25,8 +25,8 @@ conda activate thesis
 cd $HOME/
 python -m brain_age_pred.scripts.train brain_age_pred/configs/sfcn_class/sfcn_class_baseline.yaml
 
-python -m brain_age_pred.scripts.train brain_age_pred/configs/sfcn_class/sfcn_class_dom_rand.yaml
+#python -m brain_age_pred.scripts.train brain_age_pred/configs/sfcn_class/sfcn_class_dom_rand.yaml
 
-python -m brain_age_pred.scripts.train brain_age_pred/configs/sfcn_class/sfcn_class_dom_rand_tumor.yaml
+#python -m brain_age_pred.scripts.train brain_age_pred/configs/sfcn_class/sfcn_class_dom_rand_tumor.yaml
 
 
