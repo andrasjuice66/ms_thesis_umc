@@ -1,0 +1,26 @@
+# Evaluation configuration for SFCN model
+
+seed: 42
+device: cuda
+output_dir: output/evaluations
+batch_size: 16
+save_predictions: true
+
+data_dir: /path/to/data_directory
+datasets: 
+  - val
+  - test
+
+dataset_paths:
+  val: /path/to/validation.csv
+  test: /path/to/test.csv
+
+model:
+  type: sfcn_class
+  in_channels: 1
+  dropout_rate: 0.5
+  age_min: 20
+  age_max: 80
+  channels: [32, 64, 128, 256, 256, 64]  # Only for sfcn_class
+
+checkpoint_path: output/checkpoints/sfcn_class_best.pth

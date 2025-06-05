@@ -26,9 +26,9 @@ data:
 
 # ───────────────────────────  MODEL  ──────────────────────────── #
 model:
-  type: "sfcn_class"                             # sfcn | resnet3d | efficientnet3d
+  type: "brainagenext"                             # sfcn | resnet3d | efficientnet3d
   in_channels: 1
-  dropout_rate: 0.1
+  dropout_rate: 0.0
   use_attention: false                   
   checkpoint: null #"/home/ajoos/brain_age_pred/output/checkpoints/sfcn_20250522_104159/sfcn_20250522_104159_epoch057.pt"
 
@@ -45,7 +45,6 @@ domain_randomization:
   # Progressive randomization parameters
   progressive_epochs: 50  # Number of epochs for progressive randomization
   progressive_start: 0.2  # Initial probability scaling factor
-  augmentation_strength: 0.5
 
 
   image_key: "image"  # Key for the image in the data dictionary
@@ -134,9 +133,9 @@ domain_randomization:
       middle: "brain_age_pred/data/segmentations/seg_40_60.nii.npy"
       old: "brain_age_pred/data/segmentations/seg_60_85.nii.npy"
     age_ranges:
-      young: [18, 40]
+      young: [20, 40]
       middle: [40, 60]
-      old: [60, 85]
+      old: [60, 80]
     
     # Tumor generation parameters
     perlin_res: [2, 2, 2]  # Perlin noise resolution
@@ -165,7 +164,7 @@ domain_randomization:
 # ──────────────────────────  TRAINING  ────────────────────────── #
 training:
   batch_size: 16
-  epochs: 200
+  epochs: 120
 
   # optimiser & LR
   learning_rate: 0.001 #0.002193
@@ -182,7 +181,7 @@ training:
     gamma: 0.3
 
   # losses
-  loss: "kl_div"                        # mse | mae | huber | huber_mae | weighted_mse
+  loss: "huber_mae"                        # mse | mae | huber | huber_mae | weighted_mse
   loss_params:
     delta: 1.0
     mae_weight: 0.5

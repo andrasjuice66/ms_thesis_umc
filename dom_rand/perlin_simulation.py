@@ -1,25 +1,33 @@
-"""
-Tumor Simulation Module for Domain Randomization
-================================================
 
-GPU-aware tumor simulation using Perlin noise that integrates with the 
-domain randomization pipeline. Can be used as a transform in the data loader.
+# Complete Tumor Simulation Module for Domain Randomization
+# ========================================================
 
-Usage:
-    tumor_sim = TumorSimulator(device=torch.device("cuda"), **cfg["tumor_simulation"])
-    train_ds = BADataset(..., transform=Compose([domain_randomizer, tumor_sim]), mode="train")
-"""
+# Integrated tumor simulation with age-based segmentation loading that works
+# seamlessly with the domain randomization pipeline.
+
+# Usage:
+#     from tumor_simulation_complete import TumorSimulationModule
+    
+#     # Initialize with config
+#     tumor_sim = TumorSimulationModule(device=device, **config["tumor_config"])
+    
+#     # Use in domain randomizer
+#     domain_randomizer = DomainRandomizer(tumor_simulator=tumor_sim, ...)
+
 from __future__ import annotations
-from typing import Dict, Optional, Tuple, Union
+from typing import Dict, Optional, Tuple, Union, List
 import sys
 import os
 from pathlib import Path
+import logging
 
 import numpy as np
 import torch
 import random
 import nibabel as nib
 from monai.transforms.transform import MapTransform
+
+# Import UNA modules (assuming they're available)
 import UNA.utils.misc as utils
 from UNA.FluidAnomaly.perlin3d import generate_shape_3d, generate_velocity_3d
 from UNA.FluidAnomaly.DiffEqs.pde import AdvDiffPDE
@@ -29,6 +37,7 @@ from UNA.FluidAnomaly.DiffEqs.odeint import odeint
 class AgeBasedSegmentationLoader:
     """
     Loads and manages age-specific brain segmentations for tumor placement.
+    Supports both .npy and NIfTI file formats.
     """
     
     def __init__(
@@ -40,7 +49,7 @@ class AgeBasedSegmentationLoader:
         """
         Args:
             segmentation_paths: Dict mapping age group names to segmentation file paths
-                e.g., {"young": "path/to/young_seg.nii.gz", "middle": "...", "old": "..."}
+                e.g., {"young": "path/to/young_seg.nii.npy", "middle": "...", "old": "..."}
             age_ranges: Dict mapping age group names to (min_age, max_age) tuples
                 e.g., {"young": (18, 40), "middle": (40, 60), "old": (60, 85)}
             device: Device to load segmentations on
@@ -49,16 +58,45 @@ class AgeBasedSegmentationLoader:
         self.device = device
         self.segmentations = {}
         
+        # Validate inputs
+        if not segmentation_paths:
+            raise ValueError("segmentation_paths cannot be empty")
+        if not age_ranges:
+            raise ValueError("age_ranges cannot be empty")
+        if set(segmentation_paths.keys()) != set(age_ranges.keys()):
+            raise ValueError("segmentation_paths and age_ranges must have the same keys")
+        
         # Load all segmentations
         for age_group, seg_path in segmentation_paths.items():
-            if not Path(seg_path).exists():
-                raise FileNotFoundError(f"Segmentation file not found: {seg_path}")
+            self._load_segmentation(age_group, seg_path)
+    
+    def _load_segmentation(self, age_group: str, seg_path: str):
+        """Load a single segmentation file"""
+        seg_path = Path(seg_path)
+        if not seg_path.exists():
+            raise FileNotFoundError(f"Segmentation file not found: {seg_path}")
+        
+        print(f"Loading {age_group} segmentation from {seg_path}")
+        
+        try:
+            # Handle different file formats
+            if seg_path.suffix == '.npy':
+                seg_data = np.load(seg_path)
+            elif seg_path.suffix in ['.nii', '.gz'] or str(seg_path).endswith('.nii.gz'):
+                seg_img = nib.load(seg_path)
+                seg_data = seg_img.get_fdata()
+            else:
+                raise ValueError(f"Unsupported file format: {seg_path.suffix}")
             
-            print(f"Loading {age_group} segmentation from {seg_path}")
-            seg_img = nib.load(seg_path)
-            seg_data = torch.from_numpy(seg_img.get_fdata()).long().to(device)
-            self.segmentations[age_group] = seg_data
-            print(f"Loaded {age_group} segmentation with shape {seg_data.shape}")
+            # Convert to tensor
+            seg_tensor = torch.from_numpy(seg_data.astype(np.int64)).to(self.device)
+            self.segmentations[age_group] = seg_tensor
+            
+            print(f"Loaded {age_group} segmentation with shape {seg_tensor.shape}, "
+                  f"unique values: {torch.unique(seg_tensor).cpu().numpy()}")
+                  
+        except Exception as e:
+            raise RuntimeError(f"Failed to load segmentation {seg_path}: {e}")
     
     def get_segmentation_for_age(self, age: float) -> torch.Tensor:
         """
@@ -70,8 +108,14 @@ class AgeBasedSegmentationLoader:
         Returns:
             Segmentation tensor for the appropriate age group
         """
+        # Find exact match first
         for age_group, (min_age, max_age) in self.age_ranges.items():
             if min_age <= age < max_age:
+                return self.segmentations[age_group]
+        
+        # Handle edge case where age equals max_age of the last group
+        for age_group, (min_age, max_age) in self.age_ranges.items():
+            if age == max_age:
                 return self.segmentations[age_group]
         
         # If age doesn't fit any range, use the closest one
@@ -83,28 +127,210 @@ class AgeBasedSegmentationLoader:
         closest_group = min(age_diffs, key=age_diffs.get)
         print(f"Warning: Age {age} doesn't fit any range, using {closest_group} segmentation")
         return self.segmentations[closest_group]
-
-
-class TumorSimulator(MapTransform):
-    """
-    MONAI-compatible tumor simulation transform using Perlin noise.
     
-    This transform generates synthetic tumors on brain images and can be used
-    as part of the domain randomization pipeline.
+    def get_available_age_groups(self) -> List[str]:
+        """Get list of available age groups"""
+        return list(self.segmentations.keys())
+
+
+class TumorIntensityManager:
+    """
+    Manages tumor intensity values based on MRI modality.
+    """
+    
+    # Intensity multipliers for different modalities relative to normal tissue
+    MODALITY_INTENSITIES = {
+        'T1': {
+            'base_range': (0.3, 0.6),      # Hypointense
+            'variation': 0.2,
+            'description': 'Hypointense lesions'
+        },
+        'T2': {
+            'base_range': (1.2, 1.8),      # Hyperintense
+            'variation': 0.3,
+            'description': 'Hyperintense lesions'
+        },
+        'FLAIR': {
+            'base_range': (1.3, 2.0),      # Hyperintense
+            'variation': 0.4,
+            'description': 'Hyperintense lesions with CSF suppression'
+        },
+    }
+    
+    @classmethod
+    def get_tumor_intensity(cls, modality: str, reference_intensity: torch.Tensor, 
+                           device: torch.device) -> torch.Tensor:
+        """
+        Get tumor intensity based on modality and reference tissue intensity.
+        
+        Args:
+            modality: MRI modality ('T1', 'T2', 'FLAIR', etc.)
+            reference_intensity: Reference intensity from normal brain tissue
+            device: Device for tensor operations
+            
+        Returns:
+            Tumor intensity multiplier
+        """
+        modality_upper = modality.upper()
+        
+        if modality_upper not in cls.MODALITY_INTENSITIES:
+            print(f"Warning: Unknown modality '{modality}', using T1 defaults")
+            modality_upper = 'T1'
+        
+        intensity_config = cls.MODALITY_INTENSITIES[modality_upper]
+        
+        # Sample base intensity
+        base_min, base_max = intensity_config['base_range']
+        base_intensity = torch.rand(1, device=device) * (base_max - base_min) + base_min
+        
+        # Add variation
+        variation = intensity_config['variation']
+        intensity_variation = 1.0 + variation * (torch.rand(1, device=device) - 0.5)
+        
+        final_intensity = base_intensity * intensity_variation
+        
+        return final_intensity
+
+
+class TumorShapeGenerator:
+    """
+    Generates tumor shapes using Perlin noise and optional fluid dynamics.
     """
     
     def __init__(
         self,
-        keys: Union[str, list] = "image",
+        device: torch.device,
+        perlin_res: List[int] = [2, 2, 2],
+        mask_percentile_min: float = 90.0,
+        mask_percentile_max: float = 99.6,
+        tumor_size_factor_range: Tuple[float, float] = (0.5, 2.0),
+        pathol_thres: float = 0.2,
+        min_tumor_size: int = 100,
+        use_fluid_dynamics: bool = True,
+        V_multiplier: float = 500.0,
+        dt: float = 0.1,
+        min_nt: int = 10,
+        max_nt: int = 20,
+        integ_method: str = 'dopri5',
+        bc: str = 'neumann',
+    ):
+        self.device = device
+        self.perlin_res = perlin_res
+        self.mask_percentile_min = mask_percentile_min
+        self.mask_percentile_max = mask_percentile_max
+        self.tumor_size_factor_range = tumor_size_factor_range
+        self.pathol_thres = pathol_thres
+        self.min_tumor_size = min_tumor_size
+        self.use_fluid_dynamics = use_fluid_dynamics
+        
+        # Fluid dynamics parameters
+        if self.use_fluid_dynamics:
+            self.V_multiplier = V_multiplier
+            self.dt = dt
+            self.min_nt = min_nt
+            self.max_nt = max_nt
+            self.integ_method = integ_method
+            self.bc = bc
+            
+            # Initialize PDE solver
+            self.t = torch.arange(max_nt, dtype=torch.float32, device=device) * dt
+            self.adv_pde = AdvDiffPDE(
+                data_spacing=[1., 1., 1.], 
+                perf_pattern='adv', 
+                V_type='vector_div_free', 
+                V_dict={},
+                BC=bc, 
+                dt=dt, 
+                device=device
+            )
+    
+    def generate_tumor_shape(self, image_shape: Tuple[int, ...]) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Generate tumor shape using Perlin noise.
+        
+        Args:
+            image_shape: Shape of the target image
+            
+        Returns:
+            Tuple of (tumor_probability, tumor_mask)
+        """
+        
+        # Generate Perlin noise-based tumor
+        percentile = np.random.uniform(self.mask_percentile_min, self.mask_percentile_max)
+        
+        try:
+            tumor_prob, tumor_mask = generate_shape_3d(
+                image_shape, 
+                self.perlin_res, 
+                percentile, 
+                self.device
+            )
+        except Exception as e:
+            print(f"Warning: Perlin noise generation failed: {e}, using simple tumor")
+            return self._generate_simple_tumor(image_shape)
+        
+        # Apply fluid dynamics if enabled
+        if self.use_fluid_dynamics:
+            tumor_prob = self._apply_fluid_dynamics(tumor_prob)
+        
+        # Apply size scaling
+        tumor_size_factor = random.uniform(*self.tumor_size_factor_range)
+        tumor_prob = tumor_prob * tumor_size_factor
+        tumor_prob = torch.clamp(tumor_prob, 0, 1)
+        
+        return tumor_prob, tumor_mask
+
+    
+    def _apply_fluid_dynamics(self, tumor_prob: torch.Tensor) -> torch.Tensor:
+        """Apply fluid dynamics to tumor shape"""
+        if not self.use_fluid_dynamics:
+            return tumor_prob
+        
+        try:
+            # Generate random number of time steps
+            nt = np.random.randint(self.min_nt, self.max_nt + 1)
+            
+            # Generate velocity field
+            self.adv_pde.V_dict = generate_velocity_3d(
+                tumor_prob.shape, 
+                self.perlin_res, 
+                self.V_multiplier, 
+                self.device
+            )
+            
+            # Apply PDE evolution
+            tumor_prob = odeint(
+                self.adv_pde, 
+                tumor_prob[None], 
+                self.t[:nt], 
+                self.dt, 
+                method=self.integ_method
+            )[-1, 0]  # Take the last time step
+            
+        except Exception as e:
+            print(f"Warning: Fluid dynamics failed: {e}, using original shape")
+        
+        return tumor_prob
+
+
+class TumorSimulationModule(MapTransform):
+    """
+    Complete tumor simulation module that integrates age-based segmentation,
+    modality-specific intensities, and realistic tumor shape generation.
+    """
+    
+    def __init__(
+        self,
+        keys: Union[str, List[str]] = "image",
         *,
         device: torch.device = torch.device("cpu"),
         prob: float = 0.3,
         # Age-based segmentation parameters
-        use_age_based_segmentation: bool = False,
+        use_age_based_segmentation: bool = True,
         segmentation_paths: Optional[Dict[str, str]] = None,
         age_ranges: Optional[Dict[str, Tuple[float, float]]] = None,
         # Tumor generation parameters
-        perlin_res: Tuple[int, int, int] = (2, 2, 2),
+        perlin_res: List[int] = [2, 2, 2],
         mask_percentile_min: float = 90.0,
         mask_percentile_max: float = 99.6,
         tumor_size_factor_range: Tuple[float, float] = (0.5, 2.0),
@@ -121,36 +347,18 @@ class TumorSimulator(MapTransform):
         # Intensity parameters
         modality: str = 'T1',  # Default modality
         intensity_variation: float = 0.3,
-        # Brain mask parameters (if segmentation not available)
-        brain_threshold: float = 0.1,  # Threshold for brain tissue detection
+        # Brain mask parameters (fallback)
+        brain_threshold: float = 0.1,
         **unused,
     ):
         super().__init__(keys)
         self.device = device
         self.prob = prob
-        
-        # Store tumor generation parameters
-        self.shape_gen_args = {
-            'perlin_res': list(perlin_res),
-            'mask_percentile_min': mask_percentile_min,
-            'mask_percentile_max': mask_percentile_max,
-            'pathol_thres': pathol_thres,
-            'min_tumor_size': min_tumor_size,
-            'integ_method': integ_method,
-            'bc': bc,
-            'V_multiplier': V_multiplier,
-            'dt': dt,
-            'min_nt': min_nt,
-            'max_nt': max_nt,
-        }
-        
-        self.tumor_size_factor_range = tumor_size_factor_range
-        self.use_fluid_dynamics = use_fluid_dynamics
         self.modality = modality
         self.intensity_variation = intensity_variation
         self.brain_threshold = brain_threshold
         
-        # Initialize age-based segmentation loader if enabled
+        # Initialize age-based segmentation loader
         self.use_age_based_segmentation = use_age_based_segmentation
         if self.use_age_based_segmentation:
             if not segmentation_paths or not age_ranges:
@@ -161,156 +369,100 @@ class TumorSimulator(MapTransform):
                 age_ranges=age_ranges,
                 device=device
             )
+            print(f"Initialized age-based segmentation with groups: {self.seg_loader.get_available_age_groups()}")
         else:
             self.seg_loader = None
         
-        # Initialize PDE for fluid dynamics if enabled
-        if self.use_fluid_dynamics:
-            self.t = torch.from_numpy(
-                np.arange(self.shape_gen_args['max_nt']) * self.shape_gen_args['dt']
-            ).to(self.device)
-            
-            with torch.no_grad():
-                self.adv_pde = AdvDiffPDE(
-                    data_spacing=[1., 1., 1.], 
-                    perf_pattern='adv', 
-                    V_type='vector_div_free', 
-                    V_dict={},
-                    BC=self.shape_gen_args['bc'], 
-                    dt=self.shape_gen_args['dt'], 
-                    device=self.device
-                )
-        else:
-            self.t = None
-            self.adv_pde = None
-    
-    def _generate_tumor_shape(self, shape: Tuple[int, ...]) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Generate tumor shape using Perlin noise"""
-        percentile = np.random.uniform(
-            self.shape_gen_args['mask_percentile_min'], 
-            self.shape_gen_args['mask_percentile_max']
+        # Initialize tumor shape generator
+        self.shape_generator = TumorShapeGenerator(
+            device=device,
+            perlin_res=perlin_res,
+            mask_percentile_min=mask_percentile_min,
+            mask_percentile_max=mask_percentile_max,
+            tumor_size_factor_range=tumor_size_factor_range,
+            pathol_thres=pathol_thres,
+            min_tumor_size=min_tumor_size,
+            use_fluid_dynamics=use_fluid_dynamics,
+            V_multiplier=V_multiplier,
+            dt=dt,
+            min_nt=min_nt,
+            max_nt=max_nt,
+            integ_method=integ_method,
+            bc=bc,
         )
         
-        tumor_prob, tumor_mask = generate_shape_3d(
-            shape, 
-            self.shape_gen_args['perlin_res'], 
-            percentile, 
-            self.device
-        )
+        # Initialize intensity manager
+        self.intensity_manager = TumorIntensityManager()
         
-        return tumor_prob, tumor_mask
-    
-    def _augment_tumor_with_fluid_dynamics(self, tumor_prob: torch.Tensor) -> torch.Tensor:
-        """Apply fluid dynamics to make tumor shape more realistic"""
-        if not self.use_fluid_dynamics or self.adv_pde is None:
-            return tumor_prob
-            
-        tumor_prob = torch.squeeze(tumor_prob)
-        
-        # Generate random number of time steps
-        nt = np.random.randint(
-            self.shape_gen_args['min_nt'], 
-            self.shape_gen_args['max_nt'] + 1
-        )
-        
-        try:
-            # Generate velocity field
-            self.adv_pde.V_dict = generate_velocity_3d(
-                tumor_prob.shape, 
-                self.shape_gen_args['perlin_res'], 
-                self.shape_gen_args['V_multiplier'], 
-                self.device
-            )
-            
-            # Apply PDE evolution
-            tumor_prob = odeint(
-                self.adv_pde, 
-                tumor_prob[None], 
-                self.t[:nt], 
-                self.shape_gen_args['dt'], 
-                method=self.shape_gen_args['integ_method']
-            )[-1, 0]  # Take the last time step
-            
-        except Exception as e:
-            # If PDE fails, return original
-            pass
-        
-        return tumor_prob
-    
-    def _get_brain_mask(self, image: torch.Tensor) -> torch.Tensor:
-        """Generate brain mask from image intensity"""
-        # Simple brain mask based on intensity threshold
-        brain_mask = (image > self.brain_threshold).float()
-        
-        # Remove small connected components (optional)
-        # This is a simple approximation - in practice you might want more sophisticated brain extraction
-        return brain_mask
+        print(f"TumorSimulationModule initialized with probability: {prob}")
+        print(f"Age-based segmentation: {use_age_based_segmentation}")
+        print(f"Fluid dynamics: {use_fluid_dynamics}")
     
     def _get_brain_mask_from_segmentation(self, segmentation: torch.Tensor) -> torch.Tensor:
         """Generate brain mask from segmentation (GM + WM)"""
         # Brain tissue = Gray Matter (1) + White Matter (2)
+        # Adjust these values based on your segmentation labels
         brain_mask = ((segmentation == 1) | (segmentation == 2)).float()
         return brain_mask
     
-    def _get_contrast_values(self, modality: str) -> torch.Tensor:
-        """Get contrast values for different tissue types based on modality"""
-        if modality.upper() == 'T1':
-            # T1-weighted: tumors typically hypointense
-            base_intensity = 0.4 + 0.3 * torch.rand(1, device=self.device)
-        elif modality.upper() == 'T2':
-            # T2-weighted: tumors typically hyperintense
-            base_intensity = 1.3 + 0.4 * torch.rand(1, device=self.device)
-        elif modality.upper() == 'FLAIR':
-            # FLAIR: tumors typically hyperintense
-            base_intensity = 1.4 + 0.5 * torch.rand(1, device=self.device)
-        else:
-            # Default to T1-like
-            base_intensity = 0.4 + 0.3 * torch.rand(1, device=self.device)
-        
-        return base_intensity
+    def _get_brain_mask_from_intensity(self, image: torch.Tensor) -> torch.Tensor:
+        """Generate brain mask from image intensity (fallback method)"""
+        brain_mask = (image > self.brain_threshold).float()
+        return brain_mask
     
-    def _encode_pathology(self, image: torch.Tensor, tumor_prob: torch.Tensor, modality: str) -> torch.Tensor:
-        """Encode tumor pathology into the image"""
-        # Calculate reference intensity (mean of non-zero regions)
+    def _apply_tumor_to_image(
+        self, 
+        image: torch.Tensor, 
+        tumor_prob: torch.Tensor, 
+        modality: str
+    ) -> torch.Tensor:
+        """Apply tumor pathology to the image"""
+        # Calculate reference intensity
         brain_mask = (image > 0)
         if brain_mask.sum() > 0:
             ref_intensity = (image * brain_mask).sum() / brain_mask.sum()
         else:
             ref_intensity = torch.tensor(1.0, device=self.device)
         
-        # Get pathology intensity based on modality
-        intensity_multiplier = self._get_contrast_values(modality)
+        # Get tumor intensity based on modality
+        intensity_multiplier = self.intensity_manager.get_tumor_intensity(
+            modality, ref_intensity, self.device
+        )
         
-        # Add some variation
+        # Add spatial variation to intensity
         intensity_variation = 1.0 + self.intensity_variation * (torch.rand_like(tumor_prob) - 0.5)
         pathol_intensity = ref_intensity * intensity_multiplier * intensity_variation
         
-        # Apply pathology
-        if modality.upper() in ['T2', 'FLAIR']:
+        # Apply pathology based on modality
+        modality_upper = modality.upper()
+        if modality_upper in ['T2', 'FLAIR']:
             # Hyperintense lesion (additive)
             diseased_image = image + tumor_prob * pathol_intensity
-        else:  # T1
-            # Hypointense lesion (multiplicative + additive)
-            diseased_image = image * (1 - tumor_prob * 0.6) + tumor_prob * pathol_intensity
+        else:  # T1, T1C
+            # Hypointense or enhanced lesion
+            if modality_upper == 'T1':
+                # Hypointense: reduce original signal and add tumor signal
+                diseased_image = image * (1 - tumor_prob * 0.6) + tumor_prob * pathol_intensity
+            else:  # T1C
+                # Enhanced: additive
+                diseased_image = image + tumor_prob * pathol_intensity
         
         # Ensure non-negative values
         diseased_image = torch.clamp(diseased_image, min=0)
         
         return diseased_image
     
-    def _generate_tumor_on_image(self, image: torch.Tensor, modality: str, age: Optional[float] = None) -> Dict[str, torch.Tensor]:
-        """
-        Generate a tumor on the input image
+    def _generate_tumor_on_sample(self, sample: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+        """Generate tumor on a single sample"""
+        # Get image
+        key = self.keys[0] if isinstance(self.keys, list) else self.keys
+        image = sample[key]
         
-        Args:
-            image: torch tensor of the brain image (C, H, W, D)
-            modality: string, one of 'T1', 'T2', 'FLAIR'
-            age: age of the subject (used for age-based segmentation)
+        # Ensure image is on correct device
+        if image.device != self.device:
+            image = image.to(self.device)
         
-        Returns:
-            dict with 'diseased_image', 'tumor_mask', 'tumor_prob'
-        """
-        # Remove channel dimension for processing
+        # Handle channel dimension
         if image.dim() == 4 and image.shape[0] == 1:
             image_3d = image.squeeze(0)
             add_channel_dim = True
@@ -318,42 +470,43 @@ class TumorSimulator(MapTransform):
             image_3d = image
             add_channel_dim = False
         
+        # Get age and modality
+        age = None
+        if 'age' in sample:
+            age_tensor = sample['age']
+            age = age_tensor.item() if isinstance(age_tensor, torch.Tensor) else float(age_tensor)
+        
+        modality = sample.get('modality', self.modality)
+        
         # Generate tumor shape
-        tumor_prob, _ = self._generate_tumor_shape(image_3d.shape)
+        tumor_prob, _ = self.shape_generator.generate_tumor_shape(image_3d.shape)
         
-        # Apply fluid dynamics augmentation
-        tumor_prob = self._augment_tumor_with_fluid_dynamics(tumor_prob)
-        
-        # Scale tumor size randomly
-        tumor_size_factor = random.uniform(*self.tumor_size_factor_range)
-        tumor_prob = tumor_prob * tumor_size_factor
-        tumor_prob = torch.clamp(tumor_prob, 0, 1)
-        
-        # Get brain mask (either from age-based segmentation or intensity threshold)
+        # Get brain mask
         if self.use_age_based_segmentation and self.seg_loader is not None and age is not None:
-            # Use age-based segmentation
-            segmentation = self.seg_loader.get_segmentation_for_age(age)
-            brain_mask = self._get_brain_mask_from_segmentation(segmentation)
+            try:
+                segmentation = self.seg_loader.get_segmentation_for_age(age)
+                brain_mask = self._get_brain_mask_from_segmentation(segmentation)
+            except Exception as e:
+                print(f"Warning: Failed to use age-based segmentation: {e}, using intensity-based mask")
+                brain_mask = self._get_brain_mask_from_intensity(image_3d)
         else:
-            # Fall back to intensity-based brain mask
-            brain_mask = self._get_brain_mask(image_3d)
+            brain_mask = self._get_brain_mask_from_intensity(image_3d)
         
         # Restrict tumor to brain tissue
         tumor_prob = tumor_prob * brain_mask
         
-        # Check if tumor is large enough
-        if tumor_prob.sum() < self.shape_gen_args['min_tumor_size']:
-            # If tumor too small, try again with larger size factor
-            tumor_size_factor = random.uniform(1.5, 3.0)
-            tumor_prob = tumor_prob * tumor_size_factor
+        # Check minimum tumor size
+        if tumor_prob.sum() < self.shape_generator.min_tumor_size:
+            # Try to enlarge tumor
+            tumor_prob = tumor_prob * 2.0
             tumor_prob = torch.clamp(tumor_prob, 0, 1)
             tumor_prob = tumor_prob * brain_mask
         
         # Create final tumor mask
-        tumor_mask = (tumor_prob > self.shape_gen_args['pathol_thres']).float()
+        tumor_mask = (tumor_prob > self.shape_generator.pathol_thres).float()
         
-        # Apply pathology to image
-        diseased_image = self._encode_pathology(image_3d, tumor_prob, modality)
+        # Apply tumor to image
+        diseased_image = self._apply_tumor_to_image(image_3d, tumor_prob, modality)
         
         # Add channel dimension back if needed
         if add_channel_dim:
@@ -361,174 +514,102 @@ class TumorSimulator(MapTransform):
             tumor_mask = tumor_mask.unsqueeze(0)
             tumor_prob = tumor_prob.unsqueeze(0)
         
-        return {
-            'diseased_image': diseased_image,
-            'tumor_mask': tumor_mask,
-            'tumor_prob': tumor_prob
-        }
+        # Update sample
+        result = dict(sample)
+        result[key] = diseased_image
+        result['tumor_mask'] = tumor_mask
+        result['tumor_prob'] = tumor_prob
+        result['has_tumor'] = torch.tensor(True, dtype=torch.bool, device=self.device)
+        result['tumor_modality'] = modality
+        if age is not None:
+            result['tumor_age_group'] = self._get_age_group(age) if self.seg_loader else 'unknown'
+        
+        return result
+    
+    def _get_age_group(self, age: float) -> str:
+        """Get age group name for given age"""
+        if not self.seg_loader:
+            return 'unknown'
+        
+        for age_group, (min_age, max_age) in self.seg_loader.age_ranges.items():
+            if min_age <= age < max_age:
+                return age_group
+        return 'unknown'
     
     def __call__(self, data: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         """
-        Apply tumor simulation to the data sample
+        Apply tumor simulation to the data sample.
         
         Args:
-            data: Dictionary containing at least the image key and optionally age
+            data: Dictionary containing at least the image key and optionally age, modality
             
         Returns:
             Modified data dictionary with tumor applied (if probability allows)
         """
-        d = dict(data)
-        
         # Check if we should apply tumor simulation
         if random.random() >= self.prob:
-            return d
-        
-        # Get the image
-        key = self.keys[0] if isinstance(self.keys, list) else self.keys
-        image = d[key]
-        
-        # Ensure image is on the correct device
-        if image.device != self.device:
-            image = image.to(self.device)
-        
-        # Get age if available
-        age = None
-        if 'age' in d:
-            age_tensor = d['age']
-            if isinstance(age_tensor, torch.Tensor):
-                age = age_tensor.item()
-            else:
-                age = float(age_tensor)
-        
-        # Determine modality (use from data if available, otherwise use default)
-        modality = d.get('modality', self.modality)
+            # Add metadata indicating no tumor was applied
+            result = dict(data)
+            result['has_tumor'] = torch.tensor(False, dtype=torch.bool, device=self.device)
+            return result
         
         try:
-            # Generate tumor
-            result = self._generate_tumor_on_image(image, modality, age)
-            
-            # Update the image in the data dictionary
-            d[key] = result['diseased_image']
-            
-            # Optionally add tumor mask and probability to the data
-            # (useful for debugging or additional processing)
-            d['tumor_mask'] = result['tumor_mask']
-            d['tumor_prob'] = result['tumor_prob']
-            d['has_tumor'] = torch.tensor(True, dtype=torch.bool, device=self.device)
-            
+            return self._generate_tumor_on_sample(data)
         except Exception as e:
-            # If tumor generation fails, return original data
             print(f"Warning: Tumor generation failed: {e}")
-            d['has_tumor'] = torch.tensor(False, dtype=torch.bool, device=self.device)
-        
-        return d
+            result = dict(data)
+            result['has_tumor'] = torch.tensor(False, dtype=torch.bool, device=self.device)
+            return result
 
 
-# Keep the old classes for backward compatibility
-class TumorSimulatorWithSegmentation(TumorSimulator):
+# Convenience function for easy integration
+def create_tumor_simulator(config: Dict, device: torch.device) -> TumorSimulationModule:
     """
-    Enhanced tumor simulator that uses brain segmentation for more accurate tumor placement.
+    Create a tumor simulator from configuration dictionary.
     
-    Expects segmentation data in the sample with key 'segmentation' or 'seg'.
-    Segmentation should have labels: 0=background, 1=GM, 2=WM, 3=CSF
+    Args:
+        config: Configuration dictionary with tumor simulation parameters
+        device: Device to run simulation on
+        
+    Returns:
+        Configured TumorSimulationModule
     """
+    return TumorSimulationModule(device=device, **config)
+
+
+# Example usage and testing
+if __name__ == "__main__":
+    # Example configuration
+    example_config = {
+        "prob": 0.3,
+        "use_age_based_segmentation": True,
+        "segmentation_paths": {
+            "young": "brain_age_pred/data/segmentations/seg_18_40.nii.npy",
+            "middle": "brain_age_pred/data/segmentations/seg_40_60.nii.npy",
+            "old": "brain_age_pred/data/segmentations/seg_60_85.nii.npy"
+        },
+        "age_ranges": {
+            "young": [18, 40],
+            "middle": [40, 60],
+            "old": [60, 85]
+        },
+        "perlin_res": [2, 2, 2],
+        "mask_percentile_min": 90.0,
+        "mask_percentile_max": 99.6,
+        "tumor_size_factor_range": [0.5, 2.0],
+        "pathol_thres": 0.2,
+        "min_tumor_size": 100,
+        "use_fluid_dynamics": True,
+        "V_multiplier": 500.0,
+        "dt": 0.1,
+        "min_nt": 10,
+        "max_nt": 20,
+        "integ_method": 'dopri5',
+        "bc": 'neumann',
+        "modality": 'T1',
+        "intensity_variation": 0.3,
+        "brain_threshold": 0.1,
+    }
     
-    def __init__(self, *args, segmentation_key: str = "segmentation", **kwargs):
-        super().__init__(*args, **kwargs)
-        self.segmentation_key = segmentation_key
-    
-    def __call__(self, data: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
-        """
-        Apply tumor simulation using segmentation information
-        """
-        d = dict(data)
-        
-        # Check if we should apply tumor simulation
-        if random.random() >= self.prob:
-            return d
-        
-        # Get the image and segmentation
-        key = self.keys[0] if isinstance(self.keys, list) else self.keys
-        image = d[key]
-        
-        # Check if segmentation is available
-        seg_key = None
-        for possible_key in [self.segmentation_key, 'seg', 'segmentation']:
-            if possible_key in d:
-                seg_key = possible_key
-                break
-        
-        if seg_key is None:
-            # Fall back to parent class behavior
-            return super().__call__(data)
-        
-        segmentation = d[seg_key]
-        
-        # Ensure tensors are on the correct device
-        if image.device != self.device:
-            image = image.to(self.device)
-        if segmentation.device != self.device:
-            segmentation = segmentation.to(self.device)
-        
-        # Determine modality
-        modality = d.get('modality', self.modality)
-        
-        try:
-            # Remove channel dimension for processing
-            if image.dim() == 4 and image.shape[0] == 1:
-                image_3d = image.squeeze(0)
-                add_channel_dim = True
-            else:
-                image_3d = image
-                add_channel_dim = False
-            
-            if segmentation.dim() == 4 and segmentation.shape[0] == 1:
-                seg_3d = segmentation.squeeze(0)
-            else:
-                seg_3d = segmentation
-            
-            # Generate tumor shape
-            tumor_prob, _ = self._generate_tumor_shape(image_3d.shape)
-            
-            # Apply fluid dynamics augmentation
-            tumor_prob = self._augment_tumor_with_fluid_dynamics(tumor_prob)
-            
-            # Scale tumor size randomly
-            tumor_size_factor = random.uniform(*self.tumor_size_factor_range)
-            tumor_prob = tumor_prob * tumor_size_factor
-            tumor_prob = torch.clamp(tumor_prob, 0, 1)
-            
-            # Restrict tumor to brain tissue using segmentation
-            brain_mask = self._get_brain_mask_from_segmentation(seg_3d)
-            tumor_prob = tumor_prob * brain_mask
-            
-            # Check if tumor is large enough
-            if tumor_prob.sum() < self.shape_gen_args['min_tumor_size']:
-                tumor_size_factor = random.uniform(1.5, 3.0)
-                tumor_prob = tumor_prob * tumor_size_factor
-                tumor_prob = torch.clamp(tumor_prob, 0, 1)
-                tumor_prob = tumor_prob * brain_mask
-            
-            # Create final tumor mask
-            tumor_mask = (tumor_prob > self.shape_gen_args['pathol_thres']).float()
-            
-            # Apply pathology to image
-            diseased_image = self._encode_pathology(image_3d, tumor_prob, modality)
-            
-            # Add channel dimension back if needed
-            if add_channel_dim:
-                diseased_image = diseased_image.unsqueeze(0)
-                tumor_mask = tumor_mask.unsqueeze(0)
-                tumor_prob = tumor_prob.unsqueeze(0)
-            
-            # Update the data dictionary
-            d[key] = diseased_image
-            d['tumor_mask'] = tumor_mask
-            d['tumor_prob'] = tumor_prob
-            d['has_tumor'] = torch.tensor(True, dtype=torch.bool, device=self.device)
-            
-        except Exception as e:
-            print(f"Warning: Tumor generation with segmentation failed: {e}")
-            d['has_tumor'] = torch.tensor(False, dtype=torch.bool, device=self.device)
-        
-        return d
+    print("Tumor simulation module created successfully!")
+    print("Available modality intensities:", list(TumorIntensityManager.MODALITY_INTENSITIES.keys()))

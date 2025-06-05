@@ -42,6 +42,9 @@ from brain_age_pred.dom_rand.custom_transformations import (
     RandGammaD,
 )
 
+# Import tumor simulator
+from brain_age_pred.dom_rand.perlin_simulation import TumorSimulationModule
+
 class DomainRandomizer:
     """
     Random geometric, intensity and artefact transforms for 3-D MRI volumes.
@@ -69,6 +72,8 @@ class DomainRandomizer:
 
         # misc
         "crop"      : 1.0,
+        # tumor
+        "tumor"     : 0.3,
     }
     
     # Default values for transform parameters
@@ -98,7 +103,7 @@ class DomainRandomizer:
         "coarse_dropout_size": (20, 20, 20),
         "coarse_dropout_holes": 8,
         # spatial crop
-        "output_shape": (182, 218, 182),
+        "output_shape": (160, 192, 160),
         "random_center": True,
         # torchio
         "elastic_control_points": 7,
@@ -109,6 +114,7 @@ class DomainRandomizer:
         # progressive randomization
         "progressive_epochs": 50,
         "progressive_start": 0.2,
+        "augmentation_strength": 0.5,
     }
 
     # ------------------------------------------------------------------ #
@@ -117,6 +123,7 @@ class DomainRandomizer:
         *,
         device=torch.device("cuda"), 
         image_key: str = "image",
+        use_domain_randomization: bool = True,
         # probability overrides
         transform_probs: Optional[Dict[str, float]] = None,
         # Add new parameters for progressive randomization
@@ -162,16 +169,15 @@ class DomainRandomizer:
         **unused,
     ):
         self.image_key = image_key
+        self.use_domain_randomization = use_domain_randomization
         # Convert string device to torch.device object if needed
         self.device = torch.device(device) if isinstance(device, str) else device
         self.use_tio = use_torchio
         
-        # Store tumor-related parameters (not used directly by this class, but passed from config)
+        # Store tumor-related parameters
         self.use_tumor_simulation = use_tumor_simulation
-        self.tumor_config = tumor_config
-        
-        # Check for config completeness
-        self._check_config_completeness(unused)
+        self.tumor_config = tumor_config if tumor_config else {}
+        self.tumor_simulator = None
         
         # Initialize parameters with defaults, then override with provided values
         params = {**self._DEFAULT_PARAMS}
@@ -276,6 +282,7 @@ class DomainRandomizer:
         self.ghost_num = params["ghost_num"]
         self.progressive_epochs = params["progressive_epochs"]
         self.progressive_start = params["progressive_start"]
+        self.augmentation_strength = params["augmentation_strength"]
 
         # merge / override probabilities
         self.prob = {**DomainRandomizer._DEFAULT_PROBS}
@@ -292,9 +299,8 @@ class DomainRandomizer:
         # build transform pipelines
         self._build_monai_pipeline()
         self._build_torchio_pipeline()
-        
-        # Log the parameters for debugging
-        self._log_parameters()
+        self._setup_tumor_simulator()
+
 
     # ------------------------------------------------------------------ #
     #                          MONAI pipeline                             #
@@ -441,17 +447,15 @@ class DomainRandomizer:
         ])
 
     def _update_progressive_probs(self) -> None:
-        """Update transform probabilities based on current epoch."""
+        """Update transform probabilities based on current epoch"""
         if self.progressive_epochs <= 0:
             return
             
-        # Calculate current progress (0 to 1)
         progress = min(1.0, self.current_epoch / self.progressive_epochs)
         
-        # Linear interpolation between start and full probabilities
         for key in self.original_probs:
             start_prob = self.original_probs[key] * self.progressive_start
-            final_prob = self.original_probs[key]
+            final_prob = self.original_probs[key] * self.augmentation_strength
             self.prob[key] = start_prob + (final_prob - start_prob) * progress
 
     @property
@@ -464,153 +468,75 @@ class DomainRandomizer:
         self._current_epoch = epoch
         self._update_progressive_probs()
 
+    def _setup_tumor_simulator(self) -> None:
+        """Initialize the tumor simulator if enabled"""
+        if not self.use_tumor_simulation:
+            return
+        
+        try:
+            tumor_prob = self.prob.get("tumor", 0.3)
+            if not self.tumor_config:
+                print("Warning: No tumor configuration provided, using defaults")
+            
+            self.tumor_simulator = TumorSimulationModule(
+                keys=self.image_key,
+                device=self.device,
+                prob=tumor_prob,
+                **self.tumor_config or {}
+            )
+            print(f"Tumor simulator initialized with probability: {tumor_prob}")
+            if self.tumor_config:
+                print(f"Tumor configuration: {self.tumor_config}")
+        except Exception as e:
+            print(f"Warning: Failed to initialize tumor simulator: {str(e)}")
+            print("Tumor simulation will be disabled")
+            self.tumor_simulator = None
+            self.use_tumor_simulation = False
+
     def __call__(self, sample: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+        """Apply domain randomization and tumor simulation to sample"""
+        if sample is None:
+            raise RuntimeError("Input sample is None")
+        
+        if self.image_key not in sample:
+            raise RuntimeError(f"Image key '{self.image_key}' not found in sample")
+        
+        if sample[self.image_key] is None:
+            raise RuntimeError("Image is None in sample")
+
+        # Apply domain randomization transforms
+        if self.use_domain_randomization and self.monai is not None:
+            img = sample[self.image_key]
+            transform_input = {self.image_key: img}
+            result = self.monai(transform_input)
+            
+            # Check if result is None or if image key is missing
+            if result is None:
+                raise RuntimeError("DomainRandomizer: MONAI pipeline returned None")
+            
+            if self.image_key not in result:
+                raise RuntimeError(f"DomainRandomizer: Image key '{self.image_key}' missing after transforms")
+            
+            img = result[self.image_key]
+            if img is None:
+                raise RuntimeError(f"DomainRandomizer: Image is None after transforms")
+
+            # Update sample with transformed image
+            sample[self.image_key] = img
+        
+        # Apply tumor simulation
+        if self.use_tumor_simulation and self.tumor_simulator is not None:
+            try:
+                sample = self.tumor_simulator(sample)
+            except Exception as e:
+                print(f"Warning: Tumor simulation failed: {e}")
+                sample['has_tumor'] = torch.tensor(False, dtype=torch.bool, device=self.device)
+
+        # Ensure tensor consistency
         img = sample[self.image_key]
-
-        # TorchIO (CPU) artefacts
-        if self.tio is not None:
-            subj = tio.Subject({self.image_key: tio.ScalarImage(tensor=img)})
-            img = self.tio(subj)[self.image_key].data
-
-        # MONAI (GPU-capable) transforms
-        transform_input = {self.image_key: img}
-        result = self.monai(transform_input)
-        
-        # Check if result is None or if image key is missing
-        if result is None:
-            raise RuntimeError("DomainRandomizer: MONAI pipeline returned None")
-        
-        if self.image_key not in result:
-            raise RuntimeError(f"DomainRandomizer: Image key '{self.image_key}' missing after transforms")
-        
-        img = result[self.image_key]
-        if img is None:
-            raise RuntimeError(f"DomainRandomizer: Image is None after transforms")
-
-        # keep tensors on the same device
-        sample[self.image_key] = img
         for k in ("age", "weight"):
             if k in sample and sample[k].device != img.device:
                 sample[k] = sample[k].to(img.device)
 
         return sample
 
-    def _log_parameters(self) -> None:
-        """Log the parameters being used for transforms, helpful for debugging."""
-        import logging
-        logger = logging.getLogger(__name__)
-        
-        logger.info("DomainRandomizer initialized with parameters:")
-        
-        # Group parameters for cleaner logging
-        param_groups = {
-            "Geometric": {
-                "scaling_range": self.scaling_range,
-                "rotation_range": self.rotation_range,
-                "shearing_bounds": self.shearing_bounds,
-            },
-            "Intensity": {
-                "contrast_range": self.contrast_range,
-                "log_gamma_std": self.log_gamma_std,
-                "bias_field_range": self.bias_field_rng,
-            },
-            "Noise": {
-                "noise_mean": self.noise_mean,
-                "noise_std": self.noise_std,
-                "rician_std": self.rician_std,
-                "gibbs_alpha": self.gibbs_alpha,
-            },
-            "Blur": {
-                "blur_sigma": self.blur_sigma,
-            },
-            "Shift": {
-                "shift_offset": self.shift_offset,
-                "hist_control_points": self.hist_control_points,
-            },
-            "Resolution": {
-                "min_res": self.min_res,
-                "max_res_iso": self.max_res_iso,
-            },
-            "Dropout": {
-                "coarse_size": self.coarse_size,
-                "coarse_holes": self.coarse_holes,
-            },
-            "Crop": {
-                "output_shape": self.output_shape,
-                "random_center": self.random_center,
-            },
-            "TorchIO": {
-                "use_torchio": self.use_tio,
-                "elastic_control_points": self.elastic_control_points,
-                "elastic_max_displacement": self.elastic_max_displacement,
-                "spike_num": self.spike_num,
-                "spike_intensity": self.spike_intensity,
-                "ghost_num": self.ghost_num,
-            },
-            "Progressive": {
-                "progressive_epochs": self.progressive_epochs,
-                "progressive_start": self.progressive_start,
-            },
-        }
-        
-        # Log each parameter group
-        for group_name, params in param_groups.items():
-            logger.info(f"  {group_name} parameters:")
-            for param_name, param_value in params.items():
-                logger.info(f"    {param_name}: {param_value}")
-        
-        # Log probabilities
-        logger.info("  Transform probabilities:")
-        for transform_name, prob in self.prob.items():
-            logger.info(f"    {transform_name}: {prob:.2f}")
-
-    def _check_config_completeness(self, unused_params: Dict) -> None:
-        """
-        Check that all parameters in the class are represented in the config,
-        and warn about any parameters that might be missing.
-        """
-        import logging
-        logger = logging.getLogger(__name__)
-        
-        # Get all expected parameters from the class (from _DEFAULT_PARAMS and default probs)
-        expected_params = set(self._DEFAULT_PARAMS.keys())
-        expected_probs = {f"transform_probs.{k}" for k in self._DEFAULT_PROBS.keys()}
-        
-        # Special cases that are handled differently
-        special_params = {"device", "image_key", "use_torchio", "use_tumor_simulation", "tumor_config"}
-        
-        # All expected parameters
-        all_expected = expected_params.union(expected_probs).union(special_params)
-        
-        # Get all provided parameters from unused_params (these are the ones not explicitly handled)
-        # and add the ones we know were handled
-        provided_params = set(unused_params.keys())
-        provided_params.add("image_key")  # Always provided or defaulted
-        provided_params.add("device")     # Always provided or defaulted
-        provided_params.add("use_torchio")  # Always provided or defaulted
-        
-        # If transform_probs was provided, add each probability
-        if hasattr(self, 'original_probs'):
-            for prob_key in self.original_probs:
-                provided_params.add(f"transform_probs.{prob_key}")
-        
-        # Check for each default parameter if it was provided
-        for param in self._DEFAULT_PARAMS:
-            if param in dir(self):
-                provided_params.add(param)
-        
-        # Add tumor-related params if they were provided
-        if self.use_tumor_simulation is not None:
-            provided_params.add("use_tumor_simulation")
-        if self.tumor_config is not None:
-            provided_params.add("tumor_config")
-        
-        # Find parameters that are expected but not provided
-        missing_params = all_expected - provided_params
-        if missing_params:
-            logger.warning(f"Missing parameters in config: {', '.join(missing_params)}")
-            
-        # Find parameters that are provided but not expected
-        unexpected_params = provided_params - all_expected
-        if unexpected_params:
-            logger.warning(f"Unexpected parameters in config: {', '.join(unexpected_params)}")

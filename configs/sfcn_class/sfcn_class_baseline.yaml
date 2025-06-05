@@ -1,0 +1,209 @@
+# ────────────────────────────  DATA  ──────────────────────────── #
+data:
+  data_dir: "/scratch-shared/ajoos/"               # root that contains all images
+  train_csv: "/home/ajoos/brain_age_pred/data/labels/train.csv"
+  val_csv:   "/home/ajoos/brain_age_pred/data/labels/val.csv"
+  test_csv:  "/home/ajoos/brain_age_pred/data/labels/test.csv"
+
+  image_key:  "image_path"
+  age_key:    "age"
+  weight_key: "sample_weight"             
+
+  # loading / caching
+  cache_dir: "data/cache"
+  cache_mode: "memory"   
+  cache_size: 0            
+  shared_cache: 0
+  preload: true
+  num_workers: 8
+  pin_memory: false
+  pin_memory_device: ""
+  persistent_workers: true
+  prefetch_factor: 4
+  target_shape: [160, 192, 160]            # (D,H,W) after optional resize
+  age_min: 20
+  age_max: 80
+
+# ───────────────────────────  MODEL  ──────────────────────────── #
+model:
+  type: "sfcn_class"                             # sfcn | resnet3d | efficientnet3d
+  in_channels: 1
+  dropout_rate: 0.5
+  checkpoint: null #"/home/ajoos/brain_age_pred/output/checkpoints/sfcn_20250522_104159/sfcn_20250522_104159_epoch057.pt"
+
+# ────────────────  DOMAIN-RANDOMISATION / AUGS  ───────────────── #
+# -------------------------------------------------------------------------
+# Domain-randomisation settings
+# Every key here maps 1-to-1 to a keyword argument or probability override
+# accepted by the new DomainRandomizer class.
+# -------------------------------------------------------------------------
+domain_randomization:
+  use_domain_randomization: false
+  use_tumor_simulation: false
+
+  # Progressive randomization parameters
+  progressive_epochs: 50  # Number of epochs for progressive randomization
+  progressive_start: 0.2  # Initial probability scaling factor
+  augmentation_strength: 0.5
+
+
+  image_key: "image"  # Key for the image in the data dictionary
+    
+  # Transform probabilities
+  transform_probs:
+  
+    tumor: 0.3
+
+    # Geometric transforms
+    flip: 0.5
+    affine: 0.7
+    
+    # Intensity transforms
+    contrast: 0.6
+    gamma: 0.5
+    scale_int: 0.4  # Scale intensity
+    shift_int: 0.4  # Shift intensity
+    hist_shift: 0.3  # Histogram shift
+    
+    # Noise/artifact transforms
+    blur: 0.2
+    bias: 0.5
+    noise: 0.4
+    rician: 0.3
+    gibbs: 0.3
+    
+    # Resolution/dropout transforms
+    resolution: 0.1
+    coarse_do: 0.0
+    
+    
+
+  
+  
+  # Geometric transform parameters
+  scaling_range: [0.85, 1.15]  # Range for scaling transformations
+  rotation_range: 15.0  # Maximum rotation in degrees
+  shearing_bounds: 0.3  # Maximum shearing
+  
+  # Intensity transform parameters
+  contrast_range: [0.1, 2.0]  # Range for contrast adjustment
+  log_gamma_std: 0.3  # Standard deviation for gamma transformation
+  bias_field_range: [0.0, 0.8]  # Range for bias field artifact
+  
+  # Noise parameters
+  noise_mean: 0.5  # Mean for Gaussian noise
+  noise_std: 0.08  # Standard deviation for Gaussian noise
+  rician_std: 0.08  # Standard deviation for Rician noise
+  gibbs_alpha: [0.0, 1.0]  # Alpha range for Gibbs noise
+  
+  # Blur parameters
+  blur_sigma: [0.5, 2.0]  # Sigma range for Gaussian smoothing
+  
+  # Intensity shift parameters
+  shift_offset: [-0.15, 0.15]  # Range for intensity shift
+  hist_control_points: [4, 12]  # Control points for histogram shift
+  
+  # Resolution/artifact parameters
+  max_res_iso: 1.8  # Maximum isotropic resolution
+  min_res: 1.0  # Minimum resolution
+  
+  # Dropout parameters
+  coarse_dropout_size: [20, 20, 20]  # Size of dropout regions
+  coarse_dropout_holes: 8  # Number of dropout holes
+  
+  # Spatial crop parameters
+  output_shape: [160, 192, 160]  # Final shape after transformations
+  random_center: true  # Use random center for spatial crop
+  
+  # TorchIO specific parameters
+  use_torchio: false  # Whether to use TorchIO transforms
+  elastic_control_points: 7  # Control points for elastic deformation
+  elastic_max_displacement: 5.0  # Maximum displacement for elastic deformation
+  spike_num: [1, 6]  # Number of spikes
+  spike_intensity: [0.1, 0.6]  # Intensity of spikes
+  ghost_num: [2, 10]  # Number of ghosts
+  
+  # Tumor simulation configuration
+  tumor_config:
+
+    # Age-based segmentation
+    use_age_based_segmentation: true
+    segmentation_paths:
+      young: "brain_age_pred/data/segmentations/seg_18_40.nii.npy"
+      middle: "brain_age_pred/data/segmentations/seg_40_60.nii.npy"
+      old: "brain_age_pred/data/segmentations/seg_60_85.nii.npy"
+    age_ranges:
+      young: [18, 40]
+      middle: [40, 60]
+      old: [60, 85]
+    
+    # Tumor generation parameters
+    perlin_res: [2, 2, 2]  # Perlin noise resolution
+    mask_percentile_min: 90.0
+    mask_percentile_max: 99.6
+    tumor_size_factor_range: [0.5, 2.0]  # Random size scaling
+    pathol_thres: 0.2
+    min_tumor_size: 100
+    
+    # Fluid dynamics (makes tumors more realistic)
+    use_fluid_dynamics: true
+    V_multiplier: 500.0
+    dt: 0.1
+    min_nt: 10
+    max_nt: 20
+    integ_method: 'dopri5'
+    bc: 'neumann'
+    
+    # Intensity parameters
+    modality: 'T1'  # Default modality if not in data
+    intensity_variation: 0.3
+    
+    # Brain mask parameters (fallback when segmentation fails)
+    brain_threshold: 0.1
+
+# ──────────────────────────  TRAINING  ────────────────────────── #
+training:
+  batch_size: 8
+  epochs: 150
+
+  # optimiser & LR
+  learning_rate: 0.001 #0.002193
+  weight_decay:  0.001
+  optimizer: "sgd"                       # adam | adamw | sgd | rmsprop | radam | novograd
+  scheduler: "step"                      # cosine | plateau | onecycle | step | none
+  scheduler_params:
+    T_max: 100
+    eta_min: 0.00001
+    epochs: 150
+    steps_per_epoch: 534
+
+    step_size: 30
+    gamma: 0.3
+
+  # losses
+  loss: "kl_div"                        # mse | mae | huber | huber_mae | weighted_mse
+  loss_params:
+    delta: 1.0
+    mae_weight: 0.5
+
+  # misc
+  early_stopping_patience: 30
+  gradient_accumulation_steps: 1
+  use_amp: true                            # mixed precision if CUDA present
+
+# ────────────────────────────  OUTPUT  ────────────────────────── #
+output:
+  output_dir: "/home/ajoos/brain_age_pred/output"
+  checkpoint_dir: "checkpoints"
+  log_dir: "logs"
+  experiment_name: null #"brain_age_with_tumors"                   # auto-generate if left null
+
+# ─────────────────────────────  W&B  ──────────────────────────── #
+wandb:
+  use_wandb: true                         # still requires $WANDB_API env-var
+  project: "brainage-model-training"
+  entity: null
+
+# ───────────────────────── MISCELLANEOUS ───────────────────────── #
+seed: 42
+device: "cuda"                              # cuda if available, else cpu
