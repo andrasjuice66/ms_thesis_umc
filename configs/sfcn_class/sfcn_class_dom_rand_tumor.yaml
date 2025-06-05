@@ -197,12 +197,13 @@ output:
   output_dir: "/home/ajoos/brain_age_pred/output"
   checkpoint_dir: "checkpoints"
   log_dir: "logs"
-  experiment_name: null #"brain_age_with_tumors"                   # auto-generate if left null
+  experiment_name: sfcn_class_dom_rand_tumor #"brain_age_with_tumors"                   # auto-generate if left null
 
 # ─────────────────────────────  W&B  ──────────────────────────── #
 wandb:
   use_wandb: true                         # still requires $WANDB_API env-var
-  project: "brainage-model-training"
+  project: "brain_age_results"
+
   entity: null
 
 # ───────────────────────── MISCELLANEOUS ───────────────────────── #
