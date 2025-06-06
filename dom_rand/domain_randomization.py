@@ -43,7 +43,7 @@ from brain_age_pred.dom_rand.custom_transformations import (
 )
 
 # Import tumor simulator
-from brain_age_pred.dom_rand.perlin_simulation import TumorSimulationModule
+from brain_age_pred.dom_rand.tumor_simulation import TumorSimulationModule
 
 class DomainRandomizer:
     """

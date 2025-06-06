@@ -1,19 +1,3 @@
-
-# Complete Tumor Simulation Module for Domain Randomization
-# ========================================================
-
-# Integrated tumor simulation with age-based segmentation loading that works
-# seamlessly with the domain randomization pipeline.
-
-# Usage:
-#     from tumor_simulation_complete import TumorSimulationModule
-    
-#     # Initialize with config
-#     tumor_sim = TumorSimulationModule(device=device, **config["tumor_config"])
-    
-#     # Use in domain randomizer
-#     domain_randomizer = DomainRandomizer(tumor_simulator=tumor_sim, ...)
-
 from __future__ import annotations
 from typing import Dict, Optional, Tuple, Union, List
 import sys
@@ -26,7 +10,8 @@ import torch
 import random
 import nibabel as nib
 from monai.transforms.transform import MapTransform
-
+import torch.nn.functional as F     # <-- one new import at top of file
+import traceback
 from brain_age_pred.dom_rand.FluidAnomaly.perlin3d import generate_shape_3d, generate_velocity_3d
 from brain_age_pred.dom_rand.FluidAnomaly.DiffEqs.pde import AdvDiffPDE
 from brain_age_pred.dom_rand.FluidAnomaly.DiffEqs.odeint import odeint
@@ -198,7 +183,7 @@ class TumorShapeGenerator:
     def __init__(
         self,
         device: torch.device,
-        perlin_res: List[int] = [2, 2, 2],
+        perlin_res: List[int] = [8, 8, 8],
         mask_percentile_min: float = 90.0,
         mask_percentile_max: float = 99.6,
         tumor_size_factor_range: Tuple[float, float] = (0.5, 2.0),
@@ -280,34 +265,58 @@ class TumorShapeGenerator:
 
     
     def _apply_fluid_dynamics(self, tumor_prob: torch.Tensor) -> torch.Tensor:
-        """Apply fluid dynamics to tumor shape"""
         if not self.use_fluid_dynamics:
             return tumor_prob
-        
+
         try:
-            # Generate random number of time steps
             nt = np.random.randint(self.min_nt, self.max_nt + 1)
-            
-            # Generate velocity field
+
             self.adv_pde.V_dict = generate_velocity_3d(
-                tumor_prob.shape, 
-                self.perlin_res, 
-                self.V_multiplier, 
-                self.device
+                tumor_prob.shape,
+                self.perlin_res,
+                self.V_multiplier,
+                self.device,
             )
-            
-            # Apply PDE evolution
+            print("Generated velocity dict keys:", self.adv_pde.V_dict.keys())
+
+            V_dict = self.adv_pde.V_dict
+
+            if "V" not in V_dict:
+                Vx = V_dict.get("Vx")
+                Vy = V_dict.get("Vy")
+                Vz = V_dict.get("Vz")
+                if Vx is None or Vy is None or Vz is None:
+                    print("Warning: Velocity components missing, skipping fluid dynamics.")
+                    return tumor_prob
+                V = torch.stack([Vx, Vy, Vz], dim=-1)  # [Z,Y,X,3]
+                self.adv_pde.V_dict["V"] = V
+            else:
+                V = V_dict["V"]
+
+            if V.shape[:3] != tumor_prob.shape:
+                import torch.nn.functional as F
+                V_up = F.interpolate(
+                    V.permute(3, 0, 1, 2).unsqueeze(0),
+                    size=tumor_prob.shape,
+                    mode="trilinear",
+                    align_corners=False,
+                )
+                V = V_up.squeeze(0).permute(1, 2, 3, 0)
+                self.adv_pde.V_dict["V"] = V
+
             tumor_prob = odeint(
-                self.adv_pde, 
-                tumor_prob[None], 
-                self.t[:nt], 
-                self.dt, 
-                method=self.integ_method
-            )[-1, 0]  # Take the last time step
-            
+                self.adv_pde,
+                tumor_prob[None],
+                self.t[:nt],
+                self.dt,
+                method=self.integ_method,
+            )[-1, 0]
+
         except Exception as e:
             print(f"Warning: Fluid dynamics failed: {e}, using original shape")
-        
+            import traceback
+            traceback.print_exc()
+
         return tumor_prob
 
 
@@ -453,7 +462,7 @@ class TumorSimulationModule(MapTransform):
     def _generate_tumor_on_sample(self, sample: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         """Generate tumor on a single sample"""
         # Get image
-        key = self.keys[0] if isinstance(self.keys, list) else self.keys
+        key = self.keys[0] if isinstance(self.keys, (list, tuple)) else self.keys           
         image = sample[key]
         
         # Ensure image is on correct device
@@ -573,41 +582,3 @@ def create_tumor_simulator(config: Dict, device: torch.device) -> TumorSimulatio
         Configured TumorSimulationModule
     """
     return TumorSimulationModule(device=device, **config)
-
-
-# Example usage and testing
-if __name__ == "__main__":
-    # Example configuration
-    example_config = {
-        "prob": 0.3,
-        "use_age_based_segmentation": True,
-        "segmentation_paths": {
-            "young": "brain_age_pred/data/segmentations/seg_18_40.nii.npy",
-            "middle": "brain_age_pred/data/segmentations/seg_40_60.nii.npy",
-            "old": "brain_age_pred/data/segmentations/seg_60_85.nii.npy"
-        },
-        "age_ranges": {
-            "young": [18, 40],
-            "middle": [40, 60],
-            "old": [60, 85]
-        },
-        "perlin_res": [2, 2, 2],
-        "mask_percentile_min": 90.0,
-        "mask_percentile_max": 99.6,
-        "tumor_size_factor_range": [0.5, 2.0],
-        "pathol_thres": 0.2,
-        "min_tumor_size": 100,
-        "use_fluid_dynamics": True,
-        "V_multiplier": 500.0,
-        "dt": 0.1,
-        "min_nt": 10,
-        "max_nt": 20,
-        "integ_method": 'dopri5',
-        "bc": 'neumann',
-        "modality": 'T1',
-        "intensity_variation": 0.3,
-        "brain_threshold": 0.1,
-    }
-    
-    print("Tumor simulation module created successfully!")
-    print("Available modality intensities:", list(TumorIntensityManager.MODALITY_INTENSITIES.keys()))

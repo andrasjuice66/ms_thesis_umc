@@ -473,7 +473,7 @@ class BrainAgeTrainer:
             # This line already exists and will now trigger probability updates
             if hasattr(self.train_loader.dataset.transform, "current_epoch"):
                 self.train_loader.dataset.transform.current_epoch = epoch
-            self.logger.info(f"Epoch progressive: {epoch+1}/{self.epochs}")
+                self.logger.info(f"Progressive dom rand update for epoch: {epoch+1}/{self.epochs}")
 
             tr_metrics = self.train_epoch(epoch)
             vl_metrics = self.validate(epoch)

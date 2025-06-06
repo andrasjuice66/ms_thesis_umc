@@ -4,15 +4,15 @@
 
 
 import os, sys, time
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
- 
 import torch
 import numpy as np 
-from FluidAnomaly.misc import stream_3D
+from brain_age_pred.dom_rand.FluidAnomaly.misc import stream_3D
     
 seed = int(time.time())
 os.environ['PYTHONHASHSEED'] = str(seed)
 np.random.seed(seed) 
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 def interpolant(t):
     return t*t*t*(t*(t*6 - 15) + 10)

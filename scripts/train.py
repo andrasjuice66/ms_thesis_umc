@@ -8,11 +8,15 @@ import os, sys, time, json, random
 from datetime import datetime
 from pathlib import Path
 from typing import List, Tuple
+import multiprocessing as mp
 
 import pandas as pd
 import numpy as np
 import torch
 import wandb
+
+# Set multiprocessing start method to 'spawn' for CUDA compatibility
+mp.set_start_method('spawn', force=True)
 
 project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))

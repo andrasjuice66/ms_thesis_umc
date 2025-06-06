@@ -94,11 +94,13 @@ class BADataset(Dataset):
             sample["sex"] = self.sexes[idx]
 
         # ---- always apply center crop ------------------------------------
-        sample = self.center_crop(sample)
         
         # ---- transform -------------------------------------------------
         if self.transform is not None and self.mode == "train":
             sample = self.transform(sample)
+            
+        sample = self.center_crop(sample)
+
 
         # ---- sanity checks --------------------------------------------
         if sample is None:
