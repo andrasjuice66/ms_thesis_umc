@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=sfcn
-#SBATCH --partition=gpu_a100            
-#SBATCH --gres=gpu:a100:1
+#SBATCH --partition=gpu_h100            
+#SBATCH --gres=gpu:h100:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
 #SBATCH --time=20:00:00
@@ -25,8 +25,8 @@ conda activate thesis
 cd $HOME/
 python -m brain_age_pred.scripts.train brain_age_pred/configs/sfcn_class/sfcn_class_baseline.yaml
 
-#python -m brain_age_pred.scripts.train brain_age_pred/configs/sfcn_class/sfcn_class_dom_rand.yaml
+python -m brain_age_pred.scripts.train brain_age_pred/configs/sfcn_class/sfcn_class_dom_rand.yaml
 
-#python -m brain_age_pred.scripts.train brain_age_pred/configs/sfcn_class/sfcn_class_dom_rand_tumor.yaml
+python -m brain_age_pred.scripts.train brain_age_pred/configs/sfcn_class/sfcn_class_dom_rand_tumor.yaml
 
 

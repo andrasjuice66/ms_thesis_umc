@@ -156,7 +156,6 @@ domain_randomization:
     bc: 'neumann'
     
     # Intensity parameters
-    modality: 'T1'  # Default modality if not in data
     intensity_variation: 0.3
     
     # Brain mask parameters (fallback when segmentation fails)
