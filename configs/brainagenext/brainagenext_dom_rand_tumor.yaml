@@ -45,6 +45,7 @@ domain_randomization:
   # Progressive randomization parameters
   progressive_epochs: 50  # Number of epochs for progressive randomization
   progressive_start: 0.2  # Initial probability scaling factor
+  augmentation_strength: 0.5
 
 
   image_key: "image"  # Key for the image in the data dictionary
@@ -133,9 +134,9 @@ domain_randomization:
       middle: "brain_age_pred/data/segmentations/seg_40_60.nii.npy"
       old: "brain_age_pred/data/segmentations/seg_60_85.nii.npy"
     age_ranges:
-      young: [20, 40]
+      young: [18, 40]
       middle: [40, 60]
-      old: [60, 80]
+      old: [60, 85]
     
     # Tumor generation parameters
     perlin_res: [2, 2, 2]  # Perlin noise resolution
@@ -164,12 +165,12 @@ domain_randomization:
 # ──────────────────────────  TRAINING  ────────────────────────── #
 training:
   batch_size: 16
-  epochs: 120
+  epochs: 150
 
   # optimiser & LR
   learning_rate: 0.001 #0.002193
   weight_decay:  0.001
-  optimizer: "adamw"                       # adam | adamw | sgd | rmsprop | radam | novograd
+  optimizer: "sgd"                       # adam | adamw | sgd | rmsprop | radam | novograd
   scheduler: "step"                      # cosine | plateau | onecycle | step | none
   scheduler_params:
     T_max: 100
@@ -187,7 +188,7 @@ training:
     mae_weight: 0.5
 
   # misc
-  early_stopping_patience: 100
+  early_stopping_patience: 30
   gradient_accumulation_steps: 1
   use_amp: true                            # mixed precision if CUDA present
 

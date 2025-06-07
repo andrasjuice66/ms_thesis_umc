@@ -28,7 +28,7 @@ data:
 model:
   type: "brainagenext"                             # sfcn | resnet3d | efficientnet3d
   in_channels: 1
-  dropout_rate: 0.0
+  dropout_rate: 0.2
   use_attention: false                   
   checkpoint: null #"/home/ajoos/brain_age_pred/output/checkpoints/sfcn_20250522_104159/sfcn_20250522_104159_epoch057.pt"
 
@@ -164,7 +164,7 @@ domain_randomization:
 # ──────────────────────────  TRAINING  ────────────────────────── #
 training:
   batch_size: 16
-  epochs: 120
+  epochs: 150
 
   # optimiser & LR
   learning_rate: 0.001 #0.002193
@@ -187,7 +187,7 @@ training:
     mae_weight: 0.5
 
   # misc
-  early_stopping_patience: 100
+  early_stopping_patience: 30
   gradient_accumulation_steps: 1
   use_amp: true                            # mixed precision if CUDA present
 

@@ -3,8 +3,8 @@
 #SBATCH --partition=gpu_h100            
 #SBATCH --gres=gpu:h100:1
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=32G
-#SBATCH --time=12:00:00
+#SBATCH --mem=64G
+#SBATCH --time=25:00:00
 #SBATCH --output=/home/%u/run_logs/%x_%j.out   
 #SBATCH --error=/home/%u/run_logs/%x_%j.err
 #SBATCH --mail-type=FAIL,END    
@@ -27,7 +27,7 @@ python -m brain_age_pred.scripts.train brain_age_pred/configs/brainagenext/brain
 
 python -m brain_age_pred.scripts.train brain_age_pred/configs/brainagenext/brainagenext_dom_rand.yaml
 
-python -m brain_age_pred.scripts.train brain_age_pred/configs/brainagenext/brainagenext_dom_rand_tumor.yaml
+#python -m brain_age_pred.scripts.train brain_age_pred/configs/brainagenext/brainagenext_dom_rand_tumor.yaml
 
 
 
