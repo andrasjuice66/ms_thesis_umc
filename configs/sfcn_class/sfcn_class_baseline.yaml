@@ -163,13 +163,13 @@ domain_randomization:
 
 # ──────────────────────────  TRAINING  ────────────────────────── #
 training:
-  batch_size: 8
+  batch_size: 16
   epochs: 150
 
   # optimiser & LR
-  learning_rate: 0.001 #0.002193
+  learning_rate: 0.002 #0.002193
   weight_decay:  0.001
-  optimizer: "sgd"                       # adam | adamw | sgd | rmsprop | radam | novograd
+  optimizer: "adamw"                       # adam | adamw | sgd | rmsprop | radam | novograd
   scheduler: "step"                      # cosine | plateau | onecycle | step | none
   scheduler_params:
     T_max: 100
