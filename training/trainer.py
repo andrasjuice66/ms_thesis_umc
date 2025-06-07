@@ -136,11 +136,9 @@ class BrainAgeTrainer:
         self.scaler: Optional[GradScaler] = GradScaler(device=self.device) if self.use_amp else None
 
         # /--------- early-stop bookkeeping ---------/
-        self.best_val_loss      = float("inf")
-        self.best_metric     = float("inf")
-        self.early_stop_counter = 0
-
+        self.best_val_loss = float("inf")
         self.best_val_mae = float("inf")  # Best validation MAE
+        self.early_stop_counter = 0
         self.best_mae_epoch = -1  # Epoch with best validation MAE
         self.best_mae_checkpoint_path = None  # Path to best MAE checkpoint
 
@@ -183,7 +181,7 @@ class BrainAgeTrainer:
         """
         Handles both KL-divergence (soft-labels) and classic regression losses.
         """
-        if self.loss_name == "kl_div":
+        if self.loss_name == "kl_div" or self.loss_name == "exp_mae":
             # outputs are log-probabilities, targets are probabilities
             return self.criterion(outputs, targets)
 
@@ -209,7 +207,7 @@ class BrainAgeTrainer:
         def fwd():
             out = self.model(imgs)                       # logits or scalar
             
-            if self.loss_name == "kl_div":
+            if self.loss_name == "kl_div" or self.loss_name == "exp_mae":
                 tgt   = self._soft_label(ages)
                 loss  = self._compute_loss(out, tgt)     # KL
                 pred  = (out.exp() * self.bin_centres).sum(dim=1, keepdim=True)
@@ -357,15 +355,6 @@ class BrainAgeTrainer:
             f"data={metrics['data_time']:.3f}s  gpu={metrics['gpu_time']:.3f}s"
         )
 
-        self.logger.info("Epoch Summary Statistics:")
-        self.logger.info(f"Min prediction: {y_pred.min():.2f}")
-        self.logger.info(f"Max prediction: {y_pred.max():.2f}")
-        self.logger.info(f"Mean prediction: {y_pred.mean():.2f}")
-        self.logger.info(f"Min target: {y_true.min():.2f}")
-        self.logger.info(f"Max target: {y_true.max():.2f}")
-        self.logger.info(f"Mean target: {y_true.mean():.2f}")
-        self.logger.info(f"Current LR: {self.optimizer.param_groups[0]['lr']:.2e}")
-
         return metrics
 
     # ------------------------------------------------------------------ #
@@ -491,28 +480,22 @@ class BrainAgeTrainer:
                 log_dict["lr"] = self.optimizer.param_groups[0]["lr"]
                 self.wandb.log(log_dict, step=epoch+1)
 
-            # Check for best validation loss
-            is_best_loss = vl_metrics["loss"] < self.best_val_loss
-            if is_best_loss:
-                self.best_val_loss = vl_metrics["loss"]
-            
-            # Check for best validation MAE (the metric we really care about)
+            # Check for best validation MAE (this is the metric we care about)
             is_best_mae = vl_metrics["mae"] < self.best_val_mae
             if is_best_mae:
                 self.best_val_mae = vl_metrics["mae"]
                 self.best_mae_epoch = epoch
-                self.best_metric = vl_metrics["mae"]  # Keep this for backward compatibility
                 self.logger.info(f"New best validation MAE: {self.best_val_mae:.4f} at epoch {epoch+1}")
 
-            # Early stopping uses loss, not MAE (keeping original behavior)
-            self.early_stop_counter = 0 if is_best_loss else self.early_stop_counter + 1
+            # Early stopping should use MAE, not loss
+            self.early_stop_counter = 0 if is_best_mae else self.early_stop_counter + 1
             
             # Save checkpoint with both loss and MAE info
             self._save_checkpoint(
                 epoch, 
                 vl_metrics["loss"],
                 vl_metrics["mae"],
-                is_best_loss=is_best_loss,
+                is_best_loss=False,
                 is_best_mae=is_best_mae
             )
 

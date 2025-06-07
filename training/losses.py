@@ -201,6 +201,60 @@ class CustomKLDivergenceLoss(nn.Module):
         n = target.shape[0]
         loss = self.kl_div(input, target) / n
         return loss
+    
+
+class ExpectedMAELoss(nn.Module):
+    """
+    E[|ĉ – a|] where ĉ is a discrete age *distribution* (probabilities) and
+    a is the ground-truth age.
+
+    Works with
+        • raw logits    → set input_mode='logits'
+        • log-probs     → input_mode='log_probs'  (default for SFCN-Class)
+        • probabilities → input_mode='probs'
+    """
+    def __init__(
+        self,
+        age_min: float = 20.0,
+        age_max: float = 80.0,
+        bin_step: int   = 1,
+        input_mode: str = "log_probs",   # 'logits' | 'log_probs' | 'probs'
+        reduction: str = "mean",         # 'mean' | 'sum' | 'none'
+    ):
+        super().__init__()
+        self.register_buffer(
+            "bin_centres",
+            torch.arange(age_min, age_max + 1, bin_step).float()
+        )
+        assert input_mode in {"logits", "log_probs", "probs"}
+        self.input_mode = input_mode
+        self.reduction = reduction
+
+    # ---------------------------------------------------------------------- #
+    def _to_probs(self, x: torch.Tensor) -> torch.Tensor:
+        if self.input_mode == "logits":
+            return F.softmax(x, dim=1)
+        if self.input_mode == "log_probs":
+            return x.exp()               # x already log-softmaxed
+        return x                         # already probabilities ('probs')
+
+    # ---------------------------------------------------------------------- #
+    def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        """
+        input  : (B, n_bins) – logits / log-probs / probs
+        target : (B,)        – ages (float)
+        """
+        probs = self._to_probs(input)                        # (B, n_bins)
+        if self.bin_centres.device != input.device:          # safety
+            self.bin_centres = self.bin_centres.to(input.device)
+
+        abs_err = torch.abs(self.bin_centres - target[:, None])  # (B, n_bins)
+        per_sample = (probs * abs_err).sum(dim=1)                # (B,)
+
+        if   self.reduction == "mean": return per_sample.mean()
+        elif self.reduction == "sum":  return per_sample.sum()
+        else:                          return per_sample        # 'none'
+
 
 
 def get_loss_function(loss_type: str, **kwargs) -> nn.Module:
@@ -238,6 +292,12 @@ def get_loss_function(loss_type: str, **kwargs) -> nn.Module:
         "kl_div": CustomKLDivergenceLoss(
             epsilon=kwargs.get("epsilon", 1e-16)
         ),
+        "exp_mae" : ExpectedMAELoss(
+                            age_min   =kwargs.get("age_min", 20.0),
+                            age_max   =kwargs.get("age_max", 80.0),
+                            bin_step  =kwargs.get("bin_step", 1),
+                            input_mode=kwargs.get("input_mode", "log_probs"),
+                            reduction =kwargs.get("reduction", "sum")),
     }
     
     if loss_type not in loss_functions:
