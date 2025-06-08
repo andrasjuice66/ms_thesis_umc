@@ -4,7 +4,7 @@
 #SBATCH --gres=gpu:h100:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
-#SBATCH --time=20:00:00
+#SBATCH --time=08:00:00
 #SBATCH --output=/home/%u/run_logs/%x_%j.out   
 #SBATCH --error=/home/%u/run_logs/%x_%j.err
 #SBATCH --mail-type=FAIL,END    
@@ -23,9 +23,9 @@ conda activate thesis
 
 # 3) launch training exactly as on your laptop
 cd $HOME/
-python -m brain_age_pred.scripts.train brain_age_pred/configs/sfcn_class/sfcn_class_baseline.yaml
+#python -m brain_age_pred.scripts.train brain_age_pred/configs/sfcn_class/sfcn_class_baseline.yaml
 
-python -m brain_age_pred.scripts.train brain_age_pred/configs/sfcn_class/sfcn_class_dom_rand.yaml
+#python -m brain_age_pred.scripts.train brain_age_pred/configs/sfcn_class/sfcn_class_dom_rand.yaml
 
 python -m brain_age_pred.scripts.train brain_age_pred/configs/sfcn_class/sfcn_class_dom_rand_tumor.yaml
 
