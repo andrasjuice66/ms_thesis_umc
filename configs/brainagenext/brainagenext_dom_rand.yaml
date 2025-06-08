@@ -170,7 +170,7 @@ training:
   # optimiser & LR
   learning_rate: 0.001 #0.002193
   weight_decay:  0.001
-  optimizer: "sgd"                       # adam | adamw | sgd | rmsprop | radam | novograd
+  optimizer: "adamw"                       # adam | adamw | sgd | rmsprop | radam | novograd
   scheduler: "step"                      # cosine | plateau | onecycle | step | none
   scheduler_params:
     T_max: 100
@@ -182,7 +182,7 @@ training:
     gamma: 0.3
 
   # losses
-  loss: "huber_mae"                        # mse | mae | huber | huber_mae | weighted_mse
+  loss: "mse"                        # mse | mae | huber | huber_mae | weighted_mse
   loss_params:
     delta: 1.0
     mae_weight: 0.5
