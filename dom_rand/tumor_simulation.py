@@ -277,7 +277,6 @@ class TumorShapeGenerator:
                 self.V_multiplier,
                 self.device,
             )
-            print("Generated velocity dict keys:", self.adv_pde.V_dict.keys())
 
             V_dict = self.adv_pde.V_dict
 
@@ -304,13 +303,22 @@ class TumorShapeGenerator:
                 V = V_up.squeeze(0).permute(1, 2, 3, 0)
                 self.adv_pde.V_dict["V"] = V
 
-            tumor_prob = odeint(
+            result = odeint(
                 self.adv_pde,
                 tumor_prob[None],
                 self.t[:nt],
                 self.dt,
                 method=self.integ_method,
             )[-1, 0]
+            
+            # Validate fluid dynamics result
+            if torch.isnan(result).any() or torch.isinf(result).any():
+                print("Warning: Fluid dynamics produced NaN/Inf values, using original shape")
+                return tumor_prob
+            
+            # Clamp to valid probability range
+            result = torch.clamp(result, 0, 1)
+            return result
 
         except Exception as e:
             print(f"Warning: Fluid dynamics failed: {e}, using original shape")
@@ -436,9 +444,13 @@ class TumorSimulationModule(MapTransform):
             modality, ref_intensity, self.device
         )
         
-        # Add spatial variation to intensity
+        # Add spatial variation to intensity - limit the variation
         intensity_variation = 1.0 + self.intensity_variation * (torch.rand_like(tumor_prob) - 0.5)
         pathol_intensity = ref_intensity * intensity_multiplier * intensity_variation
+        
+        # Clamp pathological intensity to reasonable range to prevent extreme values
+        max_reasonable_intensity = ref_intensity * 5.0  # Limit to 5x reference intensity
+        pathol_intensity = torch.clamp(pathol_intensity, min=0.0, max=max_reasonable_intensity)
         
         # Apply pathology based on modality
         modality_upper = modality.upper()
@@ -454,8 +466,21 @@ class TumorSimulationModule(MapTransform):
                 # Enhanced: additive
                 diseased_image = image + tumor_prob * pathol_intensity
         
-        # Ensure non-negative values
+        # Ensure non-negative values and clamp to reasonable range
         diseased_image = torch.clamp(diseased_image, min=0)
+        
+        # Validate output - check for NaN/Inf values
+        if torch.isnan(diseased_image).any() or torch.isinf(diseased_image).any():
+            print("Warning: Tumor simulation produced NaN/Inf values, returning original image")
+            return image
+        
+        # Check for extreme values (more than 10x the original max)
+        original_max = image.max()
+        if diseased_image.max() > original_max * 10:
+            print(f"Warning: Tumor simulation produced extreme values (max: {diseased_image.max():.2f} vs original: {original_max:.2f})")
+            # Scale down the diseased image
+            scale_factor = (original_max * 5) / diseased_image.max()
+            diseased_image = diseased_image * scale_factor
         
         return diseased_image
     

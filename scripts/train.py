@@ -339,21 +339,133 @@ def main() -> None:
         logger.error(f"Training failed")
         raise
 
-    # 10. ─── evaluate ─────────────────────────────────────── #
+    # 10. ─── 3-fold evaluation ─────────────────────────────────────── #
+    def create_eval_transforms(use_domain_rand=False, use_tumor=False):
+        """Create evaluation-specific transforms"""
+        if not use_domain_rand:
+            return None
+        
+        # Create domain randomization for evaluation using same config as training
+        eval_rand_cfg = cfg.get("domain_randomization", {}).copy()
+        eval_tumor_cfg = eval_rand_cfg.get("tumor_config", {}).copy() if use_tumor else {}
+        
+        eval_transform = DomainRandomizer(
+            device=device,
+            use_domain_randomization=True,
+            use_tumor_simulation=use_tumor,
+            tumor_config=eval_tumor_cfg if use_tumor else None,
+            **eval_rand_cfg,
+        )
+        
+        return eval_transform
+
+    def run_multi_fold_evaluation(transform, n_folds=10, eval_name="test"):
+        """Run evaluation multiple times with different augmentations and average results"""
+        logger.info(f"Running {n_folds}-fold {eval_name} evaluation...")
+        
+        all_metrics = []
+        
+        for fold in range(n_folds):
+            logger.info(f"{eval_name} evaluation fold {fold+1}/{n_folds}")
+            
+            # Create test dataset with transform
+            eval_test_ds = BADataset(
+                file_paths=test_p,
+                age_labels=test_a,
+                sexes=test_s,
+                modalities=test_m,
+                transform=transform,
+                mode="test",
+                cache_size=0,  # No caching for evaluation
+            )
+            
+            # Create data loader
+            eval_test_loader = torch.utils.data.DataLoader(
+                eval_test_ds,
+                batch_size=cfg.get("training.batch_size", 8),
+                shuffle=False,
+                **dl_kwargs,
+            )
+            
+            # Run evaluation
+            metrics = trainer.evaluate(eval_test_loader, checkpoint_path=best_mae_checkpoint)
+            all_metrics.append(metrics)
+        
+        # Average metrics across folds
+        avg_metrics = {}
+        for key in all_metrics[0].keys():
+            values = [m[key] for m in all_metrics]
+            avg_metrics[key] = np.mean(values)
+            avg_metrics[f"{key}_std"] = np.std(values)
+        
+        logger.info(f"{eval_name} evaluation results (averaged over {n_folds} folds):")
+        logger.info(f"MAE: {avg_metrics['mae']:.4f} ± {avg_metrics['mae_std']:.4f}")
+        logger.info(f"MSE: {avg_metrics['mse']:.4f} ± {avg_metrics['mse_std']:.4f}")
+        logger.info(f"R²: {avg_metrics['r2']:.4f} ± {avg_metrics['r2_std']:.4f}")
+        
+        return avg_metrics
+
     try:
-        logger.info("Evaluating model using best MAE checkpoint...")
+        logger.info("Starting 3-fold evaluation using best MAE checkpoint...")
         best_mae_checkpoint = best_mae_info["checkpoint_path"]
         logger.info(f"Loading best checkpoint from epoch {best_mae_info['epoch']+1} with MAE {best_mae_info['value']:.4f}")
         
-        metrics = trainer.evaluate(test_loader, checkpoint_path=best_mae_checkpoint)
-        logger.info(f"Test evaluation results using best MAE model: {metrics}")
+        # 1. Normal test evaluation
+        logger.info("=== 1/3: Normal test evaluation ===")
+        normal_metrics = trainer.evaluate(test_loader, checkpoint_path=best_mae_checkpoint)
+        logger.info(f"Normal test results: {normal_metrics}")
         
-        if use_wandb: 
-            wandb.log({"test/metrics": metrics})
-            wandb.log({"test/using_best_mae_checkpoint": best_mae_checkpoint})
+        # 2. Domain randomized test evaluation (10 folds)
+        logger.info("=== 2/3: Domain randomized test evaluation ===")
+        dom_rand_transform = create_eval_transforms(use_domain_rand=True, use_tumor=False)
+        dom_rand_metrics = run_multi_fold_evaluation(
+            dom_rand_transform, n_folds=10, eval_name="domain_randomized"
+        )
+        
+        # 3. Domain randomized + tumor simulation test evaluation (10 folds)
+        logger.info("=== 3/3: Domain randomized + tumor simulation test evaluation ===")
+        dom_rand_tumor_transform = create_eval_transforms(use_domain_rand=True, use_tumor=True)
+        dom_rand_tumor_metrics = run_multi_fold_evaluation(
+            dom_rand_tumor_transform, n_folds=10, eval_name="domain_rand_tumor"
+        )
+        
+        # Log all results to W&B with appropriate prefixes
+        if use_wandb:
+            # Normal test results
+            wandb.log({f"test/{k}": v for k, v in normal_metrics.items()})
+            
+            # Domain randomized results
+            wandb.log({f"test_dom_rand/{k}": v for k, v in dom_rand_metrics.items()})
+            
+            # Domain randomized + tumor results
+            wandb.log({f"test_dom_rand_tumor/{k}": v for k, v in dom_rand_tumor_metrics.items()})
+            
+            # Log summary comparison
+            wandb.log({
+                "evaluation_summary/normal_mae": normal_metrics["mae"],
+                "evaluation_summary/dom_rand_mae": dom_rand_metrics["mae"],
+                "evaluation_summary/dom_rand_tumor_mae": dom_rand_tumor_metrics["mae"],
+                "evaluation_summary/dom_rand_mae_std": dom_rand_metrics["mae_std"],
+                "evaluation_summary/dom_rand_tumor_mae_std": dom_rand_tumor_metrics["mae_std"],
+            })
+        
+        # Save evaluation results
+        eval_results = {
+            "normal": normal_metrics,
+            "domain_randomized": dom_rand_metrics,
+            "domain_rand_tumor": dom_rand_tumor_metrics,
+        }
+        json.dump(eval_results, open(ckpt_dir/"evaluation_results.json","w"), indent=2)
+        
+        logger.info("=== Evaluation Summary ===")
+        logger.info(f"Normal test MAE: {normal_metrics['mae']:.4f}")
+        logger.info(f"Domain rand test MAE: {dom_rand_metrics['mae']:.4f} ± {dom_rand_metrics['mae_std']:.4f}")
+        logger.info(f"Domain rand + tumor test MAE: {dom_rand_tumor_metrics['mae']:.4f} ± {dom_rand_tumor_metrics['mae_std']:.4f}")
         
     except Exception as e:
-        logger.error(f"Eval failed: {e}")
+        logger.error(f"3-fold evaluation failed: {e}")
+        import traceback
+        traceback.print_exc()
     finally:
         if use_wandb: wandb.finish()
         logger.info("All done.")

@@ -1,26 +1,55 @@
-# Evaluation configuration for SFCN model
+# Evaluation configuration for BrainAgeNeXt ensemble model
 
 seed: 42
 device: cuda
 output_dir: output/evaluations
-batch_size: 16
+batch_size: 1  # Use batch_size=1 as in original script
 save_predictions: true
 
-data_dir: /path/to/data_directory
+data_dir: "/scratch-shared/ajoos/"
+
 datasets: 
   - val
   - test
 
 dataset_paths:
-  val: /path/to/validation.csv
-  test: /path/to/test.csv
+  val: /home/ajoos/brain_age_pred/data/labels/val.csv
+  test: /home/ajoos/brain_age_pred/data/labels/test.csv
 
 model:
-  type: sfcn_class
-  in_channels: 1
-  dropout_rate: 0.5
-  age_min: 20
-  age_max: 80
-  channels: [32, 64, 128, 256, 256, 64]  # Only for sfcn_class
+  type: brainagenext_ensemble
+  architecture: MedNeXtEncReg
+  num_models: 5
+  ensemble_method: median
+  apply_correction: true
+  correction_formula: "BA + (CA * 0.062) - 2.96 for CA > 18"
 
-checkpoint_path: output/checkpoints/sfcn_class_best.pth
+# Model paths for 5-model ensemble
+model_paths:
+  - /home/ajoos/model_files/BrainAge_1.pth
+  - /home/ajoos/model_files/BrainAge_2.pth
+  - /home/ajoos/model_files/BrainAge_3.pth
+  - /home/ajoos/model_files/BrainAge_4.pth
+  - /home/ajoos/model_files/BrainAge_5.pth
+
+# Evaluation settings
+evaluation:
+  normal_test: true
+  domain_randomized:
+    enabled: true
+    n_folds: 10
+  domain_rand_tumor:
+    enabled: true
+    n_folds: 10
+
+# Transform settings
+transforms:
+  spacing: [1.0, 1.0, 1.0]
+  output_shape: [160, 192, 160]
+  normalization: "znorm_masked"
+  cache_rate: 0.2
+
+# W&B settings
+wandb:
+  project: "brainage-inference"
+  api_key: "2abdb867a9244072f2237704a3cacc77fa548dd8"

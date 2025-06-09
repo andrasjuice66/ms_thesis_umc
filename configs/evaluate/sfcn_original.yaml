@@ -6,14 +6,14 @@ output_dir: output/evaluations
 batch_size: 16
 save_predictions: true
 
-data_dir: /path/to/data_directory
+data_dir: "/scratch-shared/ajoos/"
 datasets: 
   - val
   - test
 
 dataset_paths:
-  val: /path/to/validation.csv
-  test: /path/to/test.csv
+  val: /home/ajoos/brain_age_pred/data/labels/val.csv
+  test: /home/ajoos/brain_age_pred/data/labels/test.csv
 
 model:
   type: sfcn_class
@@ -23,4 +23,4 @@ model:
   age_max: 80
   channels: [32, 64, 128, 256, 256, 64]  # Only for sfcn_class
 
-checkpoint_path: output/checkpoints/sfcn_class_best.pth
+checkpoint_path: /home/ajoos/model_files/sfcn_original_ckp.p
