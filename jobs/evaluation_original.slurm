@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=sfcn
+#SBATCH --job-name=evaluation
 #SBATCH --partition=gpu_h100            
 #SBATCH --gres=gpu:h100:1
 #SBATCH --cpus-per-task=8
@@ -22,5 +22,5 @@ conda activate thesis
 cd $HOME/
 #python -m brain_age_pred.scripts.inference_sfcn brain_age_pred/configs/evaluate/sfcn_original.yaml
 
-python -m brain_age_pred.scripts.inference_brainagenext brain_age_pred/configs/evaluate/brainagenext_original.yaml
+python -m brain_age_pred.scripts.inference_brainagenext --config brain_age_pred/configs/evaluate/brainagenext_original.yaml
 
