@@ -130,9 +130,9 @@ domain_randomization:
     # Age-based segmentation
     use_age_based_segmentation: true
     segmentation_paths:
-      young: "brain_age_pred/data/segmentations/seg_18_40.nii.npy"
-      middle: "brain_age_pred/data/segmentations/seg_40_60.nii.npy"
-      old: "brain_age_pred/data/segmentations/seg_60_85.nii.npy"
+      young: "brain_age_pred/data/segmentations/seg_18_40.nii.gz"
+      middle: "brain_age_pred/data/segmentations/seg_40_60.nii.gz"
+      old: "brain_age_pred/data/segmentations/seg_60_85.nii.gz"
     age_ranges:
       young: [20, 40]
       middle: [40, 60]

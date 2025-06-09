@@ -166,13 +166,13 @@ def create_eval_transforms(device, config, use_domain_rand=False, use_tumor=Fals
     # Override tumor usage based on evaluation type
     dom_rand_cfg['transform_probs']['tumor'] = 0.3 if use_tumor else 0.0
     
-    # Read tumor config from the config file
-    tumor_cfg = config['domain_randomization']['tumor_config'].copy() if use_tumor else {}
+    # Remove use_tumor_simulation from config to avoid conflict since we're passing it explicitly
+    if 'use_tumor_simulation' in dom_rand_cfg:
+        del dom_rand_cfg['use_tumor_simulation']
     
     eval_transform = DomainRandomizer(
         device=device,
         use_tumor_simulation=use_tumor,
-        tumor_config=tumor_cfg,
         **dom_rand_cfg,
     )
     
