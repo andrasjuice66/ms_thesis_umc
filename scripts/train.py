@@ -359,6 +359,95 @@ def main() -> None:
         
         return eval_transform
 
+    def create_evaluation_tables(normal_metrics, dom_rand_metrics, dom_rand_tumor_metrics):
+        """Create wandb tables summarizing evaluation metrics by modality"""
+        
+        # Get unique modalities from the metrics keys
+        modalities = set()
+        for metrics in [normal_metrics, dom_rand_metrics, dom_rand_tumor_metrics]:
+            for key in metrics.keys():
+                if '_mae' in key and key != 'mae':
+                    modality = key.replace('_mae', '')
+                    if modality not in ['mae_std']:  # Skip std metrics
+                        modalities.add(modality)
+        
+        modalities = sorted(list(modalities))
+        
+        # Create table data
+        table_data = []
+        
+        # Add overall (average) row
+        table_data.append([
+            "Average",
+            f"{normal_metrics['mae']:.4f}",
+            f"{normal_metrics['mse']:.4f}",
+            f"{normal_metrics['r2']:.4f}",
+            f"{normal_metrics['correlation']:.4f}",
+            f"{dom_rand_metrics['mae']:.4f} ± {dom_rand_metrics.get('mae_std', 0):.4f}",
+            f"{dom_rand_metrics['mse']:.4f} ± {dom_rand_metrics.get('mse_std', 0):.4f}",
+            f"{dom_rand_metrics['r2']:.4f} ± {dom_rand_metrics.get('r2_std', 0):.4f}",
+            f"{dom_rand_metrics['correlation']:.4f} ± {dom_rand_metrics.get('correlation_std', 0):.4f}",
+            f"{dom_rand_tumor_metrics['mae']:.4f} ± {dom_rand_tumor_metrics.get('mae_std', 0):.4f}",
+            f"{dom_rand_tumor_metrics['mse']:.4f} ± {dom_rand_tumor_metrics.get('mse_std', 0):.4f}",
+            f"{dom_rand_tumor_metrics['r2']:.4f} ± {dom_rand_tumor_metrics.get('r2_std', 0):.4f}",
+            f"{dom_rand_tumor_metrics['correlation']:.4f} ± {dom_rand_tumor_metrics.get('correlation_std', 0):.4f}",
+        ])
+        
+        # Add modality-specific rows
+        for modality in modalities:
+            # Get metrics for this modality (with fallbacks)
+            normal_mae = normal_metrics.get(f"{modality}_mae", 0)
+            normal_mse = normal_metrics.get(f"{modality}_mse", 0)
+            normal_r2 = normal_metrics.get(f"{modality}_r2", 0)
+            normal_corr = normal_metrics.get(f"{modality}_correlation", 0)
+            
+            dom_rand_mae = dom_rand_metrics.get(f"{modality}_mae", 0)
+            dom_rand_mse = dom_rand_metrics.get(f"{modality}_mse", 0)
+            dom_rand_r2 = dom_rand_metrics.get(f"{modality}_r2", 0)
+            dom_rand_corr = dom_rand_metrics.get(f"{modality}_correlation", 0)
+            dom_rand_mae_std = dom_rand_metrics.get(f"{modality}_mae_std", 0)
+            dom_rand_mse_std = dom_rand_metrics.get(f"{modality}_mse_std", 0)
+            dom_rand_r2_std = dom_rand_metrics.get(f"{modality}_r2_std", 0)
+            dom_rand_corr_std = dom_rand_metrics.get(f"{modality}_correlation_std", 0)
+            
+            tumor_mae = dom_rand_tumor_metrics.get(f"{modality}_mae", 0)
+            tumor_mse = dom_rand_tumor_metrics.get(f"{modality}_mse", 0)
+            tumor_r2 = dom_rand_tumor_metrics.get(f"{modality}_r2", 0)
+            tumor_corr = dom_rand_tumor_metrics.get(f"{modality}_correlation", 0)
+            tumor_mae_std = dom_rand_tumor_metrics.get(f"{modality}_mae_std", 0)
+            tumor_mse_std = dom_rand_tumor_metrics.get(f"{modality}_mse_std", 0)
+            tumor_r2_std = dom_rand_tumor_metrics.get(f"{modality}_r2_std", 0)
+            tumor_corr_std = dom_rand_tumor_metrics.get(f"{modality}_correlation_std", 0)
+            
+            table_data.append([
+                modality,
+                f"{normal_mae:.4f}",
+                f"{normal_mse:.4f}",
+                f"{normal_r2:.4f}",
+                f"{normal_corr:.4f}",
+                f"{dom_rand_mae:.4f} ± {dom_rand_mae_std:.4f}",
+                f"{dom_rand_mse:.4f} ± {dom_rand_mse_std:.4f}",
+                f"{dom_rand_r2:.4f} ± {dom_rand_r2_std:.4f}",
+                f"{dom_rand_corr:.4f} ± {dom_rand_corr_std:.4f}",
+                f"{tumor_mae:.4f} ± {tumor_mae_std:.4f}",
+                f"{tumor_mse:.4f} ± {tumor_mse_std:.4f}",
+                f"{tumor_r2:.4f} ± {tumor_r2_std:.4f}",
+                f"{tumor_corr:.4f} ± {tumor_corr_std:.4f}",
+            ])
+        
+        # Create wandb table
+        table = wandb.Table(
+            columns=[
+                "Modality",
+                "Normal MAE", "Normal MSE", "Normal R²", "Normal Correlation",
+                "Dom Rand MAE", "Dom Rand MSE", "Dom Rand R²", "Dom Rand Correlation", 
+                "Dom Rand + Tumor MAE", "Dom Rand + Tumor MSE", "Dom Rand + Tumor R²", "Dom Rand + Tumor Correlation"
+            ],
+            data=table_data
+        )
+        
+        return table
+
     def run_multi_fold_evaluation(transform, n_folds=10, eval_name="test"):
         """Run evaluation multiple times with different augmentations and average results"""
         logger.info(f"Running {n_folds}-fold {eval_name} evaluation...")
@@ -448,6 +537,11 @@ def main() -> None:
                 "evaluation_summary/dom_rand_mae_std": dom_rand_metrics["mae_std"],
                 "evaluation_summary/dom_rand_tumor_mae_std": dom_rand_tumor_metrics["mae_std"],
             })
+            
+            # Create and log wandb table
+            logger.info("Creating evaluation summary table for W&B...")
+            evaluation_table = create_evaluation_tables(normal_metrics, dom_rand_metrics, dom_rand_tumor_metrics)
+            wandb.log({"test_evaluation_summary": evaluation_table})
         
         # Save evaluation results
         eval_results = {
