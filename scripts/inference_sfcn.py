@@ -356,7 +356,18 @@ def inference_with_3fold_evaluation():
         model = SFCN()
         model = torch.nn.DataParallel(model)
         print(f"Loading model from {model_path}")
-        model.load_state_dict(torch.load(model_path, weights_only=False, map_location=device))
+        
+        # Try the original simple approach first
+        try:
+            model.load_state_dict(torch.load(model_path))
+        except RuntimeError as e:
+            # If there's a device mismatch, try loading to CPU first
+            if "device" in str(e).lower():
+                print("Device mismatch detected, loading to CPU first...")
+                model.load_state_dict(torch.load(model_path, map_location='cpu'))
+            else:
+                raise
+        
         model.to(device)
         model.eval()
         

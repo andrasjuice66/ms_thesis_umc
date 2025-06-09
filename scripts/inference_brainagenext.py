@@ -86,13 +86,13 @@ def create_monai_dataloader(csv_path, data_dir, batch_size=1, num_workers=4):
     """Create dataloader using MONAI transforms as in original script"""
     # Read CSV and prepare data dicts
     df = pd.read_csv(csv_path)
-    df.dropna(subset=['path'], inplace=True)
+    df.dropna(subset=['image_path'], inplace=True)
     df.dropna(subset=['age'], inplace=True)
     
     # Adjust paths to be relative to data_dir
     data_dicts = []
     for _, row in df.iterrows():
-        image_path = os.path.join(data_dir, row['path']) if not os.path.isabs(row['path']) else row['path']
+        image_path = os.path.join(data_dir, row['image_path']) if not os.path.isabs(row['image_path']) else row['image_path']
         data_dicts.append({'image': image_path, 'label': row['age']})
     
     # Create transforms and dataset
@@ -456,7 +456,7 @@ def inference_with_3fold_evaluation():
         brain_age_delta = normal_corrected_predictions - normal_targets
         
         results_df = pd.DataFrame({
-            'file_path': normal_df['path'].values,
+            'file_path': normal_df['image_path'].values,
             'true_age': normal_targets,
             'predicted_age': normal_predictions,  # Raw predictions
             'predicted_age_corrected': normal_corrected_predictions,  # Corrected predictions
