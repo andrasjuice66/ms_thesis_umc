@@ -140,7 +140,7 @@ def create_test_dataloader(csv_path, data_dir, transform=None, batch_size=8, num
         sexes=sexes,
         modalities=modalities,
         transform=transform,
-        mode="test",
+        mode="train",
         cache_size=0,
     )
     

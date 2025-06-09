@@ -45,6 +45,9 @@ from brain_age_pred.dom_rand.domain_randomization import DomainRandomizer
 from brain_age_pred.training.metrics import calculate_metrics
 from brain_age_pred.utils.utils import read_csv
 
+# Import utility functions from SFCN model
+
+
 # ---------- CONFIG ---------------------------------------------------------
 
 # --- ❶ bin settings (MUST match training) ----------------------------------
@@ -59,7 +62,7 @@ N_BINS = len(bin_centres)
 MODEL_DIR   = '/home/ajoos/model_files/'
 MODEL_PATH = os.path.join(MODEL_DIR, 'sfcn_original_ckp.pth')
 
-TEST_CSV    = '/home/ajoos/brain_age_pred/data/labels/test.csv'
+TEST_CSV    = '/home/ajoos/brain_age_pred/data/labels/test_balanced.csv'
 DATA_ROOT   = '/scratch-shared/ajoos/'
 
 OUT_DIR     = Path('.')
@@ -70,8 +73,12 @@ BATCH_SIZE  = 1
 NUM_WORKERS = 4
 DEVICE      = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-WAND  = True          # switch off if you do not want Weights&Biases
+WANDB_ENABLED = True          # switch off if you do not want Weights&Biases
 WANDB_API = '2abdb867a9244072f2237704a3cacc77fa548dd8'
+
+# --- ❹ evaluation settings -------------------------------------------------
+N_FOLDS = 10  # for domain randomization evaluations
+SIGMA = 1     # for soft label conversion
 
 # ---------------------------------------------------------------------------
 
@@ -141,208 +148,431 @@ class SFCN(nn.Module):
         return out
 
 
+# ======================= UTILITY FUNCTIONS ===============================
 
-
-class SFCN_Bins(nn.Module):
+def predict_age_from_probabilities(log_probs, bin_centres):
     """
-    Thin wrapper around the SFCN (or any classifier with age bins).
-
-    forward_logits(): raw logits  (B, N_BINS)
-    forward()       : expected age (B,)
+    Convert log probabilities to predicted age using weighted sum.
+    
+    Args:
+        log_probs: Log probabilities from model output [batch_size, n_bins]
+        bin_centres: Age bin centers [n_bins]
+    
+    Returns:
+        Predicted ages [batch_size]
     """
-    def __init__(self):
-        super().__init__()
-        self.net = SFCN(output_dim=N_BINS)
+    probs = torch.exp(log_probs)  # Convert log probs to probs
+    predicted_ages = torch.sum(probs * bin_centres, dim=1)
+    return predicted_ages
 
-    def forward_logits(self, x):
-        # original SFCN returns a list [log_probs] of shape (B, N_BINS, 1,1,1)
-        logp = self.net(x)[0]                 # (B, N_BINS, 1,1,1)
-        logp = logp.squeeze()                 # (B, N_BINS)
-        return logp
+def calculate_mae_by_modality(predictions, targets, modalities, dataset_name=""):
+    """Calculate MAE overall and per modality."""
+    overall_mae = torch.mean(torch.abs(predictions - targets)).item()
+    
+    results = {
+        f'{dataset_name}_mae_overall': overall_mae,
+        f'{dataset_name}_n_samples': len(predictions)
+    }
+    
+    # Calculate per modality if modalities are available
+    if modalities is not None:
+        unique_modalities = set(modalities)
+        for modality in unique_modalities:
+            mask = [mod.upper() == modality.upper() for mod in modalities]
+            if any(mask):
+                mod_predictions = predictions[mask]
+                mod_targets = targets[mask]
+                mod_mae = torch.mean(torch.abs(mod_predictions - mod_targets)).item()
+                results[f'{dataset_name}_mae_{modality.lower()}'] = mod_mae
+                results[f'{dataset_name}_n_{modality.lower()}'] = len(mod_predictions)
+    
+    return results
 
-    def forward(self, x):
-        logp = self.forward_logits(x)
-        p    = torch.exp(logp)                # softmax already inside SFCN
-        # dot product with bin centres
-        age  = (p * torch.tensor(bin_centres, device=x.device)).sum(dim=1)
-        return age                            # (B,)
 
-
-def load_model_chkpt(chkpt_path, device=DEVICE):
-    model = SFCN_Bins().to(device)
-    state = torch.load(chkpt_path, map_location=device)
-    model.load_state_dict(state)
+def load_model(model_path, device):
+    """Load SFCN model from checkpoint."""
+    print(f"Loading model from {model_path}")
+    
+    # Initialize model
+    model = SFCN(output_dim=N_BINS, dropout=True)
+    
+    # Load checkpoint
+    if not os.path.exists(model_path):
+        raise FileNotFoundError(f"Model checkpoint not found: {model_path}")
+    
+    # Load with proper device mapping
+    checkpoint = torch.load(model_path, map_location=device, weights_only=False)
+    
+    # Handle different checkpoint formats
+    if 'state_dict' in checkpoint:
+        state_dict = checkpoint['state_dict']
+    elif 'model_state_dict' in checkpoint:
+        state_dict = checkpoint['model_state_dict']
+    else:
+        state_dict = checkpoint
+    
+    # Remove 'module.' prefix if present (from DataParallel)
+    new_state_dict = {}
+    for k, v in state_dict.items():
+        name = k[7:] if k.startswith('module.') else k
+        new_state_dict[name] = v
+    
+    model.load_state_dict(new_state_dict)
+    model.to(device)
     model.eval()
+    
+    print(f"Model loaded successfully on {device}")
     return model
 
 
-# ======================= DATA PIPELINE ====================================
-
-class LoadNpy(MapTransform):
-    """MONAI transform: load .npy file & add channel dim if absent."""
-    def __init__(self, keys):
-        super().__init__(keys)
-    def __call__(self, data):
-        d = dict(data)
-        for k in self.keys:
-            arr = np.load(d[k]).astype(np.float32)
-            if arr.ndim == 3:
-                arr = arr[None]       # C=1
-            d[k] = arr
-        return d
-
-
-def monai_transforms():
-    x, y, z = (160, 192, 160)
-    p       = 1.0   # isotropic spacing wanted
-    return Compose([
-        LoadNpy(keys=['image']),
-        Spacingd(keys=['image'], pixdim=(p, p, p)),
-        CropForegroundd(keys=['image'], source_key='image', allow_smaller=True),
-        SpatialPadd(keys=['image'], spatial_size=(x, y, z)),
-        CenterSpatialCropd(keys=['image'], roi_size=(x, y, z)),
-        torchio.transforms.ZNormalization(masking_method=lambda im: im > 0,
-                                           keys=['image'], include=['image']),
-    ])
-
-
-def dataloader_from_csv(csv_path, data_root, batch_size=BATCH_SIZE):
-    df = pd.read_csv(csv_path).dropna(subset=['image_path', 'age'])
-    records = []
-    for _, r in df.iterrows():
-        p = r['image_path']
-        p = os.path.join(data_root, p) if not os.path.isabs(p) else p
-        records.append({'image': p, 'label': r['age']})
-    ds = CacheDataset(records, transform=monai_transforms(),
-                      cache_rate=0.2, num_workers=NUM_WORKERS)
-    dl = DataLoader(ds, batch_size=batch_size, shuffle=False,
-                    pin_memory=torch.cuda.is_available(),
-                    num_workers=NUM_WORKERS)
-    return dl, df
-
-
-# ======================= EVALUATION HELPERS ===============================
-
-def brain_age_correction(pred, ca):
-    """Same rule as the regression script."""
-    return np.where(ca > 18, pred + (ca * 0.062) - 2.96, pred)
-
-
-def predict_single_model(model_path, loader):
-    """Predictions using a single model."""
-    print(f'▶ Loading model: {Path(model_path).name}')
-    model = load_model_chkpt(model_path)
+def load_test_data(csv_path, data_root):
+    """Load test dataset from CSV."""
+    print(f"Loading test data from {csv_path}")
     
-    preds = []
-    targets = []
+    # Read CSV
+    df = pd.read_csv(csv_path)
+    print(f"Found {len(df)} samples in test set")
+    
+    # Extract required columns
+    required_cols = ['image_path', 'age']
+    optional_cols = ['modality', 'sex']
+    
+    for col in required_cols:
+        if col not in df.columns:
+            raise ValueError(f"Required column '{col}' not found in CSV")
+    
+    # Construct full paths
+    file_paths = [os.path.join(data_root, path) for path in df['image_path']]
+    ages = df['age'].tolist()
+    
+    # Optional columns
+    modalities = df['modality'].tolist() if 'modality' in df.columns else None
+    sexes = df['sex'].tolist() if 'sex' in df.columns else None
+    
+    # Verify files exist
+    missing_files = [path for path in file_paths if not os.path.exists(path)]
+    if missing_files:
+        print(f"Warning: {len(missing_files)} files not found")
+        for f in missing_files[:5]:  # Show first 5
+            print(f"  Missing: {f}")
+    
+    return file_paths, ages, modalities, sexes
+
+def create_domain_randomizer(use_tumor=False):
+    """Create domain randomizer with or without tumor simulation."""
+    
+    # Base domain randomization config
+    dr_config = {
+        'device': DEVICE,
+        'use_domain_randomization': True,
+        'transform_probs': {
+            'flip': 0.5,
+            'affine': 0.8,
+            'contrast': 0.6,
+            'gamma': 0.5,
+            'blur': 0.4,
+            'bias': 0.5,
+            'scale_int': 0.4,
+            'shift_int': 0.4,
+            'hist_shift': 0.3,
+            'noise': 0.4,
+            'rician': 0.3,
+            'gibbs': 0.3,
+            'resolution': 0.5,
+            'coarse_do': 0.3,
+            'tumor': 0.3 if use_tumor else 0.0,
+        },
+        'output_shape': (160, 192, 160),
+        'use_tumor_simulation': use_tumor,
+    }
+    
+    # Add tumor config if needed
+    if use_tumor:
+        dr_config['tumor_config'] = {
+            'prob': 0.3,
+            'use_age_based_segmentation': False,  # Simplified for now
+            'modality': 'T1',  # Default modality
+            'perlin_res': [2, 2, 2],
+            'tumor_size_factor_range': (0.5, 2.0),
+            'min_tumor_size': 100,
+            'use_fluid_dynamics': True,
+        }
+    
+    return DomainRandomizer(**dr_config)
+
+
+def evaluate_regime(model, dataset, dataloader, regime_name, fold_idx=None):
+    """Evaluate model on a dataset regime."""
+    model.eval()
+    
+    all_predictions = []
+    all_targets = []
+    all_modalities = []
+    
+    print(f"Evaluating {regime_name}" + (f" (fold {fold_idx+1})" if fold_idx is not None else ""))
     
     with torch.no_grad():
-        for batch in loader:
-            img = batch['image'].to(DEVICE)
-            label = batch['label'].cpu().numpy()
-            out = model(img)  # (B,)
-            preds.append(out.cpu().numpy())
-            targets.append(label)
+        for batch_idx, batch in enumerate(dataloader):
+            if batch_idx % 100 == 0:
+                print(f"  Processing batch {batch_idx+1}/{len(dataloader)}")
+            
+            # Get image and age
+            image = batch['image'].to(DEVICE)
+            age = batch['age'].to(DEVICE)
+            
+            # Get modality if available
+            modality = batch.get('modality', [None] * len(age))
+            
+            # Model inference
+            outputs = model(image)
+            log_probs = outputs[0].squeeze()  # [batch_size, n_bins]
+            
+            # Convert to predicted ages
+            pred_ages = predict_age_from_probabilities(log_probs, torch.tensor(bin_centres).to(DEVICE))
+            
+            # Store results
+            all_predictions.append(pred_ages.cpu())
+            all_targets.append(age.cpu())
+            all_modalities.extend(modality)
     
-    preds = np.concatenate(preds)
-    targets = np.concatenate(targets)
-    torch.cuda.empty_cache()
-    return preds, targets
+    # Concatenate all results
+    predictions = torch.cat(all_predictions)
+    targets = torch.cat(all_targets)
+    
+    # Calculate metrics
+    metrics = calculate_mae_by_modality(
+        predictions, targets, all_modalities, 
+        dataset_name=regime_name + (f"_fold{fold_idx+1}" if fold_idx is not None else "")
+    )
+    
+    return metrics, predictions.numpy(), targets.numpy()
 
 
-def single_eval(loader, label_array, regime):
-    preds, t = predict_single_model(MODEL_PATH, loader)
-    assert np.allclose(t, label_array)
-    preds_corr = brain_age_correction(preds, t)
-    metrics = calculate_metrics(preds_corr, t, modalities=None, sexes=None)
-    print(f'{regime}: MAE={metrics["mae"]:.3f},  R²={metrics["r2"]:.3f}')
-    return metrics, preds, preds_corr, t
-
-
-# --------------- domain randomisation helpers -----------------------------
-
-def make_domrand_transform(device, use_tumor=False):
-    cfg = {
-        "use_domain_randomization": True,
-        "transform_probs": {
-            # same probabilities you used before
-            "flip": 0.5, "affine": 0.8, "contrast": 0.6, "gamma": 0.5,
-            "blur": 0.4, "bias": 0.5, "scale_int": 0.4, "shift_int": 0.4,
-            "hist_shift": 0.3, "noise": 0.4, "rician": 0.3, "gibbs": 0.3,
-            "resolution": 0.5, "coarse_do": 0.3, "crop": 1.0,
-            "tumor": 0.3 if use_tumor else 0.0,
-        },
-        "output_shape": (160, 192, 160),
-    }
-    tumor_cfg = {
-        "use_tumor_simulation": use_tumor,
-        "prob": 0.3, "use_age_based_segmentation": False,
-        "perlin_res": [2, 2, 2], "tumor_size_factor_range": [0.5, 2.0],
-        "use_fluid_dynamics": True,
-    } if use_tumor else {}
-    return DomainRandomizer(device=device, **cfg, tumor_config=tumor_cfg)
-
-
-def create_domrand_loader(csv_path, data_root, transform, batch_size=BATCH_SIZE):
-    fp, ages, sw, sexes, mods = read_csv(csv_path, data_root)
-    ds = BADataset(fp, ages, sexes, mods, transform=transform, mode='test', cache_size=0)
-    dl = DataLoader(ds, batch_size=batch_size, shuffle=False,
-                    num_workers=NUM_WORKERS, pin_memory=True)
-    return dl, ages, sexes, mods
-
-
-# ======================= 3-REGIME RUN =====================================
-
-def three_regime_evaluation():
-    if WAND:
+def main():
+    """Main inference function."""
+    print("Starting SFCN Inference Script")
+    print(f"Device: {DEVICE}")
+    print(f"Bin range: {BIN_RANGE}, step: {BIN_STEP}, bins: {N_BINS}")
+    print("-" * 60)
+    
+    # Initialize wandb
+    if WANDB_ENABLED:
         wandb.login(key=WANDB_API)
-        wandb.init(project='brainage-bins', name=f'sfcn_bins_{datetime.now():%Y%m%d_%H%M%S}',
-                   config=dict(model_path=MODEL_PATH, bins=N_BINS))
-    # ---------- 1. normal --------------------------------------------------
-    norm_loader, norm_df = dataloader_from_csv(TEST_CSV, DATA_ROOT)
-    norm_metrics, norm_raw, norm_corr, tgt = single_eval(norm_loader, norm_df['age'].values, 'Normal')
-
-    if WAND: wandb.log({f"normal/{k}": v for k, v in norm_metrics.items()})
-
-    # ---------- 2. domain-randomised 10× -----------------------------------
-    dom_metrics_all = []
-    domrand_tf = make_domrand_transform(DEVICE, use_tumor=False)
-    for i in range(10):
-        print(f'-- Domain-rand  fold {i+1}/10')
-        dom_loader, ages, *_ = create_domrand_loader(TEST_CSV, DATA_ROOT, domrand_tf)
-        m, *_ = single_eval(dom_loader, np.array(ages), f'DomRand_{i}')
-        dom_metrics_all.append(m)
-    dom_avg = {k: np.mean([m[k] for m in dom_metrics_all]) for k in dom_metrics_all[0]}
-    dom_std = {k+'_std': np.std([m[k] for m in dom_metrics_all]) for k in dom_metrics_all[0]}
-    dom_metrics = {**dom_avg, **dom_std}
-    if WAND: wandb.log({f"domrand/{k}": v for k, v in dom_metrics.items()})
-
-    # ---------- 3. dom-rand + tumour 10× -----------------------------------
-    tum_metrics_all = []
-    tum_tf = make_domrand_transform(DEVICE, use_tumor=True)
-    for i in range(10):
-        print(f'-- DomRand+Tumour  fold {i+1}/10')
-        tum_loader, ages, *_ = create_domrand_loader(TEST_CSV, DATA_ROOT, tum_tf)
-        m, *_ = single_eval(tum_loader, np.array(ages), f'DomRandTum_{i}')
-        tum_metrics_all.append(m)
-    tum_avg = {k: np.mean([m[k] for m in tum_metrics_all]) for k in tum_metrics_all[0]}
-    tum_std = {k+'_std': np.std([m[k] for m in tum_metrics_all]) for k in tum_metrics_all[0]}
-    tum_metrics = {**tum_avg, **tum_std}
-    if WAND: wandb.log({f"domrand_tumour/{k}": v for k, v in tum_metrics.items()})
-
-    # ---------- summary & save --------------------------------------------
-    summary = dict(normal=norm_metrics, dom_rand=dom_metrics, dom_rand_tum=tum_metrics)
-    (OUT_DIR/'sfcn_bins_3regimes_results.json').write_text(json.dumps(summary, indent=2))
-
-    print('\n=== SUMMARY ===')
-    for k in summary:
-        print(f'{k:14}: MAE={summary[k]["mae"]:.3f}  R²={summary[k]["r2"]:.3f}')
-
-    if WAND:
+        wandb.init(
+            project="brain-age-sfcn-evaluation",
+            name=f"sfcn_3regime_eval_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+            config={
+                'model_path': MODEL_PATH,
+                'test_csv': TEST_CSV,
+                'bin_range': BIN_RANGE,
+                'bin_step': BIN_STEP,
+                'n_bins': N_BINS,
+                'n_folds': N_FOLDS,
+                'device': str(DEVICE),
+                'batch_size': BATCH_SIZE,
+            }
+        )
+    
+    # Load model
+    model = load_model(MODEL_PATH, DEVICE)
+    
+    # Load test data
+    file_paths, ages, modalities, sexes = load_test_data(TEST_CSV, DATA_ROOT)
+    
+    all_results = {}
+    
+    # ======================== REGIME 1: Normal Test ========================
+    print("\n" + "="*60)
+    print("REGIME 1: Normal Test (No Augmentation)")
+    print("="*60)
+    
+    # Create normal dataset (no transforms)
+    normal_dataset = BADataset(
+        file_paths=file_paths,
+        age_labels=ages,
+        modalities=modalities,
+        sexes=sexes,
+        transform=None,  # No augmentation
+        mode='test'
+    )
+    
+    normal_loader = DataLoader(
+        normal_dataset,
+        batch_size=BATCH_SIZE,
+        shuffle=False,
+        num_workers=NUM_WORKERS,
+        pin_memory=True
+    )
+    
+    # Evaluate normal test
+    metrics, predictions, targets = evaluate_regime(model, normal_dataset, normal_loader, "normal_test")
+    all_results.update(metrics)
+    
+    print(f"Normal Test Results:")
+    print(f"  Overall MAE: {metrics['normal_test_mae_overall']:.3f}")
+    if modalities:
+        for mod in ['t1', 't2', 'flair']:
+            if f'normal_test_mae_{mod}' in metrics:
+                print(f"  {mod.upper()} MAE: {metrics[f'normal_test_mae_{mod}']:.3f} (n={metrics[f'normal_test_n_{mod}']})")
+    
+    # ================= REGIME 2: Domain Randomization ==================
+    print("\n" + "="*60)
+    print("REGIME 2: Domain Randomization (10 folds)")
+    print("="*60)
+    
+    dr_results = []
+    for fold in range(N_FOLDS):
+        print(f"\nFold {fold+1}/{N_FOLDS}")
+        
+        # Create domain randomizer (no tumor)
+        domain_randomizer = create_domain_randomizer(use_tumor=False)
+        
+        # Create dataset with domain randomization
+        dr_dataset = BADataset(
+            file_paths=file_paths,
+            age_labels=ages,
+            modalities=modalities,
+            sexes=sexes,
+            transform=domain_randomizer,
+            mode='train'  # Apply transforms
+        )
+        
+        dr_loader = DataLoader(
+            dr_dataset,
+            batch_size=BATCH_SIZE,
+            shuffle=False,
+            num_workers=NUM_WORKERS,
+            pin_memory=True
+        )
+        
+        # Evaluate domain randomization
+        metrics, predictions, targets = evaluate_regime(
+            model, dr_dataset, dr_loader, "domain_rand", fold_idx=fold
+        )
+        dr_results.append(metrics)
+        all_results.update(metrics)
+    
+    # Aggregate domain randomization results
+    dr_maes = [result[f'domain_rand_fold{i+1}_mae_overall'] for i, result in enumerate(dr_results)]
+    dr_mean_mae = np.mean(dr_maes)
+    dr_std_mae = np.std(dr_maes)
+    all_results['domain_rand_mae_mean'] = dr_mean_mae
+    all_results['domain_rand_mae_std'] = dr_std_mae
+    
+    print(f"\nDomain Randomization Results (10 folds):")
+    print(f"  Mean MAE: {dr_mean_mae:.3f} ± {dr_std_mae:.3f}")
+    
+    # Per-modality aggregation
+    if modalities:
+        for mod in ['t1', 't2', 'flair']:
+            mod_maes = []
+            for i, result in enumerate(dr_results):
+                key = f'domain_rand_fold{i+1}_mae_{mod}'
+                if key in result:
+                    mod_maes.append(result[key])
+            if mod_maes:
+                mod_mean = np.mean(mod_maes)
+                mod_std = np.std(mod_maes)
+                all_results[f'domain_rand_mae_{mod}_mean'] = mod_mean
+                all_results[f'domain_rand_mae_{mod}_std'] = mod_std
+                print(f"  {mod.upper()} MAE: {mod_mean:.3f} ± {mod_std:.3f}")
+    
+    # ========== REGIME 3: Domain Randomization + Tumor Simulation ==========
+    print("\n" + "="*60)
+    print("REGIME 3: Domain Randomization + Tumor Simulation (10 folds)")
+    print("="*60)
+    
+    tumor_results = []
+    for fold in range(N_FOLDS):
+        print(f"\nFold {fold+1}/{N_FOLDS}")
+        
+        # Create domain randomizer with tumor simulation
+        domain_randomizer_tumor = create_domain_randomizer(use_tumor=True)
+        
+        # Create dataset with domain randomization + tumor
+        tumor_dataset = BADataset(
+            file_paths=file_paths,
+            age_labels=ages,
+            modalities=modalities,
+            sexes=sexes,
+            transform=domain_randomizer_tumor,
+            mode='train'  # Apply transforms
+        )
+        
+        tumor_loader = DataLoader(
+            tumor_dataset,
+            batch_size=BATCH_SIZE,
+            shuffle=False,
+            num_workers=NUM_WORKERS,
+            pin_memory=True
+        )
+        
+        # Evaluate domain randomization + tumor
+        metrics, predictions, targets = evaluate_regime(
+            model, tumor_dataset, tumor_loader, "domain_rand_tumor", fold_idx=fold
+        )
+        tumor_results.append(metrics)
+        all_results.update(metrics)
+    
+    # Aggregate tumor simulation results
+    tumor_maes = [result[f'domain_rand_tumor_fold{i+1}_mae_overall'] for i, result in enumerate(tumor_results)]
+    tumor_mean_mae = np.mean(tumor_maes)
+    tumor_std_mae = np.std(tumor_maes)
+    all_results['domain_rand_tumor_mae_mean'] = tumor_mean_mae
+    all_results['domain_rand_tumor_mae_std'] = tumor_std_mae
+    
+    print(f"\nDomain Randomization + Tumor Results (10 folds):")
+    print(f"  Mean MAE: {tumor_mean_mae:.3f} ± {tumor_std_mae:.3f}")
+    
+    # Per-modality aggregation
+    if modalities:
+        for mod in ['t1', 't2', 'flair']:
+            mod_maes = []
+            for i, result in enumerate(tumor_results):
+                key = f'domain_rand_tumor_fold{i+1}_mae_{mod}'
+                if key in result:
+                    mod_maes.append(result[key])
+            if mod_maes:
+                mod_mean = np.mean(mod_maes)
+                mod_std = np.std(mod_maes)
+                all_results[f'domain_rand_tumor_mae_{mod}_mean'] = mod_mean
+                all_results[f'domain_rand_tumor_mae_{mod}_std'] = mod_std
+                print(f"  {mod.upper()} MAE: {mod_mean:.3f} ± {mod_std:.3f}")
+    
+    # ======================== SUMMARY ========================
+    print("\n" + "="*60)
+    print("SUMMARY")
+    print("="*60)
+    print(f"1. Normal Test MAE:           {all_results['normal_test_mae_overall']:.3f}")
+    print(f"2. Domain Randomization MAE:  {dr_mean_mae:.3f} ± {dr_std_mae:.3f}")
+    print(f"3. Domain Rand + Tumor MAE:   {tumor_mean_mae:.3f} ± {tumor_std_mae:.3f}")
+    
+    # Log all results to wandb
+    if WANDB_ENABLED:
+        wandb.log(all_results)
+        
+        # Create summary table
+        summary_data = []
+        summary_data.append(['Normal Test', all_results['normal_test_mae_overall'], 0])
+        summary_data.append(['Domain Randomization', dr_mean_mae, dr_std_mae])
+        summary_data.append(['Domain Rand + Tumor', tumor_mean_mae, tumor_std_mae])
+        
+        summary_table = wandb.Table(
+            columns=['Regime', 'MAE', 'Std'],
+            data=summary_data
+        )
+        wandb.log({'summary_table': summary_table})
+        
         wandb.finish()
-    return summary
+    
+    # Save results to file
+    results_file = OUT_DIR / f'sfcn_evaluation_results_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json'
+    with open(results_file, 'w') as f:
+        json.dump(all_results, f, indent=2)
+    
+    print(f"\nResults saved to: {results_file}")
+    print("Evaluation completed successfully!")
 
 
-if __name__ == '__main__':
-    warnings.filterwarnings('ignore')
-    three_regime_evaluation()
+if __name__ == "__main__":
+    main()
