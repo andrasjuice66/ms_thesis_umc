@@ -13,7 +13,7 @@ datasets:
 
 dataset_paths:
   val: /home/ajoos/brain_age_pred/data/labels/val.csv
-  test: /home/ajoos/brain_age_pred/data/labels/test.csv
+  test: /home/ajoos/brain_age_pred/data/labels/test_balanced.csv
 
 model:
   type: sfcn_class
