@@ -118,61 +118,149 @@ class AgeBasedSegmentationLoader:
 
 class TumorIntensityManager:
     """
-    Manages tumor intensity values based on MRI modality.
+    Manages tumor intensity values based on MRI modality and local tissue statistics.
     """
-    
-    # Intensity multipliers for different modalities relative to normal tissue
-    MODALITY_INTENSITIES = {
+  
+    # Intensity characteristics for different modalities
+    MODALITY_CHARACTERISTICS = {
         'T1': {
-            'base_range': (0.3, 0.6),      # Hypointense
-            'variation': 0.2,
-            'description': 'Hypointense lesions'
+            'tumor_type': 'hypointense',
+            'intensity_ratio': (0.3, 0.7),  # Tumor is 30-70% of normal tissue
+            'edge_gradient': 0.8,  # How sharp the tumor edges are
+            'heterogeneity': 0.2,  # Internal texture variation
         },
         'T2': {
-            'base_range': (1.2, 1.8),      # Hyperintense
-            'variation': 0.3,
-            'description': 'Hyperintense lesions'
+            'tumor_type': 'hyperintense',
+            'intensity_ratio': (1.3, 2.0),  # Tumor is 130-200% of normal tissue
+            'edge_gradient': 0.6,
+            'heterogeneity': 0.3,
         },
         'FLAIR': {
-            'base_range': (1.3, 2.0),      # Hyperintense
-            'variation': 0.4,
-            'description': 'Hyperintense lesions with CSF suppression'
+            'tumor_type': 'hyperintense',
+            'intensity_ratio': (1.4, 2.2),  # Slightly higher than T2
+            'edge_gradient': 0.5,  # More diffuse edges
+            'heterogeneity': 0.4,
         },
+        'T1C': {  # T1 with contrast
+            'tumor_type': 'enhanced',
+            'intensity_ratio': (1.5, 3.0),  # Strong enhancement
+            'edge_gradient': 0.9,  # Sharp edges
+            'heterogeneity': 0.3,
+        }
     }
-    
+  
     @classmethod
-    def get_tumor_intensity(cls, modality: str, reference_intensity: torch.Tensor, 
-                           device: torch.device) -> torch.Tensor:
+    def get_adaptive_tumor_intensity(
+        cls, 
+        modality: str, 
+        image: torch.Tensor,
+        tumor_mask: torch.Tensor,
+        brain_mask: torch.Tensor,
+        device: torch.device
+    ) -> torch.Tensor:
         """
-        Get tumor intensity based on modality and reference tissue intensity.
-        
+        Get tumor intensity based on local tissue statistics.
+      
         Args:
-            modality: MRI modality ('T1', 'T2', 'FLAIR', etc.)
-            reference_intensity: Reference intensity from normal brain tissue
+            modality: MRI modality
+            image: Original image tensor
+            tumor_mask: Binary mask of tumor location
+            brain_mask: Binary mask of brain tissue
             device: Device for tensor operations
-            
+          
         Returns:
-            Tumor intensity multiplier
+            Tumor intensity map with same shape as tumor_mask
         """
         modality_upper = modality.upper()
-        
-        if modality_upper not in cls.MODALITY_INTENSITIES:
+      
+        if modality_upper not in cls.MODALITY_CHARACTERISTICS:
             print(f"Warning: Unknown modality '{modality}', using T1 defaults")
             modality_upper = 'T1'
-        
-        intensity_config = cls.MODALITY_INTENSITIES[modality_upper]
-        
-        # Sample base intensity
-        base_min, base_max = intensity_config['base_range']
-        base_intensity = torch.rand(1, device=device) * (base_max - base_min) + base_min
-        
-        # Add variation
-        variation = intensity_config['variation']
-        intensity_variation = 1.0 + variation * (torch.rand(1, device=device) - 0.5)
-        
-        final_intensity = base_intensity * intensity_variation
-        
-        return final_intensity
+      
+        char = cls.MODALITY_CHARACTERISTICS[modality_upper]
+      
+        # Sample tissue intensity in the tumor region
+        tumor_region = tumor_mask > 0
+        local_tissue_mask = brain_mask * tumor_region
+      
+        if local_tissue_mask.sum() > 0:
+            # Get local tissue statistics
+            local_intensities = image[local_tissue_mask > 0]
+            local_mean = local_intensities.mean()
+            local_std = local_intensities.std()
+        else:
+            # Fallback to global brain statistics
+            brain_intensities = image[brain_mask > 0]
+            local_mean = brain_intensities.mean()
+            local_std = brain_intensities.std()
+      
+        # Generate base tumor intensity
+        ratio_min, ratio_max = char['intensity_ratio']
+        base_ratio = torch.rand(1, device=device) * (ratio_max - ratio_min) + ratio_min
+        base_intensity = local_mean * base_ratio
+      
+        # Create spatial variation for realistic appearance
+        tumor_intensity = torch.ones_like(tumor_mask) * base_intensity
+      
+        # Add heterogeneity (internal texture)
+        if char['heterogeneity'] > 0:
+            # Create smooth noise for internal variation
+            noise_scale = char['heterogeneity'] * local_std
+            spatial_noise = torch.randn_like(tumor_mask) * noise_scale
+          
+            # Apply gaussian smoothing for realistic texture
+            from torch.nn.functional import conv3d
+            kernel_size = 5
+            sigma = 1.0
+            kernel = cls._gaussian_kernel_3d(kernel_size, sigma, device)
+          
+            spatial_noise = spatial_noise.unsqueeze(0).unsqueeze(0)
+            # Ensure kernel and spatial_noise have the same dtype
+            kernel = kernel.to(spatial_noise.dtype)
+            spatial_noise = conv3d(spatial_noise, kernel, padding=kernel_size//2)
+            spatial_noise = spatial_noise.squeeze(0).squeeze(0)
+          
+            tumor_intensity = tumor_intensity + spatial_noise * tumor_mask
+      
+        # Apply edge gradient
+        if char['edge_gradient'] < 1.0:
+            # Create smooth transition at edges
+            from scipy.ndimage import distance_transform_edt
+          
+            # Convert to numpy for distance transform
+            tumor_mask_np = tumor_mask.cpu().numpy()
+            distance_map = distance_transform_edt(tumor_mask_np)
+            distance_map = torch.from_numpy(distance_map).to(device)
+          
+            # Normalize distance map
+            max_dist = distance_map.max()
+            if max_dist > 0:
+                distance_map = distance_map / max_dist
+              
+                # Apply sigmoid for smooth transition
+                sharpness = 5.0 * char['edge_gradient']
+                edge_weight = torch.sigmoid(sharpness * (distance_map - 0.2))
+              
+                # Blend tumor intensity with normal tissue at edges
+                tumor_intensity = tumor_intensity * edge_weight + local_mean * (1 - edge_weight)
+      
+        # Ensure intensity stays within reasonable bounds
+        tumor_intensity = torch.clamp(
+            tumor_intensity,
+            min=local_mean - 3 * local_std,
+            max=local_mean + 3 * local_std
+        )
+      
+        return tumor_intensity * tumor_mask
+  
+    @staticmethod
+    def _gaussian_kernel_3d(kernel_size: int, sigma: float, device: torch.device, dtype: torch.dtype = torch.float32) -> torch.Tensor:
+        """Create 3D Gaussian kernel for smoothing"""
+        coords = torch.arange(kernel_size, device=device, dtype=dtype) - kernel_size // 2
+        g = torch.exp(-(coords**2) / (2 * sigma**2))
+        g = g / g.sum()
+        kernel = g.unsqueeze(0).unsqueeze(0) * g.unsqueeze(1).unsqueeze(0) * g.unsqueeze(1).unsqueeze(2)
+        return kernel.unsqueeze(0).unsqueeze(0)
 
 
 class TumorShapeGenerator:
@@ -216,7 +304,7 @@ class TumorShapeGenerator:
             self.bc = bc
             
             # Initialize PDE solver
-            self.t = torch.arange(max_nt, dtype=torch.float32, device=device) * dt
+            self.t = torch.arange(max_nt, dtype=torch.float64, device=device) * dt
             self.adv_pde = AdvDiffPDE(
                 data_spacing=[1., 1., 1.], 
                 perf_pattern='adv', 
@@ -305,11 +393,11 @@ class TumorShapeGenerator:
 
             result = odeint(
                 self.adv_pde,
-                tumor_prob[None],
+                tumor_prob.double().unsqueeze(0),
                 self.t[:nt],
                 self.dt,
                 method=self.integ_method,
-            )[-1, 0]
+            )[-1, 0].float()
             
             # Validate fluid dynamics result
             if torch.isnan(result).any() or torch.isinf(result).any():
@@ -431,57 +519,45 @@ class TumorSimulationModule(MapTransform):
         tumor_prob: torch.Tensor, 
         modality: str
     ) -> torch.Tensor:
-        """Apply tumor pathology to the image"""
-        # Calculate reference intensity
-        brain_mask = (image > 0)
-        if brain_mask.sum() > 0:
-            ref_intensity = (image * brain_mask).sum() / brain_mask.sum()
-        else:
-            ref_intensity = torch.tensor(1.0, device=self.device)
-        
-        # Get tumor intensity based on modality
-        intensity_multiplier = self.intensity_manager.get_tumor_intensity(
-            modality, ref_intensity, self.device
+        """Apply tumor pathology to the image with adaptive intensity"""
+    
+        # Get brain mask for statistics
+        brain_mask = (image > self.brain_threshold).float()
+    
+        # Get adaptive tumor intensity based on local statistics
+        tumor_intensity = self.intensity_manager.get_adaptive_tumor_intensity(
+            modality=modality,
+            image=image,
+            tumor_mask=tumor_prob,
+            brain_mask=brain_mask,
+            device=self.device
         )
-        
-        # Add spatial variation to intensity - limit the variation
-        intensity_variation = 1.0 + self.intensity_variation * (torch.rand_like(tumor_prob) - 0.5)
-        pathol_intensity = ref_intensity * intensity_multiplier * intensity_variation
-        
-        # Clamp pathological intensity to reasonable range to prevent extreme values
-        max_reasonable_intensity = ref_intensity * 5.0  # Limit to 5x reference intensity
-        pathol_intensity = torch.clamp(pathol_intensity, min=0.0, max=max_reasonable_intensity)
-        
-        # Apply pathology based on modality
-        modality_upper = modality.upper()
-        if modality_upper in ['T2', 'FLAIR']:
-            # Hyperintense lesion (additive)
-            diseased_image = image + tumor_prob * pathol_intensity
-        else:  # T1, T1C
-            # Hypointense or enhanced lesion
-            if modality_upper == 'T1':
-                # Hypointense: reduce original signal and add tumor signal
-                diseased_image = image * (1 - tumor_prob * 0.6) + tumor_prob * pathol_intensity
-            else:  # T1C
-                # Enhanced: additive
-                diseased_image = image + tumor_prob * pathol_intensity
-        
-        # Ensure non-negative values and clamp to reasonable range
+    
+        # Apply tumor based on modality characteristics
+        char = self.intensity_manager.MODALITY_CHARACTERISTICS.get(
+            modality.upper(), 
+            self.intensity_manager.MODALITY_CHARACTERISTICS['T1']
+        )
+    
+        if char['tumor_type'] == 'hypointense':
+            # For T1: tumor replaces normal tissue
+            diseased_image = image * (1 - tumor_prob) + tumor_intensity
+        elif char['tumor_type'] in ['hyperintense', 'enhanced']:
+            # For T2/FLAIR/T1C: blend tumor with tissue
+            # This creates more realistic partial volume effects
+            diseased_image = image * (1 - tumor_prob * 0.8) + tumor_intensity * tumor_prob
+        else:
+            # Default: simple replacement
+            diseased_image = image * (1 - tumor_prob) + tumor_intensity
+    
+        # Ensure output is valid
         diseased_image = torch.clamp(diseased_image, min=0)
-        
-        # Validate output - check for NaN/Inf values
+    
+        # Validate output
         if torch.isnan(diseased_image).any() or torch.isinf(diseased_image).any():
             print("Warning: Tumor simulation produced NaN/Inf values, returning original image")
             return image
-        
-        # Check for extreme values (more than 10x the original max)
-        original_max = image.max()
-        if diseased_image.max() > original_max * 10:
-            print(f"Warning: Tumor simulation produced extreme values (max: {diseased_image.max():.2f} vs original: {original_max:.2f})")
-            # Scale down the diseased image
-            scale_factor = (original_max * 5) / diseased_image.max()
-            diseased_image = diseased_image * scale_factor
-        
+    
         return diseased_image
     
     def _generate_tumor_on_sample(self, sample: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
@@ -589,6 +665,7 @@ class TumorSimulationModule(MapTransform):
             return self._generate_tumor_on_sample(data)
         except Exception as e:
             print(f"Warning: Tumor generation failed: {e}")
+            traceback.print_exc()
             result = dict(data)
             result['has_tumor'] = torch.tensor(False, dtype=torch.bool, device=self.device)
             return result

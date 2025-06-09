@@ -45,7 +45,7 @@ sim_config = {
     "use_age_based_segmentation": USE_SEG,
     "segmentation_paths": SEGMENTATION_PATHS if USE_SEG else None,
     "age_ranges": AGE_RANGES if USE_SEG else None,
-    "use_fluid_dynamics": False,
+    "use_fluid_dynamics": True,
     # feel free to play with any extra keys that TumorSimulationModule supports
 }
 
@@ -83,7 +83,7 @@ simulator = TumorSimulationModule(device=device, **sim_config)
 sample = {
     "image":    image_3d,                                     # mandatory
     "age":      torch.tensor(55.0),                           # demo age
-    "modality": "FLAIR",                                         # will use sim_config default otherwise
+    "modality": "T1",                                         # will use sim_config default otherwise
 }
 
 # ---------------------------------------------------------
