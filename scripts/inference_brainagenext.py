@@ -525,3 +525,11 @@ def inference_with_dataloader():
 
 if __name__ == "__main__":
     inference_with_3fold_evaluation() 
+
+
+
+
+
+
+
+

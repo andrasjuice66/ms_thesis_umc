@@ -1,14 +1,14 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-
 """
-SFCN 3-fold evaluation / inference script
-Fixed version – 2025-06-09
+SFCN 3-fold inference / evaluation script
+Fixed 2025-06-09
 """
 
-# ───────────────────────────────── Imports ──────────────────────────────────
+# ────────────────────────────────── Imports ─────────────────────────────────
 import io
 import json
+import pickle
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -22,99 +22,86 @@ import torch.nn.functional as F
 import wandb
 from scipy.stats import norm
 from torch.utils.data import DataLoader
-import pickle
 
-
-# Project-local utilities
+# ─── Project-local modules ──────────────────────────────────────────────────
 from brain_age_pred.dom_rand.dataset import BADataset
 from brain_age_pred.dom_rand.domain_randomization import DomainRandomizer
 from brain_age_pred.training.metrics import calculate_metrics
 from brain_age_pred.utils.utils import read_csv
 
-
+# ───────────────────────────────  Utilities  ───────────────────────────────
 def safe_torch_load(fp, map_location="cpu"):
     """
-    Load a checkpoint, transparently handling UTF-8 BOMs and the
-    weights_only change in PyTorch ≥ 2.6.
+    Load a PyTorch checkpoint while
+    1) stripping an eventual UTF-8 BOM,
+    2) forcing weights_only=False for PyTorch ≥ 2.6.
     """
-    def _try_load(handle):
-        # First try the full-checkpoint route (works on ≥2.6, may raise
-        # TypeError on <2.6 where weights_only is unknown)
-        try:
-            return torch.load(handle, map_location=map_location,
+    def _do_load(buffer):
+        try:      # PyTorch ≥ 2.6
+            return torch.load(buffer, map_location=map_location,
                               weights_only=False)
-        except TypeError:          # < 2.6 fallback
-            return torch.load(handle, map_location=map_location)
+        except TypeError:  # PyTorch < 2.6 – no weights_only kwarg
+            return torch.load(buffer, map_location=map_location)
 
     try:
-        # ① normal path
-        return _try_load(fp)
-
+        return _do_load(fp)
     except (pickle.UnpicklingError, RuntimeError):
-        # ② maybe the file starts with a UTF-8 BOM — strip & retry
         with open(fp, "rb") as f:
             raw = f.read()
         bom = b"\xef\xbb\xbf"
         if raw.startswith(bom):
             print("⚠️  UTF-8 BOM detected – stripping it and re-loading …")
-            return _try_load(io.BytesIO(raw[len(bom):]))
-        raise      # not a BOM issue → propagate
+            return _do_load(io.BytesIO(raw[len(bom):]))
+        raise
 
 
 def num2vect(x, bin_range, bin_step, sigma):
     """
-    Convert a number or array of numbers to a (soft) one-hot vector.
+    Map age(s) to hard/soft one-hot vector(s).
+
+    Returns (vector, bin_centres)
     """
-    bin_start, bin_end = bin_range
-    bin_length = bin_end - bin_start
-    if bin_length % bin_step != 0:
-        raise ValueError("bin_length must be divisible by bin_step")
-    bin_number = int(bin_length / bin_step)
-    bin_centers = bin_start + bin_step * (0.5 + np.arange(bin_number))
+    start, end = bin_range
+    bins = int((end - start) / bin_step)
+    centres = start + bin_step * (0.5 + np.arange(bins))
 
-    if sigma == 0:  # hard label
-        idx = np.floor((np.asarray(x) - bin_start) / bin_step).astype(int)
-        return idx, bin_centers
-
-    # soft label
     x = np.asarray(x).reshape(-1)
-    v = np.zeros((x.size, bin_number), dtype=np.float32)
+    if sigma == 0:                     # hard labels -> indices
+        idx = ((x - start) // bin_step).astype(int)
+        return idx, centres
+
+    # soft labels
+    v = np.empty((x.size, bins), dtype=np.float32)
     for j, age in enumerate(x):
-        for i in range(bin_number):
-            x1 = bin_centers[i] - bin_step / 2
-            x2 = bin_centers[i] + bin_step / 2
-            cdfs = norm.cdf([x1, x2], loc=age, scale=sigma)
-            v[j, i] = cdfs[1] - cdfs[0]
-    return v.squeeze(), bin_centers
+        for i, c in enumerate(centres):
+            x1, x2 = c - bin_step / 2, c + bin_step / 2
+            v[j, i] = norm.cdf(x2, age, sigma) - norm.cdf(x1, age, sigma)
+    return v.squeeze(), centres
 
 
-def crop_center(data, out_sp):
+def crop_center(vol, out_sp):
     """
-    Center-crop a 3-D (or 4-D with channel) volume to `out_sp`.
+    3-D / 4-D centre crop.
     """
-    in_sp = data.shape
-    if data.ndim not in (3, 4):
-        raise ValueError(f"Wrong dimension! dim={data.ndim}.")
-    # z, y, x (last three dims)
-    dz = (in_sp[-3] - out_sp[-3]) // 2
-    dy = (in_sp[-2] - out_sp[-2]) // 2
-    dx = (in_sp[-1] - out_sp[-1]) // 2
-    if data.ndim == 3:
-        return data[dz:-dz, dy:-dy, dx:-dx]
-    else:
-        return data[:, dz:-dz, dy:-dy, dx:-dx]
+    if vol.ndim not in (3, 4):
+        raise ValueError(f"Expected 3-D or 4-D, got {vol.ndim}")
+    dz = (vol.shape[-3] - out_sp[-3]) // 2
+    dy = (vol.shape[-2] - out_sp[-2]) // 2
+    dx = (vol.shape[-1] - out_sp[-1]) // 2
+    if vol.ndim == 3:
+        return vol[dz:-dz, dy:-dy, dx:-dx]
+    return vol[:, dz:-dz, dy:-dy, dx:-dx]
 
 
-def my_KLDivLoss(x, y):
+def my_KLDivLoss(log_p, q):
     """
-    Batch-wise KL-divergence (averaged over batch).
+    Batch-wise KL divergence (averaged over batch).
     """
-    y = y + 1e-16
-    loss = F.kl_div(x, y, reduction="sum") / y.size(0)
-    return loss
+    q = q + 1e-16
+    return F.kl_div(log_p, q, reduction="sum") / q.size(0)
 
 
-# ───────────────────────────── Model Definition ─────────────────────────────
+# ───────────────────────────── Model definition ─────────────────────────────
 class SFCN(nn.Module):
     def __init__(self, channel_number=[32, 64, 128, 256, 256, 64], output_dim=40, dropout=True):
         super(SFCN, self).__init__()
@@ -178,13 +165,11 @@ class SFCN(nn.Module):
 
 
 # ───────────────────────────── Data utilities ───────────────────────────────
-def create_test_dataloader(csv_path, data_dir, transform=None,
-                           batch_size=8, num_workers=4):
-    file_paths, ages, sample_weights, sexes, modalities = read_csv(
-        csv_path, data_dir
-    )
-    dataset = BADataset(
-        file_paths=file_paths,
+def create_test_dataloader(csv_path, data_dir, transform,
+                           batch_size=8, workers=4):
+    paths, ages, _, sexes, modalities = read_csv(csv_path, data_dir)
+    ds = BADataset(
+        file_paths=paths,
         age_labels=ages,
         sexes=sexes,
         modalities=modalities,
@@ -192,283 +177,181 @@ def create_test_dataloader(csv_path, data_dir, transform=None,
         mode="test",
         cache_size=0,
     )
-    loader = DataLoader(
-        dataset, batch_size=batch_size, shuffle=False,
-        num_workers=num_workers, pin_memory=True
-    )
-    return loader, file_paths, ages, sexes, modalities
+    loader = DataLoader(ds, batch_size, False, num_workers=workers,
+                        pin_memory=True)
+    return loader, paths, ages, sexes, modalities
 
 
-def create_eval_transforms(device, *, use_domain_rand=False, use_tumor=False):
-    if not use_domain_rand:
+def create_eval_transforms(device, *, domain_rand=False, tumor=False):
+    if not domain_rand:
         return None
-
-    eval_rand_cfg = {
+    tf_cfg = {
         "use_domain_randomization": True,
         "transform_probs": {
-            "flip": 0.5, "affine": 0.8, "contrast": 0.6, "gamma": 0.5,
-            "blur": 0.4, "bias": 0.5, "scale_int": 0.4, "shift_int": 0.4,
-            "hist_shift": 0.3, "noise": 0.4, "rician": 0.3, "gibbs": 0.3,
-            "resolution": 0.5, "coarse_do": 0.3, "crop": 1.0,
-            "tumor": 0.3 if use_tumor else 0.0,
+            "flip": .5, "affine": .8, "contrast": .6, "gamma": .5,
+            "blur": .4, "bias": .5, "scale_int": .4, "shift_int": .4,
+            "hist_shift": .3, "noise": .4, "rician": .3, "gibbs": .3,
+            "resolution": .5, "coarse_do": .3, "crop": 1.,
+            "tumor": .3 if tumor else 0.,
         },
         "output_shape": (160, 192, 160),
     }
-
-    eval_tumor_cfg = {
-        "use_tumor_simulation": use_tumor,
-        "prob": 0.3,
-        "use_age_based_segmentation": False,
+    tumor_cfg = {
+        "use_tumor_simulation": tumor,
+        "prob": .3, "use_age_based_segmentation": False,
         "perlin_res": [2, 2, 2],
         "tumor_size_factor_range": [0.5, 2.0],
         "use_fluid_dynamics": True,
-    } if use_tumor else {}
-
-    return DomainRandomizer(
-        device=device,
-        use_tumor_simulation=use_tumor,
-        tumor_config=eval_tumor_cfg,
-        **eval_rand_cfg,
-    )
+    } if tumor else {}
+    return DomainRandomizer(device=device,
+                            use_tumor_simulation=tumor,
+                            tumor_config=tumor_cfg,
+                            **tf_cfg)
 
 
-# ───────────────────────────── Evaluation loops ─────────────────────────────
-
+# ─────────────────────────── Evaluation functions ───────────────────────────
 def run_single_evaluation(model, loader, device,
-                           bin_range, bin_step, sigma, bin_centers):
+                          bin_range, bin_step, sigma, bin_centres):
     model.eval()
+    bc = torch.tensor(bin_centres, device=device)
     preds, targs, losses = [], [], []
-    with torch.no_grad():
-        for batch in loader:
-            imgs = batch["image"].to(device)
-            ages = batch["age"].to(device)
-
-            soft = [
-                num2vect(a.item(), bin_range, bin_step, sigma)[0]
-                for a in ages.cpu().numpy()
-            ]
-            soft = torch.as_tensor(soft, dtype=torch.float32, device=device)
-    preds, targs, losses = [], [], []
-    bc_tensor = torch.tensor(bin_centers, device=device)
 
     with torch.no_grad():
         for batch in loader:
             imgs = batch["image"].to(device)
-            age_raw = batch["age"]                       # tensor on CPU
+            age_raw = batch["age"]            # still on CPU
 
-            # Case A: dataset already gives soft labels of shape (B, 40)
-            if age_raw.ndim == 2:
-                soft = age_raw.to(device, dtype=torch.float32)      # (B, 40)
-                targets_age = (soft * bc_tensor).sum(1)             # (B,)
+            # ------- decide scalar vs soft-label -----------------------
+            if age_raw.ndim == 2:             # already (B, nbins)
+                soft = age_raw.to(device, dtype=torch.float32)
+            else:                             # scalar ages -> build soft
+                ages_np = age_raw.numpy()
+                soft_np, _ = num2vect(ages_np, bin_range, bin_step, sigma)
+                soft = torch.from_numpy(soft_np).to(device)
 
-            # Case B: dataset gives scalar age of shape (B,)
-            else:
-                targets_age = age_raw.to(device, dtype=torch.float32)  # (B,)
-                soft_np = [
-                    num2vect(a.item(), bin_range, bin_step, sigma)[0]
-                    for a in targets_age.cpu()
-                ]
-                soft = torch.as_tensor(soft_np, dtype=torch.float32,
-                                       device=device)               # (B, 40)
-            log_probs = model(imgs)[0]
-            losses.append(my_KLDivLoss(log_probs, soft).item())
+            targets_age = (soft * bc).sum(1)          # (B,)
 
-            probs = torch.exp(log_probs)
-            pred = (probs * torch.tensor(bin_centers, device=device)).sum(1)
-            preds.append(pred.cpu().numpy())
-            targs.append(ages.cpu().numpy())
-            log_probs = model(imgs)[0]
-            losses.append(my_KLDivLoss(log_probs, soft).item())
+            log_p = model(imgs)[0]
+            losses.append(my_KLDivLoss(log_p, soft).item())
 
-            probs = torch.exp(log_probs)
-            pred = (probs * bc_tensor).sum(1)              # (B,)
-
+            pred = (torch.exp(log_p) * bc).sum(1)
             preds.append(pred.cpu().numpy())
             targs.append(targets_age.cpu().numpy())
 
-    return (np.concatenate(preds), np.concatenate(targs),
+    return (np.concatenate(preds),
+            np.concatenate(targs),
             float(np.mean(losses)))
 
 
 def run_multi_fold_evaluation(model, csv_path, data_dir, device, transform,
-                              n_folds, eval_name,
-                              bin_range, bin_step, sigma, bin_centers,
-                              batch_size=8):
-    print(f"Running {n_folds}-fold {eval_name} evaluation …")
-    fold_metrics = []
+                              folds, tag,
+                              bin_range, bin_step, sigma, bin_centres,
+                              batch_size):
+    print(f"Running {folds}-fold {tag} evaluation …")
+    metrics_fold = []
+    for k in range(folds):
+        print(f"{tag} fold {k+1}/{folds}")
+        loader, _, _, sexes, mods = create_test_dataloader(
+            csv_path, data_dir, transform, batch_size)
+        p, t, l = run_single_evaluation(
+            model, loader, device, bin_range, bin_step, sigma, bin_centres)
+        m = calculate_metrics(p, t, mods, sexes)
+        m["loss"] = l
+        metrics_fold.append(m)
 
-    for k in range(n_folds):
-        print(f"{eval_name} fold {k+1}/{n_folds}")
-        loader, _, _, sexes, modalities = create_test_dataloader(
-            csv_path, data_dir, transform, batch_size
-        )
-        preds, targs, loss = run_single_evaluation(
-            model, loader, device,
-            bin_range, bin_step, sigma, bin_centers
-        )
-        m = calculate_metrics(preds, targs, modalities, sexes)
-        m["loss"] = loss
-        fold_metrics.append(m)
-
-    # aggregate
     out = {}
-    for key in fold_metrics[0]:
-        vals = [m[key] for m in fold_metrics]
-        out[key] = np.mean(vals)
-        out[f"{key}_std"] = np.std(vals)
+    for key in metrics_fold[0]:
+        v = [m[key] for m in metrics_fold]
+        out[key] = float(np.mean(v))
+        out[f"{key}_std"] = float(np.std(v))
     return out
 
 
-# ────────────────────────── Main inference function ─────────────────────────
+# ────────────────────────── Main inference routine ──────────────────────────
 def inference_with_3fold_evaluation():
-    # Paths & options – adjust if needed
+    # ---- paths & options ---------------------------------------------------
     model_path = "/home/ajoos/model_files/sfcn_original_ckp.p"
-    test_csv_path = "/home/ajoos/brain_age_pred/data/labels/test.csv"
+    csv_test = "/home/ajoos/brain_age_pred/data/labels/test.csv"
     data_dir = "/scratch-shared/ajoos/"
-    batch_size = 8
+    batch = 8
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # W&B init
+    # ---- wandb -------------------------------------------------------------
     wandb.login(key="2abdb867a9244072f2237704a3cacc77fa548dd8")
-    exp_name = f"sfcn_original_{datetime.now():%Y%m%d_%H%M%S}"
-    wandb.init(project="brainage-inference", name=exp_name,
+    run_name = f"sfcn_original_{datetime.now():%Y%m%d_%H%M%S}"
+    wandb.init(project="brainage-inference", name=run_name,
                config=dict(model="SFCN", model_path=model_path,
-                           test_csv=test_csv_path, batch_size=batch_size,
-                           device=str(device), evaluation_type="3fold_inference",
-                           bin_range=[42, 82], bin_step=1, sigma=1),
+                           test_csv=csv_test, batch_size=batch,
+                           device=str(device)),
                reinit=True)
 
     print(f"Running on device: {device}")
-    print(f"W&B run: {exp_name}")
+    print(f"W&B run: {run_name}")
 
     try:
-        # ── Model loading ────────────────────────────────────────────────
+        # ---- model ---------------------------------------------------------
         model = SFCN()
         model = torch.nn.DataParallel(model)
         print(f"Loading model from {model_path}")
-
         state = safe_torch_load(model_path, map_location="cpu")
-        state_dict = state["state_dict"] if (
-            isinstance(state, dict) and "state_dict" in state
-        ) else state
-        model.load_state_dict(state_dict)
-
+        sd = state["state_dict"] if (isinstance(state, dict)
+                                     and "state_dict" in state) else state
+        model.load_state_dict(sd)
         model.to(device).eval()
-        print("✅ Model loaded successfully\n")
+        print("✅ Model loaded successfully")
 
-        # ── Params for age bins ─────────────────────────────────────────
+        # ---- bin setup -----------------------------------------------------
         bin_range = [42, 82]
         bin_step = 1
         sigma = 1
-        bin_centers = bin_range[0] + bin_step * (0.5 + np.arange(
-            int((bin_range[1] - bin_range[0]) / bin_step))
+        bin_centres = bin_range[0] + bin_step * (
+            0.5 + np.arange(int((bin_range[1] - bin_range[0]) / bin_step))
         )
 
-        # ── Dataset info logging ───────────────────────────────────────
-        file_paths, ages, _, sexes, modalities = read_csv(
-            test_csv_path, data_dir
-        )
-        wandb.log({
-            "dataset/num_samples": len(file_paths),
-            "dataset/age_min": float(np.min(ages)),
-            "dataset/age_max": float(np.max(ages)),
-            "dataset/age_mean": float(np.mean(ages)),
-            "dataset/age_std": float(np.std(ages)),
-        })
+        # ---- dataset-level logging ----------------------------------------
+        fp, ages, _, sexes, mods = read_csv(csv_test, data_dir)
+        wandb.log(dict(dataset_num=len(fp),
+                       age_min=float(np.min(ages)),
+                       age_max=float(np.max(ages)),
+                       age_mean=float(np.mean(ages)),
+                       age_std=float(np.std(ages))))
 
-        # ── 1) Plain test evaluation ───────────────────────────────────
-        print("=== 1/3: Plain test evaluation ===")
+        # ---- 1) plain evaluation ------------------------------------------
+        print("\n=== 1/3: Plain test evaluation ===")
         loader, _, _, _, _ = create_test_dataloader(
-            test_csv_path, data_dir, None, batch_size
-        )
-        preds, targs, loss = run_single_evaluation(
+            csv_test, data_dir, None, batch)
+        p_plain, t_plain, l_plain = run_single_evaluation(
             model, loader, device,
-            bin_range, bin_step, sigma, bin_centers
-        )
-        plain_metrics = calculate_metrics(preds, targs, modalities, sexes)
-        plain_metrics["loss"] = loss
-        print(f"Plain test MAE = {plain_metrics['mae']:.4f}, "
-              f"R² = {plain_metrics['r2']:.4f}")
-        wandb.log({f"test/{k}": v for k, v in plain_metrics.items()})
+            bin_range, bin_step, sigma, bin_centres)
+        m_plain = calculate_metrics(p_plain, t_plain, mods, sexes)
+        m_plain["loss"] = l_plain
+        print(f"Plain MAE={m_plain['mae']:.4f}, R²={m_plain['r2']:.4f}")
+        wandb.log({f"plain_{k}": v for k, v in m_plain.items()})
 
-        # ── 2) Domain randomization ────────────────────────────────────
-        print("=== 2/3: Domain randomized evaluation ===")
-        dom_rand_tf = create_eval_transforms(device, use_domain_rand=True,
-                                             use_tumor=False)
-        dom_metrics = run_multi_fold_evaluation(
-            model, test_csv_path, data_dir, device, dom_rand_tf, 10,
-            "domain_randomized", bin_range, bin_step, sigma, bin_centers,
-            batch_size
-        )
-        wandb.log({f"test_dom_rand/{k}": v for k, v in dom_metrics.items()})
+        # ---- 2) domain randomization --------------------------------------
+        print("\n=== 2/3: Domain-rand evaluation ===")
+        tf_dom = create_eval_transforms(device, domain_rand=True, tumor=False)
+        m_dom = run_multi_fold_evaluation(
+            model, csv_test, data_dir, device, tf_dom, 10, "dom_rand",
+            bin_range, bin_step, sigma, bin_centres, batch)
+        wandb.log({f"dom_rand_{k}": v for k, v in m_dom.items()})
 
-        # ── 3) Domain rand + tumor ─────────────────────────────────────
-        print("=== 3/3: Domain randomized + tumor evaluation ===")
-        dom_tumor_tf = create_eval_transforms(device, use_domain_rand=True,
-                                              use_tumor=True)
-        dom_tumor_metrics = run_multi_fold_evaluation(
-            model, test_csv_path, data_dir, device, dom_tumor_tf, 10,
-            "domain_rand_tumor", bin_range, bin_step, sigma, bin_centers,
-            batch_size
-        )
-        wandb.log({f"test_dom_rand_tumor/{k}": v
-                   for k, v in dom_tumor_metrics.items()})
+        # ---- 3) domain rand + tumor ---------------------------------------
+        print("\n=== 3/3: Dom-rand + tumor evaluation ===")
+        tf_dt = create_eval_transforms(device, domain_rand=True, tumor=True)
+        m_dt = run_multi_fold_evaluation(
+            model, csv_test, data_dir, device, tf_dt, 10, "dom_rand_tumor",
+            bin_range, bin_step, sigma, bin_centres, batch)
+        wandb.log({f"dom_rand_tumor_{k}": v for k, v in m_dt.items()})
 
-        # ── Save & visualise ───────────────────────────────────────────
-        results = dict(plain=plain_metrics,
-                       domain_rand=dom_metrics,
-                       domain_rand_tumor=dom_tumor_metrics)
-        with open("sfcn_3fold_evaluation_results.json", "w") as f:
-            json.dump(results, f, indent=2)
+        # ---- save / plot ---------------------------------------------------
+        out = dict(plain=m_plain, dom_rand=m_dom, dom_rand_tumor=m_dt)
+        with open("sfcn_eval_results.json", "w") as f:
+            json.dump(out, f, indent=2)
 
-        # scatter & bar plots
-        plt.figure(figsize=(15, 5))
 
-        # scatter
-        plt.subplot(1, 3, 1)
-        plt.scatter(targs, preds, alpha=0.5)
-        lims = (min(targs), max(targs))
-        plt.plot(lims, lims, "r--")
-        plt.xlabel("True age");  plt.ylabel("Predicted age")
-        plt.title(f"Plain test\nMAE={plain_metrics['mae']:.2f}, "
-                  f"R²={plain_metrics['r2']:.2f}")
-        plt.grid(True)
-
-        # MAE bars
-        plt.subplot(1, 3, 2)
-        mae_vals = [plain_metrics['mae'],
-                    dom_metrics['mae'], dom_tumor_metrics['mae']]
-        mae_stds = [0, dom_metrics['mae_std'], dom_tumor_metrics['mae_std']]
-        labels = ["Plain", "Domain-Rand", "Dom-Rand+Tumor"]
-        plt.bar(labels, mae_vals, yerr=mae_stds, capsize=5)
-        plt.ylabel("MAE");  plt.title("MAE comparison");  plt.grid(axis='y')
-
-        # R² bars
-        plt.subplot(1, 3, 3)
-        r2_vals = [plain_metrics['r2'],
-                   dom_metrics['r2'], dom_tumor_metrics['r2']]
-        r2_stds = [0, dom_metrics['r2_std'], dom_tumor_metrics['r2_std']]
-        plt.bar(labels, r2_vals, yerr=r2_stds, capsize=5)
-        plt.ylabel("R²");  plt.title("R² comparison");  plt.grid(axis='y')
-
-        plt.tight_layout()
-        plt.savefig("sfcn_3fold_evaluation_comparison.png", dpi=300)
-        wandb.log({"evaluation_plots":
-                   wandb.Image("sfcn_3fold_evaluation_comparison.png")})
-        plt.close()
-
-        # Detailed CSV export
-        pd.DataFrame(dict(
-            file_path=file_paths,
-            true_age=targs,
-            predicted_age=preds,
-            brain_age_delta=preds - targs,
-            sex=sexes if sexes is not None else None,
-            modality=modalities if modalities is not None else None,
-        )).to_csv("sfcn_plain_test_results.csv", index=False)
-
-        print("✓ All done. Results written to disk.")
-        return results
+        print("\n✓ All evaluations done – results saved.")
+        return out
 
     except Exception as e:
         print(f"❌ Error during inference: {type(e).__name__}: {e}")
@@ -477,11 +360,6 @@ def inference_with_3fold_evaluation():
         wandb.finish()
 
 
-# Backward-compatibility alias
-def inference_with_dataloader():
-    return inference_with_3fold_evaluation()
-
-
-# ────────────────────────────────── CLI ─────────────────────────────────────
+# ─────────────────────────── CLI entry point ────────────────────────────────
 if __name__ == "__main__":
     inference_with_3fold_evaluation()
