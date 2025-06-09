@@ -359,12 +359,12 @@ def inference_with_3fold_evaluation():
         
         # Try the original simple approach first
         try:
-            model.load_state_dict(torch.load(model_path))
+            model.load_state_dict(torch.load(model_path, weights_only=False))
         except RuntimeError as e:
             # If there's a device mismatch, try loading to CPU first
             if "device" in str(e).lower():
                 print("Device mismatch detected, loading to CPU first...")
-                model.load_state_dict(torch.load(model_path, map_location='cpu'))
+                model.load_state_dict(torch.load(model_path, map_location='cpu', weights_only=False))
             else:
                 raise
         

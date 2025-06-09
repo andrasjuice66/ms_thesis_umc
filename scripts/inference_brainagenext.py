@@ -20,7 +20,7 @@ import wandb
 from datetime import datetime
 from torch.utils.data import DataLoader
 import torchio
-from monai.transforms import Compose, LoadImaged, ScaleIntensityd, Spacingd, CropForegroundd, SpatialPadd, CenterSpatialCropd
+from monai.transforms import Compose, ScaleIntensityd, Spacingd, CropForegroundd, SpatialPadd, CenterSpatialCropd, MapTransform
 from monai.data import CacheDataset
 
 # Add project root to path to ensure imports work
@@ -35,6 +35,25 @@ from brain_age_pred.training.metrics import calculate_metrics
 
 # Import the nnunet_mednext for the original architecture
 from brain_age_pred.models.create_mednext_encoder_v1 import create_mednext_encoder_v1
+
+
+class LoadNumpyArrayd(MapTransform):
+    """Custom MONAI transform to load numpy arrays (.npy files)"""
+    def __init__(self, keys, ensure_channel_first=True):
+        super().__init__(keys)
+        self.ensure_channel_first = ensure_channel_first
+
+    def __call__(self, data):
+        d = dict(data)
+        for key in self.keys:
+            if isinstance(d[key], str):
+                # Load numpy array
+                array = np.load(d[key]).astype(np.float32)
+                # Add channel dimension if needed and ensure_channel_first is True
+                if self.ensure_channel_first and array.ndim == 3:
+                    array = array[np.newaxis, ...]  # Add channel dimension
+                d[key] = array
+        return d
 
 
 class MedNeXtEncReg(nn.Module):
@@ -66,11 +85,11 @@ class MedNeXtEncReg(nn.Module):
 
 
 def prepare_monai_transforms():
-    """Prepare MONAI transforms as in original script"""
+    """Prepare MONAI transforms for numpy arrays"""
     x, y, z = (160, 192, 160)
     p = 1.0
     monai_transforms = [
-        LoadImaged(keys=["image"], ensure_channel_first=True),
+        LoadNumpyArrayd(keys=["image"], ensure_channel_first=True),
         Spacingd(keys=["image"], pixdim=(p, p, p)),
         CropForegroundd(keys=["image"], allow_smaller=True, source_key="image"),
         SpatialPadd(keys=["image"], spatial_size=(x, y, z)),
@@ -83,7 +102,7 @@ def prepare_monai_transforms():
 
 
 def create_monai_dataloader(csv_path, data_dir, batch_size=1, num_workers=4):
-    """Create dataloader using MONAI transforms as in original script"""
+    """Create dataloader using MONAI transforms for numpy arrays"""
     # Read CSV and prepare data dicts
     df = pd.read_csv(csv_path)
     df.dropna(subset=['image_path'], inplace=True)
