@@ -31,24 +31,34 @@ from brain_age_pred.dom_rand.domain_randomization import DomainRandomizer
 from brain_age_pred.training.metrics import calculate_metrics
 from brain_age_pred.utils.utils import read_csv
 
-# ───────────────────────────── Helper functions ─────────────────────────────
+
 def safe_torch_load(fp, map_location="cpu"):
     """
-    Load a PyTorch checkpoint but automatically handle an eventual UTF-8 BOM.
+    Load a checkpoint, transparently handling UTF-8 BOMs and the
+    weights_only change in PyTorch ≥ 2.6.
     """
+    def _try_load(handle):
+        # First try the full-checkpoint route (works on ≥2.6, may raise
+        # TypeError on <2.6 where weights_only is unknown)
+        try:
+            return torch.load(handle, map_location=map_location,
+                              weights_only=False)
+        except TypeError:          # < 2.6 fallback
+            return torch.load(handle, map_location=map_location)
+
     try:
-        # Normal fast path
-        return torch.load(fp, map_location=map_location)
+        # ① normal path
+        return _try_load(fp)
+
     except (pickle.UnpicklingError, RuntimeError):
-        # Inspect first bytes
+        # ② maybe the file starts with a UTF-8 BOM — strip & retry
         with open(fp, "rb") as f:
             raw = f.read()
         bom = b"\xef\xbb\xbf"
         if raw.startswith(bom):
             print("⚠️  UTF-8 BOM detected – stripping it and re-loading …")
-            buffer = io.BytesIO(raw[len(bom):])
-            return torch.load(buffer, map_location=map_location)
-        raise  # not a BOM issue → propagate original error
+            return _try_load(io.BytesIO(raw[len(bom):]))
+        raise      # not a BOM issue → propagate
 
 
 def num2vect(x, bin_range, bin_step, sigma):
