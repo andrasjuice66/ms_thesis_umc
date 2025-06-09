@@ -22,5 +22,5 @@ conda activate thesis
 cd $HOME/
 python -m brain_age_pred.scripts.inference_sfcn brain_age_pred/configs/evaluate/sfcn_original.yaml
 
-python -m brain_age_pred.scripts.inference_brainagenext brain_age_pred/configs/evaluate/brainagenext_original.yaml
+#python -m brain_age_pred.scripts.inference_brainagenext brain_age_pred/configs/evaluate/brainagenext_original.yaml
 
