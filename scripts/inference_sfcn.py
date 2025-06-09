@@ -233,8 +233,9 @@ def create_eval_transforms(device, *, use_domain_rand=False, use_tumor=False):
 
 
 # ───────────────────────────── Evaluation loops ─────────────────────────────
+
 def run_single_evaluation(model, loader, device,
-                          bin_range, bin_step, sigma, bin_centers):
+                           bin_range, bin_step, sigma, bin_centers):
     model.eval()
     preds, targs, losses = [], [], []
     with torch.no_grad():
@@ -244,10 +245,31 @@ def run_single_evaluation(model, loader, device,
 
             soft = [
                 num2vect(a.item(), bin_range, bin_step, sigma)[0]
-                for a in ages
+                for a in ages.cpu().numpy()
             ]
             soft = torch.as_tensor(soft, dtype=torch.float32, device=device)
+    preds, targs, losses = [], [], []
+    bc_tensor = torch.tensor(bin_centers, device=device)
 
+    with torch.no_grad():
+        for batch in loader:
+            imgs = batch["image"].to(device)
+            age_raw = batch["age"]                       # tensor on CPU
+
+            # Case A: dataset already gives soft labels of shape (B, 40)
+            if age_raw.ndim == 2:
+                soft = age_raw.to(device, dtype=torch.float32)      # (B, 40)
+                targets_age = (soft * bc_tensor).sum(1)             # (B,)
+
+            # Case B: dataset gives scalar age of shape (B,)
+            else:
+                targets_age = age_raw.to(device, dtype=torch.float32)  # (B,)
+                soft_np = [
+                    num2vect(a.item(), bin_range, bin_step, sigma)[0]
+                    for a in targets_age.cpu()
+                ]
+                soft = torch.as_tensor(soft_np, dtype=torch.float32,
+                                       device=device)               # (B, 40)
             log_probs = model(imgs)[0]
             losses.append(my_KLDivLoss(log_probs, soft).item())
 
@@ -255,6 +277,14 @@ def run_single_evaluation(model, loader, device,
             pred = (probs * torch.tensor(bin_centers, device=device)).sum(1)
             preds.append(pred.cpu().numpy())
             targs.append(ages.cpu().numpy())
+            log_probs = model(imgs)[0]
+            losses.append(my_KLDivLoss(log_probs, soft).item())
+
+            probs = torch.exp(log_probs)
+            pred = (probs * bc_tensor).sum(1)              # (B,)
+
+            preds.append(pred.cpu().numpy())
+            targs.append(targets_age.cpu().numpy())
 
     return (np.concatenate(preds), np.concatenate(targs),
             float(np.mean(losses)))
