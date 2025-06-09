@@ -69,7 +69,7 @@ domain_randomization:
   # Transform probabilities
   transform_probs:
   
-    tumor: 0.3
+    tumor: 1.0
 
     # Geometric transforms
     flip: 0.5
@@ -83,11 +83,11 @@ domain_randomization:
     hist_shift: 0.3  # Histogram shift
     
     # Noise/artifact transforms
-    blur: 0.2
+    blur: 0.3
     bias: 0.5
     noise: 0.4
-    rician: 0.3
-    gibbs: 0.3
+    rician: 0.4
+    gibbs: 0.5
     
     # Resolution/dropout transforms
     resolution: 0.1
@@ -105,7 +105,7 @@ domain_randomization:
   # Intensity transform parameters
   contrast_range: [0.1, 2.0]  # Range for contrast adjustment
   log_gamma_std: 0.3  # Standard deviation for gamma transformation
-  bias_field_range: [0.0, 0.8]  # Range for bias field artifact
+  bias_field_range: [0.0, 1.2]  # Range for bias field artifact
   
   # Noise parameters
   noise_mean: 0.5  # Mean for Gaussian noise
@@ -130,7 +130,7 @@ domain_randomization:
   
   # Spatial crop parameters
   output_shape: [160, 192, 160]  # Final shape after transformations
-  random_center: true  # Use random center for spatial crop
+  random_center: false  # Use random center for spatial crop
   
   # TorchIO specific parameters
   use_torchio: false  # Whether to use TorchIO transforms
