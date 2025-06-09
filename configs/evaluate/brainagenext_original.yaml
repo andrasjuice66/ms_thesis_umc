@@ -56,8 +56,8 @@ wandb:
 
 
 domain_randomization:
-  use_domain_randomization: true
-  use_tumor_simulation: false
+  # use_domain_randomization: true
+  # use_tumor_simulation: false
 
   # Progressive randomization parameters
   progressive_epochs: 50  # Number of epochs for progressive randomization
