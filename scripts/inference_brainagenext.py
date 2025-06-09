@@ -9,6 +9,7 @@ Uses 5-model ensemble with median predictions and brain age correction as in ori
 """
 import sys
 import os
+import argparse
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -16,6 +17,7 @@ import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 import json
+import yaml
 import wandb
 from datetime import datetime
 from torch.utils.data import DataLoader
@@ -101,7 +103,7 @@ def prepare_monai_transforms():
     return Compose(monai_transforms + [val_torchio_transforms])
 
 
-def create_monai_dataloader(csv_path, data_dir, batch_size=1, num_workers=4):
+def create_monai_dataloader(csv_path, data_dir, batch_size=8, num_workers=4):
     """Create dataloader using MONAI transforms for numpy arrays"""
     # Read CSV and prepare data dicts
     df = pd.read_csv(csv_path)
@@ -153,49 +155,25 @@ def create_test_dataloader(csv_path, data_dir, transform=None, batch_size=8, num
     return test_loader, file_paths, ages, sexes, modalities
 
 
-def create_eval_transforms(device, use_domain_rand=False, use_tumor=False):
-    """Create evaluation-specific transforms"""
+def create_eval_transforms(device, config, use_domain_rand=False, use_tumor=False):
+    """Create evaluation-specific transforms from config"""
     if not use_domain_rand:
         return None
     
-    # Default domain randomization config for evaluation
-    eval_rand_cfg = {
-        "use_domain_randomization": True,
-        "transform_probs": {
-            "flip": 0.5,
-            "affine": 0.8,
-            "contrast": 0.6,
-            "gamma": 0.5,
-            "blur": 0.4,
-            "bias": 0.5,
-            "scale_int": 0.4,
-            "shift_int": 0.4,
-            "hist_shift": 0.3,
-            "noise": 0.4,
-            "rician": 0.3,
-            "gibbs": 0.3,
-            "resolution": 0.5,
-            "coarse_do": 0.3,
-            "crop": 1.0,
-            "tumor": 0.3 if use_tumor else 0.0,
-        },
-        "output_shape": (160, 192, 160),
-    }
+    # Read domain randomization config from the config file
+    dom_rand_cfg = config['domain_randomization'].copy()
     
-    eval_tumor_cfg = {
-        "use_tumor_simulation": use_tumor,
-        "prob": 0.3,
-        "use_age_based_segmentation": False,
-        "perlin_res": [2, 2, 2],
-        "tumor_size_factor_range": [0.5, 2.0],
-        "use_fluid_dynamics": True,
-    } if use_tumor else {}
+    # Override tumor usage based on evaluation type
+    dom_rand_cfg['transform_probs']['tumor'] = 0.3 if use_tumor else 0.0
+    
+    # Read tumor config from the config file
+    tumor_cfg = config['domain_randomization']['tumor_config'].copy() if use_tumor else {}
     
     eval_transform = DomainRandomizer(
         device=device,
         use_tumor_simulation=use_tumor,
-        tumor_config=eval_tumor_cfg,
-        **eval_rand_cfg,
+        tumor_config=tumor_cfg,
+        **dom_rand_cfg,
     )
     
     return eval_transform
@@ -330,14 +308,113 @@ def run_multi_fold_evaluation_ensemble(model_paths, csv_path, data_dir, device, 
     return avg_metrics
 
 
-def inference_with_3fold_evaluation():
-    # Configure paths and parameters
-    model_dir = '/home/ajoos/model_files/'
-    model_paths = [os.path.join(model_dir, f'BrainAge_{i}.pth') for i in range(1, 6)]
-    test_csv_path = '/home/ajoos/brain_age_pred/data/labels/test.csv'
-    data_dir = '/scratch-shared/ajoos/'
-    batch_size = 1  # Use batch_size=1 as in original script
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+def load_config(config_path):
+    """Load configuration from YAML file"""
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
+    return config
+
+
+def create_metrics_table(metrics, table_name, evaluation_type):
+    """Create a W&B table from metrics dictionary"""
+    # Extract overall metrics
+    overall_metrics = {
+        "Metric": ["MAE", "MSE", "R²"],
+        "Value": [metrics.get("mae", 0), metrics.get("mse", 0), metrics.get("r2", 0)]
+    }
+    
+    # Add standard deviation if available (for multi-fold evaluations)
+    if f"mae_std" in metrics:
+        overall_metrics["Std"] = [
+            metrics.get("mae_std", 0), 
+            metrics.get("mse_std", 0), 
+            metrics.get("r2_std", 0)
+        ]
+    
+    # Create overall table
+    overall_table = wandb.Table(columns=list(overall_metrics.keys()))
+    for i in range(len(overall_metrics["Metric"])):
+        row = [overall_metrics[key][i] for key in overall_metrics.keys()]
+        overall_table.add_data(*row)
+    
+    # Create modality-specific table if modality metrics exist
+    modality_data = []
+    modality_keys = [k for k in metrics.keys() if "_mae" in k and not k.endswith("_std")]
+    modality_keys = [k for k in modality_keys if not k.startswith(("mae_age", "mae_sex"))]
+    
+    for key in modality_keys:
+        modality = key.replace("_mae", "")
+        mae_val = metrics.get(f"{modality}_mae", 0)
+        mse_val = metrics.get(f"{modality}_mse", 0)
+        r2_val = metrics.get(f"{modality}_r2", 0)
+        
+        # Add standard deviation if available
+        if f"{modality}_mae_std" in metrics:
+            mae_std = metrics.get(f"{modality}_mae_std", 0)
+            mse_std = metrics.get(f"{modality}_mse_std", 0)
+            r2_std = metrics.get(f"{modality}_r2_std", 0)
+            modality_data.append([modality.upper(), f"{mae_val:.4f} ± {mae_std:.4f}", 
+                                 f"{mse_val:.4f} ± {mse_std:.4f}", f"{r2_val:.4f} ± {r2_std:.4f}"])
+        else:
+            modality_data.append([modality.upper(), f"{mae_val:.4f}", 
+                                 f"{mse_val:.4f}", f"{r2_val:.4f}"])
+    
+    modality_table = None
+    if modality_data:
+        columns = ["Modality", "MAE", "MSE", "R²"]
+        modality_table = wandb.Table(columns=columns)
+        for row in modality_data:
+            modality_table.add_data(*row)
+    
+    # Create sex-specific table if sex metrics exist
+    sex_data = []
+    sex_keys = [k for k in metrics.keys() if k.startswith(("m_mae", "f_mae", "male_mae", "female_mae"))]
+    
+    for key in sex_keys:
+        if key.endswith("_mae"):
+            sex = key.replace("_mae", "")
+            mae_val = metrics.get(f"{sex}_mae", 0)
+            mse_val = metrics.get(f"{sex}_mse", 0)
+            r2_val = metrics.get(f"{sex}_r2", 0)
+            
+            # Add standard deviation if available
+            if f"{sex}_mae_std" in metrics:
+                mae_std = metrics.get(f"{sex}_mae_std", 0)
+                mse_std = metrics.get(f"{sex}_mse_std", 0)
+                r2_std = metrics.get(f"{sex}_r2_std", 0)
+                sex_data.append([sex.upper(), f"{mae_val:.4f} ± {mae_std:.4f}", 
+                               f"{mse_val:.4f} ± {mse_std:.4f}", f"{r2_val:.4f} ± {r2_std:.4f}"])
+            else:
+                sex_data.append([sex.upper(), f"{mae_val:.4f}", 
+                               f"{mse_val:.4f}", f"{r2_val:.4f}"])
+    
+    sex_table = None
+    if sex_data:
+        columns = ["Sex", "MAE", "MSE", "R²"]
+        sex_table = wandb.Table(columns=columns)
+        for row in sex_data:
+            sex_table.add_data(*row)
+    
+    # Log tables to W&B
+    wandb.log({f"{table_name}_overall_metrics": overall_table})
+    if modality_table:
+        wandb.log({f"{table_name}_modality_metrics": modality_table})
+    if sex_table:
+        wandb.log({f"{table_name}_sex_metrics": sex_table})
+    
+    return overall_table, modality_table, sex_table
+
+
+def inference_with_3fold_evaluation(config_path):
+    # Load configuration
+    config = load_config(config_path)
+    
+    # Configure paths and parameters from config
+    model_paths = config['model_paths']
+    test_csv_path = config['dataset_paths']['test']
+    data_dir = config['data_dir']
+    batch_size = config.get('batch_size', 1)
+    device = torch.device(config.get('device', 'cuda' if torch.cuda.is_available() else 'cpu'))
     
     # Verify model files exist
     for model_path in model_paths:
@@ -403,27 +480,43 @@ def inference_with_3fold_evaluation():
         # Log normal test results to W&B
         wandb.log({f"test/{k}": v for k, v in normal_metrics.items()})
         
+        # Create and log tables for normal test
+        create_metrics_table(normal_metrics, "normal_test", "Normal Test")
+        
         # 2. Domain randomized test evaluation (10 folds)
         print("=== 2/3: Domain randomized test evaluation (ensemble) ===")
-        dom_rand_transform = create_eval_transforms(device, use_domain_rand=True, use_tumor=False)
+        dom_rand_transform = create_eval_transforms(device, config, use_domain_rand=True, use_tumor=False)
+        eval_config = config.get('evaluation', {})
+        dom_rand_config = eval_config.get('domain_randomized', {})
+        dom_rand_n_folds = dom_rand_config.get('n_folds', 10)
+        
         dom_rand_metrics = run_multi_fold_evaluation_ensemble(
             model_paths, test_csv_path, data_dir, device, dom_rand_transform, 
-            n_folds=10, eval_name="domain_randomized", batch_size=batch_size
+            n_folds=dom_rand_n_folds, eval_name="domain_randomized", batch_size=batch_size
         )
         
         # Log domain randomized results to W&B
         wandb.log({f"test_dom_rand/{k}": v for k, v in dom_rand_metrics.items()})
         
+        # Create and log tables for domain randomized test
+        create_metrics_table(dom_rand_metrics, "domain_randomized_test", "Domain Randomized Test")
+        
         # 3. Domain randomized + tumor simulation test evaluation (10 folds)
         print("=== 3/3: Domain randomized + tumor simulation test evaluation (ensemble) ===")
-        dom_rand_tumor_transform = create_eval_transforms(device, use_domain_rand=True, use_tumor=True)
+        dom_rand_tumor_transform = create_eval_transforms(device, config, use_domain_rand=True, use_tumor=True)
+        dom_rand_tumor_config = eval_config.get('domain_rand_tumor', {})
+        dom_rand_tumor_n_folds = dom_rand_tumor_config.get('n_folds', 10)
+        
         dom_rand_tumor_metrics = run_multi_fold_evaluation_ensemble(
             model_paths, test_csv_path, data_dir, device, dom_rand_tumor_transform, 
-            n_folds=10, eval_name="domain_rand_tumor", batch_size=batch_size
+            n_folds=dom_rand_tumor_n_folds, eval_name="domain_rand_tumor", batch_size=batch_size
         )
         
         # Log domain randomized + tumor results to W&B
         wandb.log({f"test_dom_rand_tumor/{k}": v for k, v in dom_rand_tumor_metrics.items()})
+        
+        # Create and log tables for domain randomized + tumor test
+        create_metrics_table(dom_rand_tumor_metrics, "domain_rand_tumor_test", "Domain Randomized + Tumor Test")
         
         # Log summary comparison to W&B
         wandb.log({
@@ -518,13 +611,23 @@ def inference_with_3fold_evaluation():
         wandb.finish()
 
 
+def parse_args():
+    """Parse command line arguments"""
+    parser = argparse.ArgumentParser(description="BrainAgeNeXt 3-fold evaluation with ensemble")
+    parser.add_argument("--config", type=str, required=True, help="Path to configuration YAML file")
+    return parser.parse_args()
+
+
 # Keep the original function for backward compatibility
 def inference_with_dataloader():
-    return inference_with_3fold_evaluation()
+    # Default config for backward compatibility
+    args = parse_args()
+    return inference_with_3fold_evaluation(args.config)
 
 
 if __name__ == "__main__":
-    inference_with_3fold_evaluation() 
+    args = parse_args()
+    inference_with_3fold_evaluation(args.config) 
 
 
 
