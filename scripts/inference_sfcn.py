@@ -13,6 +13,7 @@ import json
 import wandb
 from datetime import datetime
 from scipy.stats import norm
+from brain_age_pred.utils.utils import load_checkpoint
 
 # Add project root to path to ensure imports work
 project_root = Path(__file__).resolve().parent.parent
@@ -352,24 +353,19 @@ def inference_with_3fold_evaluation():
     print(f"W&B experiment: {experiment_name}")
     
     try:
-        # Load model
+        # Load model using the exact approach from the CPU version example
         model = SFCN()
         model = torch.nn.DataParallel(model)
         print(f"Loading model from {model_path}")
         
-        # Try the original simple approach first
-        try:
-            model.load_state_dict(torch.load(model_path, weights_only=False))
-        except RuntimeError as e:
-            # If there's a device mismatch, try loading to CPU first
-            if "device" in str(e).lower():
-                print("Device mismatch detected, loading to CPU first...")
-                model.load_state_dict(torch.load(model_path, map_location='cpu', weights_only=False))
-            else:
-                raise
+        # Use the exact loading mechanism from the notebook example
+        model.load_state_dict(torch.load(model_path, weights_only=False, map_location='cpu'))
         
+        # Move to device (GPU if available, otherwise stays on CPU)
         model.to(device)
         model.eval()
+        
+        print("Successfully loaded model using CPU loading mechanism")
         
         # Parameters for age prediction with soft labels
         bin_range = [42, 82]

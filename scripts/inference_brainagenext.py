@@ -222,8 +222,20 @@ def run_predictions_single_model(model_path, dataloader, device):
             labels = batch_data['label'].to(device)
             
             pred = model(images)
-            predictions.extend(pred.cpu().numpy())
-            targets.extend(labels.cpu().numpy())
+            # Convert to numpy and ensure it's at least 1D for extending the list
+            pred_np = pred.cpu().numpy()
+            labels_np = labels.cpu().numpy()
+            
+            # Handle both scalar (0-d) and vector outputs
+            if pred_np.ndim == 0:
+                predictions.append(pred_np.item())
+            else:
+                predictions.extend(pred_np)
+                
+            if labels_np.ndim == 0:
+                targets.append(labels_np.item())
+            else:
+                targets.extend(labels_np)
     
     del model
     torch.cuda.empty_cache()
