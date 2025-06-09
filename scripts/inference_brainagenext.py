@@ -219,7 +219,14 @@ def run_predictions_single_model(model_path, dataloader, device):
     with torch.no_grad():
         for batch_data in dataloader:
             images = batch_data['image'].to(device)
-            labels = batch_data['label'].to(device)
+            
+            # Handle both MONAI dataloader ('label') and BADataset ('age') keys
+            if 'label' in batch_data:
+                labels = batch_data['label'].to(device)
+            elif 'age' in batch_data:
+                labels = batch_data['age'].to(device)
+            else:
+                raise KeyError("Neither 'label' nor 'age' key found in batch data")
             
             pred = model(images)
             # Convert to numpy and ensure it's at least 1D for extending the list
