@@ -164,8 +164,12 @@ class BrainAgeTrainer:
         self.model.to(self.device)
         self.logger.info(f"Model: {self.model.__class__.__name__}")
         self.logger.info(f"Device: {self.device}")
-        self.logger.info(f"Training samples : {len(train_loader.dataset)}")
-        self.logger.info(f"Validation samples: {len(val_loader.dataset)}")
+        if train_loader is not None:
+            self.logger.info(f"Training samples : {len(train_loader.dataset)}")
+        if val_loader is not None:
+            self.logger.info(f"Validation samples: {len(val_loader.dataset)}")
+        if test_loader is not None:
+            self.logger.info(f"Test samples: {len(test_loader.dataset)}")
         self.logger.info(f"Use AMP: {self.use_amp}")
         self.logger.info(f"Learning rate: {self.cfg.get('learning_rate', 1e-4)}")
         self.logger.info(f"Total model parameters: {sum(p.numel() for p in self.model.parameters())}")
