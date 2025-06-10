@@ -72,7 +72,7 @@ OUT_DIR     = Path('.')
 OUT_DIR.mkdir(exist_ok=True)
 
 # --- ❸ runtime -------------------------------------------------------------
-BATCH_SIZE  = 1
+BATCH_SIZE  = 8
 NUM_WORKERS = 4
 DEVICE      = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -330,7 +330,7 @@ def evaluate_regime(model, dataset, dataloader, regime_name, fold_idx=None):
             log_probs = log_probs.squeeze(-1).squeeze(-1).squeeze(-1)  # [batch_size, n_bins]
             
             # Debug print to check dimensions
-            print(f"  log_probs shape: {log_probs.shape}, bin_centres shape: {torch.tensor(bin_centres).shape}")
+            #print(f"  log_probs shape: {log_probs.shape}, bin_centres shape: {torch.tensor(bin_centres).shape}")
             
             # Convert to predicted ages
             pred_ages = predict_age_from_probabilities(log_probs, torch.tensor(bin_centres).to(DEVICE))
