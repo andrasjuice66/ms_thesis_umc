@@ -158,14 +158,22 @@ def predict_age_from_probabilities(log_probs, bin_centres):
     Convert log probabilities to predicted age using weighted sum.
     
     Args:
-        log_probs: Log probabilities from model output [batch_size, n_bins]
+        log_probs: Log probabilities from model output [batch_size, n_bins] or [n_bins]
         bin_centres: Age bin centers [n_bins]
     
     Returns:
-        Predicted ages [batch_size]
+        Predicted ages [batch_size] or scalar
     """
     probs = torch.exp(log_probs)  # Convert log probs to probs
-    predicted_ages = torch.sum(probs * bin_centres, dim=1)
+    
+    # Handle both batched and single sample cases
+    if len(probs.shape) == 1:
+        # Single sample case: [n_bins]
+        predicted_ages = torch.sum(probs * bin_centres)
+    else:
+        # Batch case: [batch_size, n_bins]
+        predicted_ages = torch.sum(probs * bin_centres, dim=1)
+    
     return predicted_ages
 
 def calculate_mae_by_modality(predictions, targets, modalities, dataset_name=""):
@@ -316,10 +324,20 @@ def evaluate_regime(model, dataset, dataloader, regime_name, fold_idx=None):
             
             # Model inference
             outputs = model(image)
-            log_probs = outputs[0].squeeze()  # [batch_size, n_bins]
+            log_probs = outputs[0]  # Don't squeeze yet: [batch_size, n_bins, 1, 1, 1]
+            
+            # Remove spatial dimensions but keep batch dimension
+            log_probs = log_probs.squeeze(-1).squeeze(-1).squeeze(-1)  # [batch_size, n_bins]
+            
+            # Debug print to check dimensions
+            print(f"  log_probs shape: {log_probs.shape}, bin_centres shape: {torch.tensor(bin_centres).shape}")
             
             # Convert to predicted ages
             pred_ages = predict_age_from_probabilities(log_probs, torch.tensor(bin_centres).to(DEVICE))
+            
+            # Ensure pred_ages is always a tensor with batch dimension
+            if len(pred_ages.shape) == 0:  # scalar
+                pred_ages = pred_ages.unsqueeze(0)
             
             # Store results
             all_predictions.append(pred_ages.cpu())
