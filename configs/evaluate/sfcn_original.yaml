@@ -33,8 +33,8 @@ domain_randomization:
   # use_tumor_simulation: false
 
   # Progressive randomization parameters
-  progressive_epochs: 50  # Number of epochs for progressive randomization
-  progressive_start: 0.2  # Initial probability scaling factor
+  progressive_epochs: 0 # Number of epochs for progressive randomization
+  progressive_start: 1.0  # Initial probability scaling factor
 
 
   image_key: "image"  # Key for the image in the data dictionary
@@ -63,7 +63,7 @@ domain_randomization:
     gibbs: 0.5
     
     # Resolution/dropout transforms
-    resolution: 0.1
+    resolution: 0.4
     coarse_do: 0.0
     
     

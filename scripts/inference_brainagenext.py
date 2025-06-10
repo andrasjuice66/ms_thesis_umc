@@ -93,6 +93,11 @@ class MedNeXtEncReg(nn.Module):
         return age_estimate.squeeze()
 
 
+def brain_mask_function(x):
+    """Picklable function for brain masking instead of lambda"""
+    return x > 0
+
+
 def prepare_monai_transforms():
     """Prepare MONAI transforms for numpy arrays"""
     x, y, z = (160, 192, 160)
@@ -105,7 +110,7 @@ def prepare_monai_transforms():
         CenterSpatialCropd(keys=["image"], roi_size=(x, y, z))
     ]
     val_torchio_transforms = torchio.transforms.Compose(
-        [torchio.transforms.ZNormalization(masking_method=lambda x: x > 0, keys=["image"], include=['image'])]
+        [torchio.transforms.ZNormalization(masking_method=brain_mask_function, keys=["image"], include=['image'])]
     )
     return Compose(monai_transforms + [val_torchio_transforms])
 
