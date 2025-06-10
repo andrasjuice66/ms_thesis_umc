@@ -98,7 +98,6 @@ class BADataset(Dataset):
         # ---- transform -------------------------------------------------
         if self.transform is not None and self.mode == "train":
             sample = self.transform(sample)         
-            print("transform applied")
             
         sample = self.center_crop(sample)
 

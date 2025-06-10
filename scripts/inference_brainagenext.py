@@ -25,6 +25,13 @@ import torchio
 from monai.transforms import Compose, ScaleIntensityd, Spacingd, CropForegroundd, SpatialPadd, CenterSpatialCropd, MapTransform
 from monai.data import CacheDataset
 
+# Fix CUDA multiprocessing issue
+import torch.multiprocessing as mp
+try:
+    mp.set_start_method('spawn', force=True)
+except RuntimeError:
+    pass  # Already set
+
 # Add project root to path to ensure imports work
 project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
@@ -119,7 +126,7 @@ def create_monai_dataloader(csv_path, data_dir, batch_size=8, num_workers=4):
     # Create transforms and dataset
     transforms = prepare_monai_transforms()
     dataset = CacheDataset(data=data_dicts, transform=transforms, cache_rate=0.2, num_workers=num_workers)
-    dataloader = DataLoader(dataset, batch_size=batch_size, num_workers=0, shuffle=False, 
+    dataloader = DataLoader(dataset, batch_size=batch_size, num_workers=num_workers, shuffle=False, 
                            pin_memory=torch.cuda.is_available())
     
     return dataloader, df
@@ -148,8 +155,9 @@ def create_test_dataloader(csv_path, data_dir, transform=None, batch_size=8, num
         test_dataset,
         batch_size=batch_size,
         shuffle=False,
-        num_workers=0,
+        num_workers=4,  # Change from 0 to 2 for better performance
         pin_memory=True,
+        persistent_workers=True,  # Add this for better performance
     )
     
     return test_loader, file_paths, ages, sexes, modalities
