@@ -304,18 +304,21 @@ def create_domain_randomizer(config, use_tumor=False):
     # Get domain randomization config from file
     dr_config_from_file = config.get('domain_randomization', {})
     
-    # Base domain randomization config
+    # Base domain randomization config - make a COPY of transform_probs to avoid reference issues
+    transform_probs = dr_config_from_file.get('transform_probs', {}).copy()
+    
     dr_config = {
         'device': DEVICE,
         'use_domain_randomization': True,
-        'transform_probs': dr_config_from_file.get('transform_probs', {}),
+        'transform_probs': transform_probs,
         'output_shape': dr_config_from_file.get('output_shape', [160, 192, 160]),
         'use_tumor_simulation': use_tumor,
     }
     
     # Override tumor probability based on use_tumor parameter
-    if 'transform_probs' in dr_config and 'tumor' in dr_config['transform_probs']:
-        dr_config['transform_probs']['tumor'] = dr_config_from_file['transform_probs']['tumor'] if use_tumor else 0.0
+    if 'tumor' in transform_probs:
+        original_tumor_prob = dr_config_from_file['transform_probs']['tumor']
+        dr_config['transform_probs']['tumor'] = original_tumor_prob if use_tumor else 0.0
     
     # Add all other domain randomization parameters from config
     for key, value in dr_config_from_file.items():
