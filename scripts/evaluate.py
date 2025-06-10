@@ -218,7 +218,7 @@ def create_evaluation_tables(normal_metrics, dom_rand_metrics, dom_rand_tumor_me
 
 
 def run_multi_fold_evaluation(cfg: Config, model_type: str, model_path: str, device: torch.device, logger, 
-                             test_p, test_a, test_s, test_m, transform, n_folds=5, eval_name="test"):
+                             test_p, test_a, test_s, test_m, transform, log_dir, n_folds=5, eval_name="test"):
     """Run evaluation multiple times with different augmentations and average results"""
     logger.info(f"Running {n_folds}-fold {eval_name} evaluation...")
     
@@ -275,8 +275,8 @@ def run_multi_fold_evaluation(cfg: Config, model_type: str, model_path: str, dev
             test_loader=eval_test_loader,
             config={},  # Minimal config for evaluation
             device=device,
-            checkpoint_dir=None,
-            log_dir=None,
+            checkpoint_dir="/home/ajoos/brain_age_pred/output/checkpoints/",
+            log_dir=log_dir,
             use_wandb=False,  # Disable wandb in trainer, we handle it here
             age_min=cfg.get("data.age_min", 20),
             age_max=cfg.get("data.age_max", 80),
@@ -435,7 +435,7 @@ def main() -> None:
                 config={},
                 device=device,
                 checkpoint_dir="/home/ajoos/brain_age_pred/output/checkpoints/",
-                log_dir=None,
+                log_dir=log_dir,
                 use_wandb=False,
                 age_min=cfg.get("data.age_min", 18),
                 age_max=cfg.get("data.age_max", 90),
@@ -454,7 +454,7 @@ def main() -> None:
             n_folds = dom_rand_config.get("n_folds", 5)
             dom_rand_metrics = run_multi_fold_evaluation(
                 cfg, args.model, args.model_path, device, logger, test_p, test_a, test_s, test_m,
-                dom_rand_transform, n_folds=n_folds, eval_name="domain_randomized"
+                dom_rand_transform, log_dir, n_folds=n_folds, eval_name="domain_randomized"
             )
             results["domain_randomized"] = dom_rand_metrics
         
@@ -467,7 +467,7 @@ def main() -> None:
             n_folds = dom_rand_tumor_config.get("n_folds", 5)
             dom_rand_tumor_metrics = run_multi_fold_evaluation(
                 cfg, args.model, args.model_path, device, logger, test_p, test_a, test_s, test_m,
-                dom_rand_tumor_transform, n_folds=n_folds, eval_name="domain_rand_tumor"
+                dom_rand_tumor_transform, log_dir, n_folds=n_folds, eval_name="domain_rand_tumor"
             )
             results["domain_rand_tumor"] = dom_rand_tumor_metrics
         
