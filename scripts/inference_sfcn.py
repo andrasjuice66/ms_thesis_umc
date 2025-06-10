@@ -38,8 +38,7 @@ from monai.transforms import (
 )
 
 # project imports – keep identical to your existing tree
-project_root = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(project_root))
+
 from brain_age_pred.dom_rand.dataset import BADataset
 from brain_age_pred.dom_rand.domain_randomization import DomainRandomizer
 from brain_age_pred.training.metrics import calculate_metrics
@@ -61,13 +60,13 @@ N_BINS = len(bin_centres)
 
 # --- ❷ paths ---------------------------------------------------------------
 MODEL_DIR   = '/home/ajoos/model_files/'
-MODEL_PATH = os.path.join(MODEL_DIR, 'sfcn_original_ckp.pth')
+MODEL_PATH = os.path.join(MODEL_DIR, 'sfcn_original_ckp.p')
 
 TEST_CSV    = '/home/ajoos/brain_age_pred/data/labels/test_balanced.csv'
 DATA_ROOT   = '/scratch-shared/ajoos/'
 
 # Config file path
-CONFIG_PATH = str(project_root / 'brain_age_pred/configs/evaluate/sfcn_original.yaml')
+CONFIG_PATH = str('/home/ajoos/brain_age_pred/configs/evaluate/sfcn_original.yaml')
 
 OUT_DIR     = Path('.')
 OUT_DIR.mkdir(exist_ok=True)
@@ -355,7 +354,7 @@ def main():
     if WANDB_ENABLED:
         wandb.login(key=WANDB_API)
         wandb.init(
-            project="brain-age-sfcn-evaluation",
+            project="brainage-inference",
             name=f"sfcn_3regime_eval_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
             config={
                 'model_path': MODEL_PATH,
