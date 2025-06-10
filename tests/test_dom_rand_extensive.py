@@ -688,7 +688,7 @@ class TransformationTester:
 def main():
     """Main function to run the tests."""
     # Paths - modify these as needed
-    config_path = "C:/Projects/thesis_project/brain_age_pred/configs/sfcn/sfcn_dom_rand_tuning.yaml"
+    config_path = "C:/Projects/thesis_project/brain_age_pred/configs/sfcn_class/sfcn_class_dom_rand.yaml"
   
     # Check if config exists
     if not os.path.exists(config_path):
