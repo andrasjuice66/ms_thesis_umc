@@ -3,7 +3,7 @@ data:
   data_dir: "/scratch-shared/ajoos/"               # root that contains all images
   train_csv: "/home/ajoos/brain_age_pred/data/labels/train.csv"
   val_csv:   "/home/ajoos/brain_age_pred/data/labels/val.csv"
-  test_csv:  "/home/ajoos/brain_age_pred/data/labels/test.csv"
+  test_csv:  "/home/ajoos/brain_age_pred/data/labels/test_balanced.csv"
 
   image_key:  "image_path"
   age_key:    "age"
@@ -40,7 +40,7 @@ model:
 # -------------------------------------------------------------------------
 domain_randomization:
   use_domain_randomization: true
-  use_tumor_simulation: false
+  use_tumor_simulation: true
 
   # Progressive randomization parameters
   progressive_epochs: 50  # Number of epochs for progressive randomization
@@ -53,7 +53,7 @@ domain_randomization:
   # Transform probabilities
   transform_probs:
   
-    tumor: 0.3
+    tumor: 0.7
 
     # Geometric transforms
     flip: 0.5
@@ -130,9 +130,9 @@ domain_randomization:
     # Age-based segmentation
     use_age_based_segmentation: true
     segmentation_paths:
-      young: "brain_age_pred/data/segmentations/seg_18_40.nii.npy"
-      middle: "brain_age_pred/data/segmentations/seg_40_60.nii.npy"
-      old: "brain_age_pred/data/segmentations/seg_60_85.nii.npy"
+      young: "brain_age_pred/data/segmentations/seg_18_40.nii.gz"
+      middle: "brain_age_pred/data/segmentations/seg_40_60.nii.gz"
+      old: "brain_age_pred/data/segmentations/seg_60_85.nii.gz"
     age_ranges:
       young: [18, 40]
       middle: [40, 60]
@@ -147,7 +147,7 @@ domain_randomization:
     min_tumor_size: 100
     
     # Fluid dynamics (makes tumors more realistic)
-    use_fluid_dynamics: true
+    use_fluid_dynamics: false
     V_multiplier: 500.0
     dt: 0.1
     min_nt: 10
@@ -156,7 +156,6 @@ domain_randomization:
     bc: 'neumann'
     
     # Intensity parameters
-    modality: 'T1'  # Default modality if not in data
     intensity_variation: 0.3
     
     # Brain mask parameters (fallback when segmentation fails)
@@ -164,13 +163,13 @@ domain_randomization:
 
 # ──────────────────────────  TRAINING  ────────────────────────── #
 training:
-  batch_size: 16
+  batch_size: 8
   epochs: 150
 
   # optimiser & LR
   learning_rate: 0.001 #0.002193
   weight_decay:  0.001
-  optimizer: "sgd"                       # adam | adamw | sgd | rmsprop | radam | novograd
+  optimizer: "adamw"                       # adam | adamw | sgd | rmsprop | radam | novograd
   scheduler: "step"                      # cosine | plateau | onecycle | step | none
   scheduler_params:
     T_max: 100

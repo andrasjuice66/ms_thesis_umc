@@ -627,7 +627,7 @@ class TumorSimulationModule(MapTransform):
         result[key] = diseased_image
         result['tumor_mask'] = tumor_mask
         result['tumor_prob'] = tumor_prob
-        result['has_tumor'] = torch.tensor(True, dtype=torch.bool, device=self.device)
+        result['has_tumor'] = torch.tensor(True, dtype=torch.bool)
         result['tumor_modality'] = modality
         if age is not None:
             result['tumor_age_group'] = self._get_age_group(age) if self.seg_loader else 'unknown'
@@ -658,7 +658,7 @@ class TumorSimulationModule(MapTransform):
         if random.random() >= self.prob:
             # Add metadata indicating no tumor was applied
             result = dict(data)
-            result['has_tumor'] = torch.tensor(False, dtype=torch.bool, device=self.device)
+            result['has_tumor'] = torch.tensor(False, dtype=torch.bool)
             return result
         
         try:
@@ -667,7 +667,7 @@ class TumorSimulationModule(MapTransform):
             print(f"Warning: Tumor generation failed: {e}")
             traceback.print_exc()
             result = dict(data)
-            result['has_tumor'] = torch.tensor(False, dtype=torch.bool, device=self.device)
+            result['has_tumor'] = torch.tensor(False, dtype=torch.bool)
             return result
 
 
