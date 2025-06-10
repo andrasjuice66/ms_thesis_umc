@@ -44,6 +44,7 @@ from brain_age_pred.dom_rand.dataset import BADataset
 from brain_age_pred.dom_rand.domain_randomization import DomainRandomizer
 from brain_age_pred.training.metrics import calculate_metrics
 from brain_age_pred.utils.utils import read_csv
+from brain_age_pred.configs.config import Config
 
 # Import utility functions from SFCN model
 
@@ -64,6 +65,9 @@ MODEL_PATH = os.path.join(MODEL_DIR, 'sfcn_original_ckp.pth')
 
 TEST_CSV    = '/home/ajoos/brain_age_pred/data/labels/test_balanced.csv'
 DATA_ROOT   = '/scratch-shared/ajoos/'
+
+# Config file path
+CONFIG_PATH = str(project_root / 'brain_age_pred/configs/evaluate/sfcn_original.yaml')
 
 OUT_DIR     = Path('.')
 OUT_DIR.mkdir(exist_ok=True)
@@ -258,45 +262,33 @@ def load_test_data(csv_path, data_root):
     
     return file_paths, ages, modalities, sexes
 
-def create_domain_randomizer(use_tumor=False):
-    """Create domain randomizer with or without tumor simulation."""
+def create_domain_randomizer(config, use_tumor=False):
+    """Create domain randomizer with parameters from config file."""
+    
+    # Get domain randomization config from file
+    dr_config_from_file = config.get('domain_randomization', {})
     
     # Base domain randomization config
     dr_config = {
         'device': DEVICE,
         'use_domain_randomization': True,
-        'transform_probs': {
-            'flip': 0.5,
-            'affine': 0.8,
-            'contrast': 0.6,
-            'gamma': 0.5,
-            'blur': 0.4,
-            'bias': 0.5,
-            'scale_int': 0.4,
-            'shift_int': 0.4,
-            'hist_shift': 0.3,
-            'noise': 0.4,
-            'rician': 0.3,
-            'gibbs': 0.3,
-            'resolution': 0.5,
-            'coarse_do': 0.3,
-            'tumor': 0.3 if use_tumor else 0.0,
-        },
-        'output_shape': (160, 192, 160),
+        'transform_probs': dr_config_from_file.get('transform_probs', {}),
+        'output_shape': dr_config_from_file.get('output_shape', [160, 192, 160]),
         'use_tumor_simulation': use_tumor,
     }
     
+    # Override tumor probability based on use_tumor parameter
+    if 'transform_probs' in dr_config and 'tumor' in dr_config['transform_probs']:
+        dr_config['transform_probs']['tumor'] = dr_config_from_file['transform_probs']['tumor'] if use_tumor else 0.0
+    
+    # Add all other domain randomization parameters from config
+    for key, value in dr_config_from_file.items():
+        if key not in ['transform_probs', 'output_shape']:  # Don't override already set keys
+            dr_config[key] = value
+    
     # Add tumor config if needed
-    if use_tumor:
-        dr_config['tumor_config'] = {
-            'prob': 0.3,
-            'use_age_based_segmentation': False,  # Simplified for now
-            'modality': 'T1',  # Default modality
-            'perlin_res': [2, 2, 2],
-            'tumor_size_factor_range': (0.5, 2.0),
-            'min_tumor_size': 100,
-            'use_fluid_dynamics': True,
-        }
+    if use_tumor and 'tumor_config' in dr_config_from_file:
+        dr_config['tumor_config'] = dr_config_from_file['tumor_config']
     
     return DomainRandomizer(**dr_config)
 
@@ -355,6 +347,10 @@ def main():
     print(f"Bin range: {BIN_RANGE}, step: {BIN_STEP}, bins: {N_BINS}")
     print("-" * 60)
     
+    # Load configuration
+    print(f"Loading configuration from: {CONFIG_PATH}")
+    config = Config(CONFIG_PATH)
+    
     # Initialize wandb
     if WANDB_ENABLED:
         wandb.login(key=WANDB_API)
@@ -364,12 +360,14 @@ def main():
             config={
                 'model_path': MODEL_PATH,
                 'test_csv': TEST_CSV,
+                'config_path': CONFIG_PATH,
                 'bin_range': BIN_RANGE,
                 'bin_step': BIN_STEP,
                 'n_bins': N_BINS,
                 'n_folds': N_FOLDS,
                 'device': str(DEVICE),
                 'batch_size': BATCH_SIZE,
+                'domain_randomization_config': config.get('domain_randomization', {}),
             }
         )
     
@@ -424,8 +422,8 @@ def main():
     for fold in range(N_FOLDS):
         print(f"\nFold {fold+1}/{N_FOLDS}")
         
-        # Create domain randomizer (no tumor)
-        domain_randomizer = create_domain_randomizer(use_tumor=False)
+        # Create domain randomizer (no tumor) with config parameters
+        domain_randomizer = create_domain_randomizer(config, use_tumor=False)
         
         # Create dataset with domain randomization
         dr_dataset = BADataset(
@@ -486,8 +484,8 @@ def main():
     for fold in range(N_FOLDS):
         print(f"\nFold {fold+1}/{N_FOLDS}")
         
-        # Create domain randomizer with tumor simulation
-        domain_randomizer_tumor = create_domain_randomizer(use_tumor=True)
+        # Create domain randomizer with tumor simulation using config parameters
+        domain_randomizer_tumor = create_domain_randomizer(config, use_tumor=True)
         
         # Create dataset with domain randomization + tumor
         tumor_dataset = BADataset(
