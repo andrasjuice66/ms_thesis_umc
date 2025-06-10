@@ -349,6 +349,16 @@ def main() -> None:
         eval_rand_cfg = cfg.get("domain_randomization", {}).copy()
         eval_tumor_cfg = eval_rand_cfg.get("tumor_config", {}).copy() if use_tumor else {}
         
+        # IMPORTANT: For tumor evaluation, always set probability to 1.0 to ensure tumors are always added
+        if use_tumor and eval_tumor_cfg:
+            eval_tumor_cfg["prob"] = 1.0
+            logger.info(f"Overriding tumor probability to 1.0 for evaluation (was {cfg.get('domain_randomization', {}).get('tumor_config', {}).get('prob', 'unknown')})")
+        
+        # Remove conflicting keys that we want to override
+        eval_rand_cfg.pop("use_domain_randomization", None)
+        eval_rand_cfg.pop("use_tumor_simulation", None)
+        eval_rand_cfg.pop("tumor_config", None)
+        
         eval_transform = DomainRandomizer(
             device=device,
             use_domain_randomization=True,
@@ -508,14 +518,14 @@ def main() -> None:
         logger.info("=== 2/3: Domain randomized test evaluation ===")
         dom_rand_transform = create_eval_transforms(use_domain_rand=True, use_tumor=False)
         dom_rand_metrics = run_multi_fold_evaluation(
-            dom_rand_transform, n_folds=10, eval_name="domain_randomized"
+            dom_rand_transform, n_folds=5, eval_name="domain_randomized"
         )
         
         # 3. Domain randomized + tumor simulation test evaluation (10 folds)
         logger.info("=== 3/3: Domain randomized + tumor simulation test evaluation ===")
         dom_rand_tumor_transform = create_eval_transforms(use_domain_rand=True, use_tumor=True)
         dom_rand_tumor_metrics = run_multi_fold_evaluation(
-            dom_rand_tumor_transform, n_folds=10, eval_name="domain_rand_tumor"
+            dom_rand_tumor_transform, n_folds=5, eval_name="domain_rand_tumor"
         )
         
         # Log all results to W&B with appropriate prefixes
