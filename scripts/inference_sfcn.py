@@ -16,6 +16,13 @@ Author: <you>
 Date  : 2025-06-09
 """
 
+# -------- Set multiprocessing start method BEFORE other imports --------
+import torch.multiprocessing as mp
+try:
+    mp.set_start_method('spawn', force=True)
+except RuntimeError:
+    pass  # Already set
+
 # -------- imports ----------------------------------------------------------
 import os, sys, json, warnings
 from pathlib import Path
