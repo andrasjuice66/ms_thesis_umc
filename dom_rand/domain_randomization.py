@@ -530,7 +530,7 @@ class DomainRandomizer:
                 sample = self.tumor_simulator(sample)
             except Exception as e:
                 print(f"Warning: Tumor simulation failed: {e}")
-                sample['has_tumor'] = torch.tensor(False, dtype=torch.bool, device=self.device)
+                sample['has_tumor'] = torch.tensor(False, dtype=torch.bool)
 
         # Ensure tensor consistency
         img = sample[self.image_key]

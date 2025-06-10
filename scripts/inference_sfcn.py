@@ -386,6 +386,86 @@ def evaluate_regime(model, dataset, dataloader, regime_name, fold_idx=None):
     return metrics, predictions.numpy(), targets.numpy()
 
 
+def create_metrics_table(metrics, table_name, evaluation_type):
+    """Create a W&B table from metrics dictionary - same as BrainAgeNeXt"""
+    # Extract overall metrics
+    overall_metrics = {
+        "Metric": ["MAE"],
+        "Value": [metrics.get("mae_overall", metrics.get("mae", 0))]
+    }
+    
+    # Add standard deviation if available (for multi-fold evaluations)
+    if "mae_std" in metrics:
+        overall_metrics["Std"] = [metrics.get("mae_std", 0)]
+    
+    # Create overall table
+    overall_table = wandb.Table(columns=list(overall_metrics.keys()))
+    for i in range(len(overall_metrics["Metric"])):
+        row = [overall_metrics[key][i] for key in overall_metrics.keys()]
+        overall_table.add_data(*row)
+    
+    # Create modality-specific table if modality metrics exist
+    modality_data = []
+    modality_keys = [k for k in metrics.keys() if "_mae_" in k and not k.endswith("_std")]
+    modalities_found = set()
+    
+    for key in modality_keys:
+        if "_mae_" in key:
+            # Extract modality name (e.g., from "normal_test_mae_t1" get "t1")
+            parts = key.split("_mae_")
+            if len(parts) == 2:
+                modality = parts[1]
+                modalities_found.add(modality)
+    
+    for modality in modalities_found:
+        mae_key = f"{table_name.replace('_test', '')}_mae_{modality}"
+        mae_val = metrics.get(mae_key, 0)
+        
+        # Add standard deviation if available
+        if f"{mae_key}_std" in metrics:
+            mae_std = metrics.get(f"{mae_key}_std", 0)
+            modality_data.append([modality.upper(), f"{mae_val:.4f} ± {mae_std:.4f}"])
+        else:
+            modality_data.append([modality.upper(), f"{mae_val:.4f}"])
+    
+    modality_table = None
+    if modality_data:
+        columns = ["Modality", "MAE"]
+        modality_table = wandb.Table(columns=columns)
+        for row in modality_data:
+            modality_table.add_data(*row)
+    
+    # Log tables to W&B
+    wandb.log({f"{table_name}_overall_metrics": overall_table})
+    if modality_table:
+        wandb.log({f"{table_name}_modality_metrics": modality_table})
+    
+    return overall_table, modality_table
+
+def convert_sfcn_metrics_to_standard_format(sfcn_metrics, regime_name):
+    """Convert SFCN metric format to standard format matching BrainAgeNeXt"""
+    standard_metrics = {}
+    
+    # Extract overall MAE
+    mae_overall_key = f"{regime_name}_mae_overall"
+    if mae_overall_key in sfcn_metrics:
+        standard_metrics["mae"] = sfcn_metrics[mae_overall_key]
+    
+    # Extract modality-specific MAEs
+    for key, value in sfcn_metrics.items():
+        if f"{regime_name}_mae_" in key and not key.endswith("_overall"):
+            # Extract modality name
+            modality = key.replace(f"{regime_name}_mae_", "")
+            standard_metrics[f"{modality}_mae"] = value
+            
+    # Extract sample counts
+    for key, value in sfcn_metrics.items():
+        if f"{regime_name}_n_" in key:
+            modality = key.replace(f"{regime_name}_n_", "")
+            standard_metrics[f"{modality}_n"] = value
+    
+    return standard_metrics
+
 def main():
     """Main inference function."""
     print("Starting SFCN Inference Script")
@@ -397,13 +477,17 @@ def main():
     print(f"Loading configuration from: {CONFIG_PATH}")
     config = Config(CONFIG_PATH)
     
-    # Initialize wandb
+    # Initialize wandb with better structure like BrainAgeNeXt
     if WANDB_ENABLED:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        experiment_name = f"sfcn_3regime_eval_{timestamp}"
+        
         wandb.login(key=WANDB_API)
         wandb.init(
             project="brainage-inference",
-            name=f"sfcn_3regime_eval_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+            name=experiment_name,
             config={
+                'model': 'SFCN',
                 'model_path': MODEL_PATH,
                 'test_csv': TEST_CSV,
                 'config_path': CONFIG_PATH,
@@ -413,8 +497,10 @@ def main():
                 'n_folds': N_FOLDS,
                 'device': str(DEVICE),
                 'batch_size': BATCH_SIZE,
+                'evaluation_type': '3regime_inference',
                 'domain_randomization_config': config.get('domain_randomization', {}),
-            }
+            },
+            reinit=True,
         )
     
     # Load model
@@ -422,6 +508,16 @@ def main():
     
     # Load test data
     file_paths, ages, modalities, sexes = load_test_data(TEST_CSV, DATA_ROOT)
+    
+    # Log dataset info to W&B like BrainAgeNeXt
+    if WANDB_ENABLED:
+        wandb.log({
+            "dataset/num_samples": len(ages),
+            "dataset/age_min": min(ages),
+            "dataset/age_max": max(ages),
+            "dataset/age_mean": np.mean(ages),
+            "dataset/age_std": np.std(ages),
+        })
     
     all_results = {}
     
@@ -451,6 +547,12 @@ def main():
     # Evaluate normal test
     metrics, predictions, targets = evaluate_regime(model, normal_dataset, normal_loader, "normal_test")
     all_results.update(metrics)
+    
+    # Convert to standard format and log to W&B
+    normal_standard_metrics = convert_sfcn_metrics_to_standard_format(metrics, "normal_test")
+    if WANDB_ENABLED:
+        wandb.log({f"test/{k}": v for k, v in normal_standard_metrics.items()})
+        create_metrics_table(normal_standard_metrics, "normal_test", "Normal Test")
     
     print(f"Normal Test Results:")
     print(f"  Overall MAE: {metrics['normal_test_mae_overall']:.3f}")
@@ -500,11 +602,9 @@ def main():
     dr_maes = [result[f'domain_rand_fold{i+1}_mae_overall'] for i, result in enumerate(dr_results)]
     dr_mean_mae = np.mean(dr_maes)
     dr_std_mae = np.std(dr_maes)
-    all_results['domain_rand_mae_mean'] = dr_mean_mae
-    all_results['domain_rand_mae_std'] = dr_std_mae
     
-    print(f"\nDomain Randomization Results (10 folds):")
-    print(f"  Mean MAE: {dr_mean_mae:.3f} ± {dr_std_mae:.3f}")
+    # Create aggregated metrics in standard format
+    dr_standard_metrics = {"mae": dr_mean_mae, "mae_std": dr_std_mae}
     
     # Per-modality aggregation
     if modalities:
@@ -517,9 +617,19 @@ def main():
             if mod_maes:
                 mod_mean = np.mean(mod_maes)
                 mod_std = np.std(mod_maes)
-                all_results[f'domain_rand_mae_{mod}_mean'] = mod_mean
-                all_results[f'domain_rand_mae_{mod}_std'] = mod_std
-                print(f"  {mod.upper()} MAE: {mod_mean:.3f} ± {mod_std:.3f}")
+                dr_standard_metrics[f'{mod}_mae'] = mod_mean
+                dr_standard_metrics[f'{mod}_mae_std'] = mod_std
+    
+    # Log to W&B
+    if WANDB_ENABLED:
+        wandb.log({f"test_dom_rand/{k}": v for k, v in dr_standard_metrics.items()})
+        create_metrics_table(dr_standard_metrics, "domain_randomized_test", "Domain Randomized Test")
+    
+    all_results['domain_rand_mae_mean'] = dr_mean_mae
+    all_results['domain_rand_mae_std'] = dr_std_mae
+    
+    print(f"\nDomain Randomization Results (10 folds):")
+    print(f"  Mean MAE: {dr_mean_mae:.3f} ± {dr_std_mae:.3f}")
     
     # ========== REGIME 3: Domain Randomization + Tumor Simulation ==========
     print("\n" + "="*60)
@@ -562,11 +672,9 @@ def main():
     tumor_maes = [result[f'domain_rand_tumor_fold{i+1}_mae_overall'] for i, result in enumerate(tumor_results)]
     tumor_mean_mae = np.mean(tumor_maes)
     tumor_std_mae = np.std(tumor_maes)
-    all_results['domain_rand_tumor_mae_mean'] = tumor_mean_mae
-    all_results['domain_rand_tumor_mae_std'] = tumor_std_mae
     
-    print(f"\nDomain Randomization + Tumor Results (10 folds):")
-    print(f"  Mean MAE: {tumor_mean_mae:.3f} ± {tumor_std_mae:.3f}")
+    # Create aggregated metrics in standard format
+    tumor_standard_metrics = {"mae": tumor_mean_mae, "mae_std": tumor_std_mae}
     
     # Per-modality aggregation
     if modalities:
@@ -579,9 +687,19 @@ def main():
             if mod_maes:
                 mod_mean = np.mean(mod_maes)
                 mod_std = np.std(mod_maes)
-                all_results[f'domain_rand_tumor_mae_{mod}_mean'] = mod_mean
-                all_results[f'domain_rand_tumor_mae_{mod}_std'] = mod_std
-                print(f"  {mod.upper()} MAE: {mod_mean:.3f} ± {mod_std:.3f}")
+                tumor_standard_metrics[f'{mod}_mae'] = mod_mean
+                tumor_standard_metrics[f'{mod}_mae_std'] = mod_std
+    
+    # Log to W&B
+    if WANDB_ENABLED:
+        wandb.log({f"test_dom_rand_tumor/{k}": v for k, v in tumor_standard_metrics.items()})
+        create_metrics_table(tumor_standard_metrics, "domain_rand_tumor_test", "Domain Randomized + Tumor Test")
+    
+    all_results['domain_rand_tumor_mae_mean'] = tumor_mean_mae
+    all_results['domain_rand_tumor_mae_std'] = tumor_std_mae
+    
+    print(f"\nDomain Randomization + Tumor Results (10 folds):")
+    print(f"  Mean MAE: {tumor_mean_mae:.3f} ± {tumor_std_mae:.3f}")
     
     # ======================== SUMMARY ========================
     print("\n" + "="*60)
@@ -591,21 +709,51 @@ def main():
     print(f"2. Domain Randomization MAE:  {dr_mean_mae:.3f} ± {dr_std_mae:.3f}")
     print(f"3. Domain Rand + Tumor MAE:   {tumor_mean_mae:.3f} ± {tumor_std_mae:.3f}")
     
-    # Log all results to wandb
+    # Log summary comparison to W&B like BrainAgeNeXt
     if WANDB_ENABLED:
-        wandb.log(all_results)
+        wandb.log({
+            "evaluation_summary/normal_mae": all_results['normal_test_mae_overall'],
+            "evaluation_summary/dom_rand_mae": dr_mean_mae,
+            "evaluation_summary/dom_rand_tumor_mae": tumor_mean_mae,
+            "evaluation_summary/dom_rand_mae_std": dr_std_mae,
+            "evaluation_summary/dom_rand_tumor_mae_std": tumor_std_mae,
+        })
         
-        # Create summary table
-        summary_data = []
-        summary_data.append(['Normal Test', all_results['normal_test_mae_overall'], 0])
-        summary_data.append(['Domain Randomization', dr_mean_mae, dr_std_mae])
-        summary_data.append(['Domain Rand + Tumor', tumor_mean_mae, tumor_std_mae])
+        # Create visualization like BrainAgeNeXt
+        plt.figure(figsize=(12, 4))
         
-        summary_table = wandb.Table(
-            columns=['Regime', 'MAE', 'Std'],
-            data=summary_data
-        )
-        wandb.log({'summary_table': summary_table})
+        # Plot 1: MAE comparison
+        plt.subplot(1, 2, 1)
+        mae_values = [all_results['normal_test_mae_overall'], dr_mean_mae, tumor_mean_mae]
+        mae_stds = [0, dr_std_mae, tumor_std_mae]
+        labels = ['Normal', 'Domain Rand', 'Dom Rand + Tumor']
+        plt.bar(labels, mae_values, yerr=mae_stds, capsize=5)
+        plt.ylabel('MAE')
+        plt.title('MAE Comparison (SFCN)')
+        plt.grid(axis='y')
+        
+        # Plot 2: Summary table visualization
+        plt.subplot(1, 2, 2)
+        plt.axis('tight')
+        plt.axis('off')
+        table_data = [
+            ['Normal Test', f"{all_results['normal_test_mae_overall']:.3f}", ''],
+            ['Domain Randomization', f"{dr_mean_mae:.3f}", f"± {dr_std_mae:.3f}"],
+            ['Dom Rand + Tumor', f"{tumor_mean_mae:.3f}", f"± {tumor_std_mae:.3f}"]
+        ]
+        table = plt.table(cellText=table_data, colLabels=['Regime', 'MAE', 'Std'], 
+                         cellLoc='center', loc='center')
+        table.auto_set_font_size(False)
+        table.set_fontsize(12)
+        table.scale(1.2, 1.5)
+        plt.title('SFCN Evaluation Summary')
+        
+        plt.tight_layout()
+        plt.savefig('sfcn_3regime_evaluation_comparison.png', dpi=300, bbox_inches='tight')
+        
+        # Log the plot to W&B
+        wandb.log({"evaluation_plots": wandb.Image('sfcn_3regime_evaluation_comparison.png')})
+        plt.close()
         
         wandb.finish()
     

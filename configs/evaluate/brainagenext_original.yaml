@@ -163,7 +163,7 @@ domain_randomization:
     min_tumor_size: 100
     
     # Fluid dynamics (makes tumors more realistic)
-    use_fluid_dynamics: true
+    use_fluid_dynamics: false
     V_multiplier: 500.0
     dt: 0.1
     min_nt: 10
