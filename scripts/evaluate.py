@@ -388,7 +388,7 @@ def main() -> None:
     # Setup data loader kwargs
     dl_kwargs = dict(
         num_workers=cfg.get("data.num_workers", 6),
-        pin_memory=cfg.get("data.pin_memory", True),
+        pin_memory=cfg.get("data.pin_memory", False),
         pin_memory_device=cfg.get("data.pin_memory_device"),
         persistent_workers=cfg.get("data.persistent_workers", True),
         prefetch_factor=cfg.get("data.prefetch_factor"),
