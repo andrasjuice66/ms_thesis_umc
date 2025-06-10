@@ -37,10 +37,10 @@ evaluation:
   normal_test: true
   domain_randomized:
     enabled: true
-    n_folds: 20
+    n_folds: 5
   domain_rand_tumor:
     enabled: true
-    n_folds: 20
+    n_folds: 5
 
 # Transform settings
 transforms:
