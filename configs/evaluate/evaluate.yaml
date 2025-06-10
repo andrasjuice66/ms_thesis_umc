@@ -28,6 +28,30 @@ evaluation:
     enabled: true
     n_folds: 5
 
+# Model configuration - MUST match the training configs
+model:
+  in_channels: 1
+  dropout_rate: 0.5
+  
+  # For SFCN_Class models - CRITICAL: age range must match training
+  age_min: 20
+  age_max: 80
+  channels: [32, 64, 128, 256, 256, 64]
+  
+  # For BrainAgeNeXt models  
+  model_id: "B"
+  kernel_size: 3
+  deep_supervision: true
+  feature_size: 512
+  hidden_size: 64
+
+# Data configuration - age range for model creation
+data:
+  age_min: 20
+  age_max: 80
+
+  
+
 # W&B settings
 wandb:
   project: "brainage-inference"

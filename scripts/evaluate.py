@@ -61,8 +61,8 @@ def create_model(model_type: str, model_config: dict, device: torch.device, logg
         model = SFCN(
             in_channels=model_config.get("in_channels", 1),
             dropout_rate=model_config.get("dropout_rate", 0.5),
-            age_min=model_config.get("age_min", 18),
-            age_max=model_config.get("age_max", 90),
+            age_min=model_config.get("age_min", 20),
+            age_max=model_config.get("age_max", 80),
         ).to(device)
     elif model_type in ["sfcn_class", "sfcnclass"]:
         logger.info("Creating SFCN Class model")
@@ -70,8 +70,8 @@ def create_model(model_type: str, model_config: dict, device: torch.device, logg
             in_channels=model_config.get("in_channels", 1),
             dropout_rate=model_config.get("dropout_rate", 0.5),
             channels=model_config.get("channels", (32, 64, 128, 256, 256, 64)),
-            age_min=model_config.get("age_min", 18),
-            age_max=model_config.get("age_max", 90),
+            age_min=model_config.get("age_min", 20),
+            age_max=model_config.get("age_max", 80),
         ).to(device)
     elif model_type == "brainagenext":
         logger.info("Creating BrainAgeNext model")
@@ -278,8 +278,8 @@ def run_multi_fold_evaluation(cfg: Config, model_type: str, model_path: str, dev
             checkpoint_dir=None,
             log_dir=None,
             use_wandb=False,  # Disable wandb in trainer, we handle it here
-            age_min=cfg.get("data.age_min", 18),
-            age_max=cfg.get("data.age_max", 90),
+            age_min=cfg.get("data.age_min", 20),
+            age_max=cfg.get("data.age_max", 80),
         )
         
         # Run evaluation
@@ -434,7 +434,7 @@ def main() -> None:
                 test_loader=normal_test_loader,
                 config={},
                 device=device,
-                checkpoint_dir=None,
+                checkpoint_dir="/home/ajoos/brain_age_pred/output/checkpoints/",
                 log_dir=None,
                 use_wandb=False,
                 age_min=cfg.get("data.age_min", 18),
