@@ -243,7 +243,7 @@ def run_multi_fold_evaluation(cfg: Config, model_type: str, model_path: str, dev
             sexes=test_s,
             modalities=test_m,
             transform=transform,
-            mode="test",
+            mode="train",
             cache_size=0,  # No caching for evaluation
         )
         
@@ -503,7 +503,7 @@ def main() -> None:
                 wandb.log({"test_evaluation_summary": evaluation_table})
         
         # Save results to JSON
-        json.dump(results, open(results_dir / "evaluation_results.json", "w"), indent=2)
+        # json.dump(results, open(results_dir / "evaluation_results.json", "w"), indent=2)
         
         # 9. ─── summary ─────────────────────────────────────── #
         logger.info("=== Evaluation Summary ===")
