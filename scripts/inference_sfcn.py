@@ -237,12 +237,12 @@ def load_model(model_path, device):
 
 
 def load_test_data(csv_path, data_root):
-    """Load test dataset from CSV."""
+    """Load test dataset from CSV and filter by age range."""
     print(f"Loading test data from {csv_path}")
     
     # Read CSV
     df = pd.read_csv(csv_path)
-    print(f"Found {len(df)} samples in test set")
+    print(f"Found {len(df)} samples in original test set")
     
     # Extract required columns
     required_cols = ['image_path', 'age']
@@ -252,13 +252,35 @@ def load_test_data(csv_path, data_root):
         if col not in df.columns:
             raise ValueError(f"Required column '{col}' not found in CSV")
     
+    # Filter by age range (42 to 82, inclusive)
+    print(f"Filtering samples to age range: {BIN_RANGE[0]} to {BIN_RANGE[1]} years")
+    age_mask = (df['age'] >= BIN_RANGE[0]) & (df['age'] <= BIN_RANGE[1])
+    df_filtered = df[age_mask].copy()
+    
+    print(f"After age filtering: {len(df_filtered)} samples remaining")
+    print(f"Filtered out: {len(df) - len(df_filtered)} samples outside age range")
+    
+    if len(df_filtered) == 0:
+        raise ValueError(f"No samples found within age range {BIN_RANGE[0]}-{BIN_RANGE[1]}")
+    
+    # Print age distribution
+    print(f"Age range in filtered data: {df_filtered['age'].min():.1f} to {df_filtered['age'].max():.1f} years")
+    print(f"Mean age: {df_filtered['age'].mean():.1f} ± {df_filtered['age'].std():.1f} years")
+    
     # Construct full paths
-    file_paths = [os.path.join(data_root, path) for path in df['image_path']]
-    ages = df['age'].tolist()
+    file_paths = [os.path.join(data_root, path) for path in df_filtered['image_path']]
+    ages = df_filtered['age'].tolist()
     
     # Optional columns
-    modalities = df['modality'].tolist() if 'modality' in df.columns else None
-    sexes = df['sex'].tolist() if 'sex' in df.columns else None
+    modalities = df_filtered['modality'].tolist() if 'modality' in df_filtered.columns else None
+    sexes = df_filtered['sex'].tolist() if 'sex' in df_filtered.columns else None
+    
+    # Print modality distribution if available
+    if modalities:
+        modality_counts = df_filtered['modality'].value_counts()
+        print("Modality distribution:")
+        for mod, count in modality_counts.items():
+            print(f"  {mod}: {count} samples")
     
     # Verify files exist
     missing_files = [path for path in file_paths if not os.path.exists(path)]
