@@ -214,7 +214,7 @@ class BrainAgeTrainer:
             if self.loss_name == "kl_div" or self.loss_name == "exp_mae":
                 tgt   = self._soft_label(ages)
                 loss  = self._compute_loss(out, tgt)     # KL
-                pred  = (out.exp() * self.bin_centres).sum(dim=1, keepdim=True)
+                pred  = (out.exp() * self.bin_centres).sum(dim=1)
             else:
                 loss  = self._compute_loss(out, ages, wts)
                 # Ensure proper shape for regression predictions
