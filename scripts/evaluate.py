@@ -273,7 +273,7 @@ def run_multi_fold_evaluation(cfg: Config, model_type: str, model_path: str, dev
             train_loader=None,  # Not needed for evaluation
             val_loader=None,    # Not needed for evaluation
             test_loader=eval_test_loader,
-            config={},  # Minimal config for evaluation
+            config=create_trainer_config_for_model(model_type),  # ← Proper config
             device=device,
             checkpoint_dir="/home/ajoos/brain_age_pred/output/checkpoints/",
             log_dir=log_dir,
@@ -300,6 +300,19 @@ def run_multi_fold_evaluation(cfg: Config, model_type: str, model_path: str, dev
     
     return avg_metrics
 
+def create_trainer_config_for_model(model_type: str) -> dict:
+    """Create appropriate config for different model types"""
+    if model_type.lower() in ["sfcn_class", "sfcnclass"]:
+        return {
+            "loss": "kl_div",
+            "loss_params": {
+                "sigma": 1.0
+            }
+        }
+    else:
+        return {
+            "loss": "mae",  # Default for regression models
+        }
 
 def main() -> None:
     # Parse command line arguments
@@ -432,7 +445,7 @@ def main() -> None:
                 train_loader=None,
                 val_loader=None,
                 test_loader=normal_test_loader,
-                config={},
+                config=create_trainer_config_for_model(args.model),  # ← Proper config
                 device=device,
                 checkpoint_dir="/home/ajoos/brain_age_pred/output/checkpoints/",
                 log_dir=log_dir,
