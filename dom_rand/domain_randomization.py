@@ -400,16 +400,16 @@ class DomainRandomizer:
             ),
         ])
 
-        # 4. optional crop to ROI
-        if self.output_shape is not None:
-            tfms.append(
-                RandSpatialCropd(
-                    keys=[self.image_key],
-                    roi_size=self.output_shape,
-                    random_center=self.random_center,
-                    random_size=False,
-                )
-            )
+        # # 4. optional crop to ROI
+        # if self.output_shape is not None:
+        #     tfms.append(
+        #         RandSpatialCropd(
+        #             keys=[self.image_key],
+        #             roi_size=self.output_shape,
+        #             random_center=self.random_center,
+        #             random_size=False,
+        #         )
+        #     )
 
         # 5. tensor conversion
         tfms.append(ToTensord(keys=[self.image_key]))

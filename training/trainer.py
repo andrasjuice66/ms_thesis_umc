@@ -164,8 +164,12 @@ class BrainAgeTrainer:
         self.model.to(self.device)
         self.logger.info(f"Model: {self.model.__class__.__name__}")
         self.logger.info(f"Device: {self.device}")
-        self.logger.info(f"Training samples : {len(train_loader.dataset)}")
-        self.logger.info(f"Validation samples: {len(val_loader.dataset)}")
+        if train_loader is not None:
+            self.logger.info(f"Training samples : {len(train_loader.dataset)}")
+        if val_loader is not None:
+            self.logger.info(f"Validation samples: {len(val_loader.dataset)}")
+        if test_loader is not None:
+            self.logger.info(f"Test samples: {len(test_loader.dataset)}")
         self.logger.info(f"Use AMP: {self.use_amp}")
         self.logger.info(f"Learning rate: {self.cfg.get('learning_rate', 1e-4)}")
         self.logger.info(f"Total model parameters: {sum(p.numel() for p in self.model.parameters())}")
@@ -210,7 +214,7 @@ class BrainAgeTrainer:
             if self.loss_name == "kl_div" or self.loss_name == "exp_mae":
                 tgt   = self._soft_label(ages)
                 loss  = self._compute_loss(out, tgt)     # KL
-                pred  = (out.exp() * self.bin_centres).sum(dim=1, keepdim=True)
+                pred  = (out.exp() * self.bin_centres.to(out.device)).sum(dim=1, keepdim=True)
             else:
                 loss  = self._compute_loss(out, ages, wts)
                 # Ensure proper shape for regression predictions
@@ -245,8 +249,8 @@ class BrainAgeTrainer:
             return F.one_hot(idx, num_classes=self.n_bins).float()
 
         # integer centres → half-year boundaries
-        left  = self.bin_centres - self.bin_step / 2     # (n_bins,)
-        right = self.bin_centres + self.bin_step / 2
+        left  = self.bin_centres.to(ages.device) - self.bin_step / 2
+        right = self.bin_centres.to(ages.device) + self.bin_step / 2
         
         sqrt2 = math.sqrt(2.0)
         Φ = lambda x: 0.5 * (1 + torch.erf(x / (self.soft_sigma * sqrt2)))
