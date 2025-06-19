@@ -9,3 +9,4 @@ HD_BET/
 *.pth
 *.pt
 __pycache__/
+*.log
