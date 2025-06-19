@@ -6,7 +6,7 @@
 import os, sys, time
 import torch
 import numpy as np 
-from brain_age_pred.dom_rand.FluidAnomaly.misc import stream_3D
+from brain_age_pred.dataset.FluidAnomaly.misc import stream_3D
     
 seed = int(time.time())
 os.environ['PYTHONHASHSEED'] = str(seed)

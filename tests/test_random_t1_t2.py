@@ -17,7 +17,7 @@ import numpy as np
 import torch
 import matplotlib.pyplot as plt
 
-from brain_age_pred.dom_rand.domain_randomization import DomainRandomizer
+from brain_age_pred.dataset.domain_randomization import DomainRandomizer
 
 
 # ------------------------------------------------------------------------- #

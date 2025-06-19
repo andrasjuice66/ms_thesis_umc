@@ -46,8 +46,8 @@ from monai.transforms import (
 
 # project imports – keep identical to your existing tree
 
-from brain_age_pred.dom_rand.dataset import BADataset
-from brain_age_pred.dom_rand.domain_randomization import DomainRandomizer
+from brain_age_pred.dataset.dataset import BADataset
+from brain_age_pred.dataset.domain_randomization import DomainRandomizer
 from brain_age_pred.training.metrics import calculate_metrics
 from brain_age_pred.utils.utils import read_csv
 from brain_age_pred.configs.config import Config

@@ -12,9 +12,9 @@ import nibabel as nib
 from monai.transforms.transform import MapTransform
 import torch.nn.functional as F     # <-- one new import at top of file
 import traceback
-from brain_age_pred.dom_rand.FluidAnomaly.perlin3d import generate_shape_3d, generate_velocity_3d
-from brain_age_pred.dom_rand.FluidAnomaly.DiffEqs.pde import AdvDiffPDE
-from brain_age_pred.dom_rand.FluidAnomaly.DiffEqs.odeint import odeint
+from brain_age_pred.dataset.FluidAnomaly.perlin3d import generate_shape_3d, generate_velocity_3d
+from brain_age_pred.dataset.FluidAnomaly.DiffEqs.pde import AdvDiffPDE
+from brain_age_pred.dataset.FluidAnomaly.DiffEqs.odeint import odeint
 
 
 class AgeBasedSegmentationLoader:

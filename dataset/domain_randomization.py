@@ -37,13 +37,13 @@ from monai.transforms import (
 )
 
 # custom project transforms
-from brain_age_pred.dom_rand.custom_transformations import (
+from brain_age_pred.dataset.custom_transformations import (
     RandomResolutionD,
     RandGammaD,
 )
 
 # Import tumor simulator
-from brain_age_pred.dom_rand.tumor_simulation import TumorSimulationModule
+from brain_age_pred.dataset.tumor_simulation import TumorSimulationModule
 
 class DomainRandomizer:
     """

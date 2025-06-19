@@ -22,8 +22,8 @@ warnings.filterwarnings("ignore")
 project_root = Path(__file__).parent
 sys.path.append(str(project_root))
 
-from brain_age_pred.dom_rand.domain_randomization import DomainRandomizer
-from brain_age_pred.dom_rand.custom_transformations import RandomResolutionD, RandGammaD
+from brain_age_pred.dataset.domain_randomization import DomainRandomizer
+from brain_age_pred.dataset.custom_transformations import RandomResolutionD, RandGammaD
 
 # Individual transform imports
 from monai.transforms import (

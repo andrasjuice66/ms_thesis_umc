@@ -14,7 +14,7 @@ from monai.transforms import (
     LoadImaged,
     EnsureChannelFirstd,
 )
-from brain_age_pred.dom_rand.custom_transformations import (
+from brain_age_pred.dataset.custom_transformations import (
     RandomResolutionD,
     RandGammaD,
 )

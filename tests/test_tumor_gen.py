@@ -14,7 +14,7 @@ import torch
 import nibabel as nib
 import matplotlib.pyplot as plt
 
-from brain_age_pred.dom_rand.tumor_simulation import TumorSimulationModule          # <- your module
+from brain_age_pred.dataset.tumor_simulation import TumorSimulationModule          # <- your module
 
 # ---------------------------------------------------------
 # 1. CONFIGURATION

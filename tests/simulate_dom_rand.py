@@ -28,8 +28,8 @@ import torchio as tio
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from brain_age_pred.dom_rand.domain_randomization import DomainRandomizer
-from brain_age_pred.dom_rand.custom_transformations import RandomResolutionD, RandGammaD
+from brain_age_pred.dataset.domain_randomization import DomainRandomizer
+from brain_age_pred.dataset.custom_transformations import RandomResolutionD, RandGammaD
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, 
