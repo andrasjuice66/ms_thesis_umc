@@ -255,7 +255,7 @@
         "# ------------------------------------------------------------\n",
         "# Load Excel and concatenate all sheets\n",
         "# ------------------------------------------------------------\n",
-        "EXCEL_FILE = 'all_datasets_converted.xlsx'  # change path if needed\n",
+        "EXCEL_FILE = 'all_datasets_segmented.xlsx'  # change path if needed\n",
         "\n",
         "sheets = pd.read_excel(EXCEL_FILE, sheet_name=None)\n",
         "df_list = []\n",

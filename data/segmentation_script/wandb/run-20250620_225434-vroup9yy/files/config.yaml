@@ -1,0 +1,34 @@
+_wandb:
+    value:
+        cli_version: 0.19.9
+        m: []
+        python_version: 3.10.12
+        t:
+            "1":
+                - 55
+            "2":
+                - 55
+            "3":
+                - 16
+                - 23
+                - 55
+            "4": 3.10.12
+            "5": 0.19.9
+            "8":
+                - 5
+            "12": 0.19.9
+            "13": linux-x86_64
+gpu_acceleration:
+    value: false
+input_dir:
+    value: /mnt/c/Projects/thesis_project/Data/brain_age_preprocessed/SALD
+output_dir:
+    value: /mnt/c/Projects/thesis_project/Data/brain_age_segmented/SALD
+processing_type:
+    value: batch_segmentation
+threads:
+    value: 6
+tool:
+    value: SynthSeg
+total_files:
+    value: 496
