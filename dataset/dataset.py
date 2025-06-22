@@ -19,6 +19,7 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 from monai.transforms import CenterSpatialCropd
+import nibabel as nib
 
 __all__ = ["BADataset"]
 
@@ -74,7 +75,12 @@ class BADataset(Dataset):
     # ------------------------------------------------------------------ #
     @staticmethod
     def _load_volume(path: str) -> np.ndarray:
-        return np.load(path)           # (D,H,W)  dtype=float32
+        if path.endswith(".npy"):
+            return np.load(path)           # (D,H,W)  dtype=float32
+        elif path.endswith(".nii.gz"):
+            return nib.load(path).get_fdata()
+        else:
+            raise ValueError(f"Unsupported file extension: {path}")
 
     def __len__(self) -> int:
         return len(self.file_paths)

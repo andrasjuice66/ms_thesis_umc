@@ -1,335 +1,374 @@
-"""
-If you use this code, please cite one of the SynthSeg papers:
-https://github.com/BBillot/SynthSeg/blob/master/bibtex.bib
+# brain_age_pred/dataset/synthseg_generator.py
 
-Copyright 2020 Benjamin Billot
-
-Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
-compliance with the License. You may obtain a copy of the License at
-https://www.apache.org/licenses/LICENSE-2.0
-Unless required by applicable law or agreed to in writing, software distributed under the License is
-distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-implied. See the License for the specific language governing permissions and limitations under the
-License.
-"""
-
-
-# python imports
 import numpy as np
+from monai.transforms import (
+    Compose,
+    RandFlipd,
+    RandAffined,
+    RandAdjustContrastd,
+    RandBiasFieldd,
+    RandGaussianSmoothd,
+    RandGaussianNoised,
+    RandRicianNoised,
+    RandGibbsNoised,
+    RandScaleIntensityd,
+    RandShiftIntensityd,
+    RandHistogramShiftd,
+    ToTensord,
+    RandSpatialCropd,
+    SpatialPadd,
+)
+from brain_age_pred.dataset.custom_transformations import (
+    RandomResolutionD, 
+    RandGammaD,
+    HemisphereAwareFlipD,
+    DynamicResolutionD, 
+    IntensityClipNormalizeD,
+    ConvertLabelsD, 
+    ImageGradientsD
+)
+from brain_age_pred.brain_gen.gen_image_from_labels import SampleConditionalGMMd, MultiChannelSampleConditionalGMMd
 
-# project imports
-from SynthSeg.model_inputs import build_model_inputs
-from SynthSeg.labels_to_image_model import labels_to_image_model
+# Default SynthSeg label configuration
+DEFAULT_GENERATION_LABELS = np.array([
+    0,   # background
+    14, 15, 16, 24, 77, 85,  # neutral structures (ventricles, brainstem, etc.)
+    2, 3, 4, 7, 8, 10, 11, 12, 13, 17, 18, 26, 28,  # left structures
+    41, 42, 43, 46, 47, 49, 50, 51, 52, 53, 54, 58, 60  # right structures
+])
+DEFAULT_N_NEUTRAL_LABELS = 7  # background + 6 neutral structures
 
-# third-party imports
-from ext.lab2im import utils, edit_volumes
 
+class BABrainGenerator:
+    """
+    Turn a segmentation map into a *new*, domain‐randomized synthetic brain volume.
+    Enhanced with SynthSeg-style hemisphere-aware flipping, dynamic resolution, and intensity normalization.
+    Now includes: translation, cropping, label mapping, multi-channel support, and gradient computation.
+    """
 
-class BrainGenerator:
-
-    def __init__(self,
-                 labels_dir,
-                 generation_labels=None,
-                 n_neutral_labels=None,
-                 output_labels=None,
-                 subjects_prob=None,
-                 batchsize=1,
-                 n_channels=1,
-                 target_res=None,
-                 output_shape=None,
-                 output_div_by_n=None,
-                 prior_distributions='uniform',
-                 generation_classes=None,
-                 prior_means=None,
-                 prior_stds=None,
-                 use_specific_stats_for_channel=False,
-                 mix_prior_and_random=False,
-                 flipping=True,
-                 scaling_bounds=.2,
-                 rotation_bounds=15,
-                 shearing_bounds=.012,
-                 translation_bounds=False,
-                 nonlin_std=4.,
-                 nonlin_scale=.04,
-                 randomise_res=True,
-                 max_res_iso=4.,
-                 max_res_aniso=8.,
-                 data_res=None,
-                 thickness=None,
-                 bias_field_std=.7,
-                 bias_scale=.025,
-                 return_gradients=False):
-        """
-        This class is wrapper around the labels_to_image_model model. It contains the GPU model that generates images
-        from labels maps, and a python generator that supplies the input data for this model.
-        To generate pairs of image/labels you can just call the method generate_image() on an object of this class.
-
-        :param labels_dir: path of folder with all input label maps, or to a single label map.
-
-        # IMPORTANT !!!
-        # Each time we provide a parameter with separate values for each axis (e.g. with a numpy array or a sequence),
-        # these values refer to the RAS axes.
-
-        # label maps-related parameters
-        :param generation_labels: (optional) list of all possible label values in the input label maps.
-        Default is None, where the label values are directly gotten from the provided label maps.
-        If not None, can be a sequence or a 1d numpy array, or the path to a 1d numpy array.
-        If flipping is true (i.e. right/left flipping is enabled), generation_labels should be organised as follows:
-        background label first, then non-sided labels (e.g. CSF, brainstem, etc.), then all the structures of the same
-        hemisphere (can be left or right), and finally all the corresponding contralateral structures in the same order.
-        :param n_neutral_labels: (optional) number of non-sided generation labels. This is important only if you use
-        flipping augmentation. Default is total number of label values.
-        :param output_labels: (optional) list of the same length as generation_labels to indicate which values to use in
-        the label maps returned by this function, i.e. all occurrences of generation_labels[i] in the input label maps
-        will be converted to output_labels[i] in the returned label maps. Examples:
-        Set output_labels[i] to zero if you wish to erase the value generation_labels[i] from the returned label maps.
-        Set output_labels[i]=generation_labels[i] to keep the value generation_labels[i] in the returned maps.
-        Can be a list or a 1d numpy array. By default output_labels is equal to generation_labels.
-        :param subjects_prob: (optional) relative order of importance (doesn't have to be probabilistic), with which to
-        pick the provided label maps at each minibatch. Can be a sequence, a 1D numpy array, or the path to such an
-        array, and it must be as long as path_label_maps. By default, all label maps are chosen with the same importance
-
-        # output-related parameters
-        :param batchsize: (optional) numbers of images to generate per mini-batch. Default is 1.
-        :param n_channels: (optional) number of channels to be synthesised. Default is 1.
-        :param target_res: (optional) target resolution of the generated images and corresponding label maps.
-        If None, the outputs will have the same resolution as the input label maps.
-        Can be a number (isotropic resolution), a sequence, a 1d numpy array, or the path to a 1d numpy array.
-        :param output_shape: (optional) shape of the output image, obtained by randomly cropping the generated image.
-        Can be an integer (same size in all dimensions), a sequence, a 1d numpy array, or the path to a 1d numpy array.
-        Default is None, where no cropping is performed.
-        :param output_div_by_n: (optional) forces the output shape to be divisible by this value. It overwrites
-        output_shape if necessary. Can be an integer (same size in all dimensions), a sequence, a 1d numpy array, or
-        the path to a 1d numpy array.
-
-        # GMM-sampling parameters
-        :param generation_classes: (optional) Indices regrouping generation labels into classes of same intensity
-        distribution. Regrouped labels will thus share the same Gaussian when sampling a new image. Can be a sequence, a
-        1d numpy array, or the path to a 1d numpy array. It should have the same length as generation_labels, and
-        contain values between 0 and K-1, where K is the total number of classes.
-        Default is all labels have different classes (K=len(generation_labels)).
-        :param prior_distributions: (optional) type of distribution from which we sample the GMM parameters.
-        Can either be 'uniform', or 'normal'. Default is 'uniform'.
-        :param prior_means: (optional) hyperparameters controlling the prior distributions of the GMM means. Because
-        these prior distributions are uniform or normal, they require by 2 hyperparameters. Thus prior_means can be:
-        1) a sequence of length 2, directly defining the two hyperparameters: [min, max] if prior_distributions is
-        uniform, [mean, std] if the distribution is normal. The GMM means of are independently sampled at each
-        mini_batch from the same distribution.
-        2) an array of shape (2, K), where K is the number of classes (K=len(generation_labels) if generation_classes is
-        not given). The mean of the Gaussian distribution associated to class k in [0, ...K-1] is sampled at each
-        mini-batch from U(prior_means[0,k], prior_means[1,k]) if prior_distributions is uniform, and from
-        N(prior_means[0,k], prior_means[1,k]) if prior_distributions is normal.
-        3) an array of shape (2*n_mod, K), where each block of two rows is associated to hyperparameters derived
-        from different modalities. In this case, if use_specific_stats_for_channel is False, we first randomly select a
-        modality from the n_mod possibilities, and we sample the GMM means like in 2).
-        If use_specific_stats_for_channel is True, each block of two rows correspond to a different channel
-        (n_mod=n_channels), thus we select the corresponding block to each channel rather than randomly drawing it.
-        4) the path to such a numpy array.
-        Default is None, which corresponds to prior_means = [25, 225].
-        :param prior_stds: (optional) same as prior_means but for the standard deviations of the GMM.
-        Default is None, which corresponds to prior_stds = [5, 25].
-        :param use_specific_stats_for_channel: (optional) whether the i-th block of two rows in the prior arrays must be
-        only used to generate the i-th channel. If True, n_mod should be equal to n_channels. Default is False.
-        :param mix_prior_and_random: (optional) if prior_means is not None, enables to reset the priors to their default
-        values for half of these cases, and thus generate images of random contrast.
-
-        # spatial deformation parameters
-        :param flipping: (optional) whether to introduce right/left random flipping. Default is True.
-        :param scaling_bounds: (optional) range of the random sampling to apply at each mini-batch. The scaling factor
-        for each dimension is sampled from a uniform distribution of predefined bounds. Can either be:
-        1) a number, in which case the scaling factor is independently sampled from the uniform distribution of bounds
-        [1-scaling_bounds, 1+scaling_bounds] for each dimension.
-        2) a sequence, in which case the scaling factor is sampled from the uniform distribution of bounds
-        (1-scaling_bounds[i], 1+scaling_bounds[i]) for the i-th dimension.
-        3) a numpy array of shape (2, n_dims), in which case the scaling factor is sampled from the uniform distribution
-         of bounds (scaling_bounds[0, i], scaling_bounds[1, i]) for the i-th dimension.
-        4) False, in which case scaling is completely turned off.
-        Default is scaling_bounds = 0.2 (case 1)
-        :param rotation_bounds: (optional) same as scaling bounds but for the rotation angle, except that for cases 1
-        and 2, the bounds are centred on 0 rather than 1, i.e. [0+rotation_bounds[i], 0-rotation_bounds[i]].
-        Default is rotation_bounds = 15.
-        :param shearing_bounds: (optional) same as scaling bounds. Default is shearing_bounds = 0.012.
-        :param translation_bounds: (optional) same as scaling bounds. Default is translation_bounds = False, but we
-        encourage using it when cropping is deactivated (i.e. when output_shape=None in BrainGenerator).
-        :param nonlin_std: (optional) Maximum value for the standard deviation of the normal distribution from which we
-        sample the first tensor for synthesising the deformation field. Set to 0 if you wish to completely turn the
-        elastic deformation off.
-        :param nonlin_scale: (optional) if nonlin_std is strictly positive, factor between the shapes of the
-        input label maps and the shape of the input non-linear tensor.
-
-        # blurring/resampling parameters
-        :param randomise_res: (optional) whether to mimic images that would have been 1) acquired at low resolution, and
-        2) resampled to high resolution. The low resolution is uniformly resampled at each minibatch from [1mm, 9mm].
-        In that process, the images generated by sampling the GMM are:
-        1) blurred at the sampled LR, 2) downsampled at LR, and 3) resampled at target_resolution.
-        :param max_res_iso: (optional) If randomise_res is True, this enables to control the upper bound of the uniform
-        distribution from which we sample the random resolution U(min_res, max_res_iso), where min_res is the resolution
-        of the input label maps. Must be a number, and default is 4. Set to None to deactivate it, but if randomise_res
-        is True, at least one of max_res_iso or max_res_aniso must be given.
-        :param max_res_aniso: If randomise_res is True, this enables to downsample the input volumes to a random LR
-        in only 1 (random) direction. This is done by randomly selecting a direction i in range [0, n_dims-1], and
-        sampling a value in the corresponding uniform distribution U(min_res[i], max_res_aniso[i]), where min_res is the
-        resolution of the input label maps. Can be a number, a sequence, or a 1d numpy array. Set to None to deactivate
-        it, but if randomise_res is True, at least one of max_res_iso or max_res_aniso must be given.
-        :param data_res: (optional) specific acquisition resolution to mimic, as opposed to random resolution sampled
-        when randomise_res is True. This triggers a blurring which mimics the acquisition resolution, but downsampling
-        is optional (see param downsample). Default for data_res is None, where images are slightly blurred.
-        If the generated images are uni-modal, data_res can be a number (isotropic acquisition resolution), a sequence,
-        a 1d numpy array, or the path to a 1d numpy array. In the multi-modal case, it should be given as a numpy array
-        (or a path) of size (n_mod, n_dims), where each row is the acquisition resolution of the corresponding channel.
-        :param thickness: (optional) if data_res is provided, we can further specify the slice thickness of the low
-        resolution images to mimic. Must be provided in the same format as data_res. Default thickness = data_res.
-
-        # bias field parameters
-        :param bias_field_std: (optional) If strictly positive, this triggers the corruption of synthesised images with
-        a bias field. It is obtained by sampling a first small tensor from a normal distribution, resizing it to full
-        size, and rescaling it to positive values by taking the voxel-wise exponential. bias_field_std designates the
-        std dev of the normal distribution from which we sample the first tensor. Set to 0 to deactivate bias field.
-        :param bias_scale: (optional) If bias_field_std is strictly positive, this designates the ratio between
-        the size of the input label maps and the size of the first sampled tensor for synthesising the bias field.
-
-        :param return_gradients: (optional) whether to return the synthetic image or the magnitude of its spatial
-        gradient (computed with Sobel kernels).
-        """
-
-        # prepare data files
-        self.labels_paths = utils.list_images_in_folder(labels_dir)
-        if subjects_prob is not None:
-            self.subjects_prob = np.array(utils.reformat_to_list(subjects_prob, load_as_numpy=True), dtype='float32')
-            assert len(self.subjects_prob) == len(self.labels_paths), \
-                'subjects_prob should have the same length as labels_path, ' \
-                'had {} and {}'.format(len(self.subjects_prob), len(self.labels_paths))
-        else:
-            self.subjects_prob = None
-
-        # generation parameters
-        self.labels_shape, self.aff, self.n_dims, _, self.header, self.atlas_res = \
-            utils.get_volume_info(self.labels_paths[0], aff_ref=np.eye(4))
-        self.n_channels = n_channels
-        if generation_labels is not None:
-            self.generation_labels = utils.load_array_if_path(generation_labels)
-        else:
-            self.generation_labels, _ = utils.get_list_labels(labels_dir=labels_dir)
-        if output_labels is not None:
-            self.output_labels = utils.load_array_if_path(output_labels)
-        else:
-            self.output_labels = self.generation_labels
-        if n_neutral_labels is not None:
-            self.n_neutral_labels = n_neutral_labels
-        else:
-            self.n_neutral_labels = self.generation_labels.shape[0]
-        self.target_res = utils.load_array_if_path(target_res)
-        self.batchsize = batchsize
-        # preliminary operations
-        self.flipping = flipping
-        self.output_shape = utils.load_array_if_path(output_shape)
-        self.output_div_by_n = output_div_by_n
-        # GMM parameters
-        self.prior_distributions = prior_distributions
-        if generation_classes is not None:
-            self.generation_classes = utils.load_array_if_path(generation_classes)
-            assert self.generation_classes.shape == self.generation_labels.shape, \
-                'if provided, generation_classes should have the same shape as generation_labels'
-            unique_classes = np.unique(self.generation_classes)
-            assert np.array_equal(unique_classes, np.arange(np.max(unique_classes)+1)), \
-                'generation_classes should a linear range between 0 and its maximum value.'
-        else:
-            self.generation_classes = np.arange(self.generation_labels.shape[0])
-        self.prior_means = utils.load_array_if_path(prior_means)
-        self.prior_stds = utils.load_array_if_path(prior_stds)
-        self.use_specific_stats_for_channel = use_specific_stats_for_channel
-        # linear transformation parameters
-        self.scaling_bounds = utils.load_array_if_path(scaling_bounds)
-        self.rotation_bounds = utils.load_array_if_path(rotation_bounds)
-        self.shearing_bounds = utils.load_array_if_path(shearing_bounds)
-        self.translation_bounds = utils.load_array_if_path(translation_bounds)
-        # elastic transformation parameters
-        self.nonlin_std = nonlin_std
-        self.nonlin_scale = nonlin_scale
-        # blurring parameters
-        self.randomise_res = randomise_res
+    def __init__(
+        self,
+        prior_means:  np.ndarray,
+        prior_stds:   np.ndarray,
+        distribution: str,
+        prob:         dict,
+        rotation_range: float,
+        scaling_range:  float,
+        shearing_bounds: float,
+        # NEW: Translation bounds
+        translation_bounds: float,
+        contrast_range:  tuple,
+        log_gamma_std:   float,
+        shift_offset:    float,
+        hist_control_points: int,
+        noise_mean: float,
+        noise_std:  float,
+        rician_std: float,
+        gibbs_alpha: float,
+        blur_sigma:  float,
+        bias_field_rng: tuple,
+        min_res:       float,
+        max_res_iso:   float,
+        # SynthSeg-style parameters
+        generation_labels: np.ndarray = None,
+        n_neutral_labels: int = None,
+        # NEW: Output labels for remapping
+        output_labels: np.ndarray = None,
+        use_hemisphere_aware_flip: bool = True,
+        use_dynamic_resolution: bool = True,
+        use_intensity_clip_normalize: bool = True,
+        max_res_aniso: float = 8.0,
+        atlas_res: float = 1.0,
+        intensity_clip_value: float = 300.0,
+        intensity_gamma_std: float = 0.5,
+        # NEW: Multi-channel support
+        n_channels: int = 1,
+        use_specific_stats_for_channel: bool = False,
+        # NEW: Cropping parameters
+        output_shape: tuple = None,
+        use_random_cropping: bool = False,
+        # NEW: Gradient computation
+        return_gradients: bool = False,
+        # NEW: Slice thickness simulation
+        thickness: float = None,
+    ):
+        self.image_key    = "image"
+        self.label_key    = "labels"  # For output labels
+        self.prior_means  = prior_means
+        self.prior_stds   = prior_stds
+        self.distribution = distribution
+        self.prob         = prob
+        
+        # Spatial transform parameters
+        self.rotate_rad   = np.deg2rad(rotation_range)
+        self.scaling_rng  = scaling_range
+        self.shearing    = shearing_bounds
+        self.translation_bounds = translation_bounds  # NEW
+        
+        # Intensity transform parameters
+        self.contrast_rng= contrast_range
+        self.log_gamma_std = log_gamma_std
+        self.shift_offset  = shift_offset
+        self.hist_control_points = hist_control_points
+        
+        # Noise parameters
+        self.noise_mean  = noise_mean
+        self.noise_std   = noise_std
+        self.rician_std  = rician_std
+        self.gibbs_alpha = gibbs_alpha
+        self.blur_sigma  = blur_sigma
+        self.bias_field_rng = bias_field_rng
+        
+        # Resolution parameters
+        self.min_res     = min_res
         self.max_res_iso = max_res_iso
         self.max_res_aniso = max_res_aniso
-        self.data_res = utils.load_array_if_path(data_res)
-        assert not (self.randomise_res & (self.data_res is not None)), \
-            'randomise_res and data_res cannot be provided at the same time'
-        self.thickness = utils.load_array_if_path(thickness)
-        # bias field parameters
-        self.bias_field_std = bias_field_std
-        self.bias_scale = bias_scale
+        self.atlas_res = atlas_res
+        self.thickness = thickness if thickness is not None else atlas_res  # NEW
+        
+        # SynthSeg-style enhancements
+        self.generation_labels = generation_labels if generation_labels is not None else DEFAULT_GENERATION_LABELS
+        self.n_neutral_labels = n_neutral_labels if n_neutral_labels is not None else DEFAULT_N_NEUTRAL_LABELS
+        self.output_labels = output_labels if output_labels is not None else self.generation_labels  # NEW
+        self.use_hemisphere_aware_flip = use_hemisphere_aware_flip
+        self.use_dynamic_resolution = use_dynamic_resolution
+        self.use_intensity_clip_normalize = use_intensity_clip_normalize
+        self.intensity_clip_value = intensity_clip_value
+        self.intensity_gamma_std = intensity_gamma_std
+        
+        # NEW: Multi-channel support
+        self.n_channels = n_channels
+        self.use_specific_stats_for_channel = use_specific_stats_for_channel
+        
+        # NEW: Cropping parameters
+        self.output_shape = output_shape
+        self.use_random_cropping = use_random_cropping
+        
+        # NEW: Gradient computation
         self.return_gradients = return_gradients
 
-        # build transformation model
-        self.labels_to_image_model, self.model_output_shape = self._build_labels_to_image_model()
+        self._build_pipeline()
 
-        # build generator for model inputs
-        self.model_inputs_generator = self._build_model_inputs_generator(mix_prior_and_random)
+    def _build_pipeline(self):
+        tx = []
 
-        # build brain generator
-        self.brain_generator = self._build_brain_generator()
+        # 0) OPTIONAL: Random cropping of input labels (SynthSeg-style)
+        if self.use_random_cropping and self.output_shape is not None:
+            # First pad to ensure we have enough space for cropping
+            tx.append(
+                SpatialPadd(
+                    keys=[self.image_key],
+                    spatial_size=self.output_shape,
+                    mode="constant",
+                    constant_values=0,
+                )
+            )
+            # Then randomly crop to desired output shape
+            tx.append(
+                RandSpatialCropd(
+                    keys=[self.image_key],
+                    roi_size=self.output_shape,
+                    random_size=False,
+                )
+            )
 
-    def _build_labels_to_image_model(self):
-        # build_model
-        lab_to_im_model = labels_to_image_model(labels_shape=self.labels_shape,
-                                                n_channels=self.n_channels,
-                                                generation_labels=self.generation_labels,
-                                                output_labels=self.output_labels,
-                                                n_neutral_labels=self.n_neutral_labels,
-                                                atlas_res=self.atlas_res,
-                                                target_res=self.target_res,
-                                                output_shape=self.output_shape,
-                                                output_div_by_n=self.output_div_by_n,
-                                                flipping=self.flipping,
-                                                aff=np.eye(4),
-                                                scaling_bounds=self.scaling_bounds,
-                                                rotation_bounds=self.rotation_bounds,
-                                                shearing_bounds=self.shearing_bounds,
-                                                translation_bounds=self.translation_bounds,
-                                                nonlin_std=self.nonlin_std,
-                                                nonlin_scale=self.nonlin_scale,
-                                                randomise_res=self.randomise_res,
-                                                max_res_iso=self.max_res_iso,
-                                                max_res_aniso=self.max_res_aniso,
-                                                data_res=self.data_res,
-                                                thickness=self.thickness,
-                                                bias_field_std=self.bias_field_std,
-                                                bias_scale=self.bias_scale,
-                                                return_gradients=self.return_gradients)
-        out_shape = lab_to_im_model.output[0].get_shape().as_list()[1:]
-        return lab_to_im_model, out_shape
+        # 1) Spatial transforms on the *segmentation*
+        if self.use_hemisphere_aware_flip:
+            # Use hemisphere-aware flipping instead of simple random flip
+            tx.append(
+                HemisphereAwareFlipD(
+                    keys=[self.image_key],
+                    generation_labels=self.generation_labels,
+                    n_neutral_labels=self.n_neutral_labels,
+                    spatial_axis=0,  # Left-right axis
+                    prob=self.prob["flip"],
+                )
+            )
+        else:
+            # Use standard MONAI flip
+            tx.append(
+                RandFlipd(
+                    keys=[self.image_key],
+                    prob=self.prob["flip"],
+                    spatial_axis=(0, 1, 2),
+                )
+            )
+        
+        # Affine transforms - NOW WITH TRANSLATION!
+        tx.append(
+            RandAffined(
+                keys=[self.image_key],
+                prob=self.prob["affine"],
+                rotate_range=(self.rotate_rad,) * 3,
+                scale_range=(self.scaling_rng - 1,) * 3,
+                shear_range=(self.shearing,) * 3,
+                translate_range=(self.translation_bounds,) * 3,  # NEW: Translation!
+                mode="nearest",   # preserve labels
+                padding_mode="constant",
+                constant_values=0,
+            )
+        )
 
-    def _build_model_inputs_generator(self, mix_prior_and_random):
-        # build model's inputs generator
-        model_inputs_generator = build_model_inputs(path_label_maps=self.labels_paths,
-                                                    n_labels=len(self.generation_labels),
-                                                    batchsize=self.batchsize,
-                                                    n_channels=self.n_channels,
-                                                    subjects_prob=self.subjects_prob,
-                                                    generation_classes=self.generation_classes,
-                                                    prior_means=self.prior_means,
-                                                    prior_stds=self.prior_stds,
-                                                    prior_distributions=self.prior_distributions,
-                                                    use_specific_stats_for_channel=self.use_specific_stats_for_channel,
-                                                    mix_prior_and_random=mix_prior_and_random)
-        return model_inputs_generator
+        # 2) Sample intensities from labels → synthetic image
+        if self.n_channels == 1:
+            # Single channel - standard approach
+            tx.append(
+                SampleConditionalGMMd(
+                    seg_key=self.image_key,
+                    out_key=self.image_key,
+                    prior_means=self.prior_means,
+                    prior_stds =self.prior_stds,
+                    distribution=self.distribution,
+                )
+            )
+        else:
+            # Multi-channel generation
+            tx.append(
+                MultiChannelSampleConditionalGMMd(  # NEW: Multi-channel version
+                    seg_key=self.image_key,
+                    out_key=self.image_key,
+                    prior_means=self.prior_means,
+                    prior_stds=self.prior_stds,
+                    distribution=self.distribution,
+                    n_channels=self.n_channels,
+                    use_specific_stats_for_channel=self.use_specific_stats_for_channel,
+                )
+            )
 
-    def _build_brain_generator(self):
-        while True:
-            model_inputs = next(self.model_inputs_generator)
-            [image, labels] = self.labels_to_image_model.predict(model_inputs)
-            yield image, labels
+        # 3) Intensity clipping and normalization (SynthSeg-style)
+        if self.use_intensity_clip_normalize:
+            tx.append(
+                IntensityClipNormalizeD(
+                    keys=[self.image_key],
+                    clip_value=self.intensity_clip_value,
+                    normalise=True,
+                    gamma_std=self.intensity_gamma_std,
+                    separate_channels=True,
+                    prob=0.95,
+                )
+            )
 
-    def generate_brain(self):
-        """call this method when an object of this class has been instantiated to generate new brains"""
-        (image, labels) = next(self.brain_generator)
-        # put back images in native space
-        list_images = list()
-        list_labels = list()
-        for i in range(self.batchsize):
-            list_images.append(edit_volumes.align_volume_to_ref(image[i], np.eye(4),
-                                                                aff_ref=self.aff, n_dims=self.n_dims))
-            list_labels.append(edit_volumes.align_volume_to_ref(labels[i], np.eye(4),
-                                                                aff_ref=self.aff, n_dims=self.n_dims))
-        image = np.squeeze(np.stack(list_images, axis=0))
-        labels = np.squeeze(np.stack(list_labels, axis=0))
-        return image, labels
+        # 4) Additional intensity‐space augmentations
+        tx.extend([
+            RandAdjustContrastd(
+                keys=[self.image_key],
+                prob=self.prob["contrast"],
+                gamma=self.contrast_rng,
+            ),
+            RandGammaD(
+                keys=[self.image_key],
+                log_gamma_std=self.log_gamma_std,
+                prob=self.prob["gamma"],
+            ),
+            RandScaleIntensityd(
+                keys=[self.image_key],
+                prob=self.prob["scale_int"],
+                factors=self.contrast_rng,
+            ),
+            RandShiftIntensityd(
+                keys=[self.image_key],
+                prob=self.prob["shift_int"],
+                offsets=self.shift_offset,
+            ),
+            RandHistogramShiftd(
+                keys=[self.image_key],
+                prob=self.prob["hist_shift"],
+                num_control_points=self.hist_control_points,
+            ),
+        ])
+
+        # 5) Add artifacts & simulate resolution
+        tx.extend([
+            RandGaussianNoised(
+                keys=[self.image_key],
+                prob=self.prob["noise"],
+                mean=self.noise_mean,
+                std=self.noise_std,
+            ),
+            RandRicianNoised(
+                keys=[self.image_key],
+                prob=self.prob["rician"],
+                std=self.rician_std,
+            ),
+            RandGibbsNoised(
+                keys=[self.image_key],
+                prob=self.prob["gibbs"],
+                alpha=self.gibbs_alpha,
+            ),
+            RandGaussianSmoothd(
+                keys=[self.image_key],
+                prob=self.prob["blur"],
+                sigma_x=self.blur_sigma,
+                sigma_y=self.blur_sigma,
+                sigma_z=self.blur_sigma,
+            ),
+            RandBiasFieldd(
+                keys=[self.image_key],
+                prob=self.prob["bias"],
+                coeff_range=self.bias_field_rng,
+            ),
+        ])
+        
+        # 6) Resolution simulation - WITH SLICE THICKNESS
+        if self.use_dynamic_resolution:
+            # Dynamic resolution sampling (SynthSeg-style)
+            tx.append(
+                DynamicResolutionD(
+                    keys=[self.image_key],
+                    atlas_res=self.atlas_res,
+                    max_res_iso=self.max_res_iso,
+                    max_res_aniso=self.max_res_aniso,
+                    thickness=self.thickness,  # NEW: Slice thickness
+                    randomise_res=True,
+                    prob=self.prob["resolution"],
+                )
+            )
+        else:
+            # Use the original static resolution transform
+            tx.append(
+                RandomResolutionD(
+                    keys=[self.image_key],
+                    min_res=self.min_res,
+                    max_res_iso=self.max_res_iso,
+                    prob=self.prob["resolution"],
+                )
+            )
+
+        # 7) NEW: Gradient computation (optional)
+        if self.return_gradients:
+            tx.append(
+                ImageGradientsD(
+                    keys=[self.image_key],
+                    method="sobel",
+                    normalize=True,
+                )
+            )
+
+        # 8) NEW: Label remapping (convert generation labels to output labels)
+        if not np.array_equal(self.generation_labels, self.output_labels):
+            tx.append(
+                ConvertLabelsD(
+                    keys=[self.image_key + "_original_labels"],  # We'll need to preserve original labels
+                    generation_labels=self.generation_labels,
+                    output_labels=self.output_labels,
+                    background_label=0,
+                )
+            )
+
+        # 9) Convert to tensor
+        tx.append(ToTensord(keys=[self.image_key]))
+
+        self.transform = Compose(tx)
+
+    def __call__(self, sample: dict) -> dict:
+        # Store original labels if we need label remapping
+        if not np.array_equal(self.generation_labels, self.output_labels):
+            sample[self.image_key + "_original_labels"] = sample[self.image_key].copy()
+        
+        result = self.transform(sample)
+        
+        # Return both image and labels if label conversion was applied
+        if not np.array_equal(self.generation_labels, self.output_labels):
+            result[self.label_key] = result.pop(self.image_key + "_original_labels")
+        
+        return result

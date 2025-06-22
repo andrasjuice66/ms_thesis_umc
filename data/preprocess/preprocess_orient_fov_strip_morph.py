@@ -5,6 +5,7 @@ and restart‑aware logic that only checks for the final image.
 import argparse
 import logging
 import os
+import shutil
 import subprocess
 import threading
 import time
@@ -110,31 +111,16 @@ def run_synthmorph_affine(log, inp, mni, out, xfm):
 def find_images(root):
     """
     Walk `root` recursively, logging each candidate and yielding it.
-    Excludes images with SCIC_T2w, SCIC_T1w, and T2star.
+    Only includes T1w .nii.gz files that do NOT contain 'ses-2'.
     """
     log = logging.getLogger()
     log.info(f"Scanning directory for images: {root}")
     for p in root.rglob("*"):
-        if p.suffixes and p.suffixes[-1] in (".nii", ".gz") and \
-           any(m in p.name.lower() for m in ("t1w", "t2w", "flair")) and \
-           not any(exclude in p.name for exclude in ["SCIC_T2w", "SCIC_T1w", "T2star"]):
+        if (p.name.endswith(".nii.gz") and 
+            "T1w" in p.name and 
+            "ses-2" not in p.name):
             log.info(f"Found image: {p}")
             yield p
-
-# def find_images(root):
-#     """
-#     Walk `root` recursively, logging each candidate and yielding it.
-#     Only includes images with both 'ses-1_run-1' AND 'T1' in their name.
-#     Excludes images with SCIC_T2w, SCIC_T1w, and T2star.
-#     """
-#     log = logging.getLogger()
-#     log.info(f"Scanning directory for images: {root}")
-#     for p in root.rglob("*"):
-#         if p.suffixes and p.suffixes[-1] in (".nii", ".gz") and \
-#            "T1" in p.name and \
-#            not any(exclude in p.name for exclude in ["SCIC_T2w", "SCIC_T1w", "T2star"]):
-#             log.info(f"Found image: {p}")
-#             yield p
 
 
 def strip_suffixes(n):
@@ -147,59 +133,74 @@ def strip_suffixes(n):
 def process_image(img, base, out_root, mni):
     log = logging.getLogger()
     stem = strip_suffixes(img.name)
+    
+    # Final output file
+    final = out_root / img.name
+    
+    # Skip if final output already exists
+    if final.exists():
+        log.info(f"Skipping (final exists): {final.name}")
+        return
+    
+    # Copy input file to local destination directory for processing
+    local_input = out_root / f"{stem}_input.nii.gz"
+    log.info(f"Copying {img.name} to local directory for processing")
+    shutil.copy2(img, local_input)
+    
+    try:
+        # Process using local paths
+        o = out_root / f"{stem}_oriented.nii.gz"
+        check_and_swap_orientation(log, local_input, o)
 
-    o = out_root / f"{stem}_oriented.nii.gz"
-    if not o.exists():
-        check_and_swap_orientation(log, img, o)
-
-    f = out_root / f"{stem}_fov.nii.gz"
-    if not f.exists():
+        f = out_root / f"{stem}_fov.nii.gz"
         run_robust_fov(log, o, f)
 
-    # DENOISING STEP - COMMENTED OUT
-    # d = out_root / f"{stem}_den.nii.gz"
-    # if not d.exists():
-    #     run_denoise(log, f, d)
+        # DENOISING STEP - COMMENTED OUT
+        # d = out_root / f"{stem}_den.nii.gz"
+        # run_denoise(log, f, d)
 
-    # N4 BIAS FIELD CORRECTION STEP - COMMENTED OUT
-    # n4 = out_root / f"{stem}_n4.nii.gz"
-    # if not n4.exists():
-    #     run_n4(log, d, n4)
+        # N4 BIAS FIELD CORRECTION STEP - COMMENTED OUT
+        # n4 = out_root / f"{stem}_n4.nii.gz"
+        # run_n4(log, d, n4)
 
-    # Using fov result directly for brain extraction since denoising and n4 are skipped
-    b = out_root / f"{stem}_brain.nii.gz"
-    if not b.exists():
-        run_synthstrip(log, f, b)  # Changed from n4 to f (fov output)
+        # Using fov result directly for brain extraction since denoising and n4 are skipped
+        # b = out_root / f"{stem}_brain.nii.gz"
+        # run_synthstrip(log, f, b)
 
-    final = out_root / img.name
-    xfm   = out_root / f"{stem}.lta"
-    if not final.exists():
-        run_synthmorph_affine(log, b, mni, final, xfm)
-    else:
-        log.info(f"Skipping affine (final exists): {final.name}")
+        # Final registration step
+        xfm = out_root / f"{stem}.lta"
+        run_synthmorph_affine(log, f, mni, final, xfm)
+        
+        log.info(f"Successfully processed: {img.name}")
 
-    # remove intermediates + .lta
-    for t in (o, f, b, xfm):  # Removed d and n4 from cleanup list
-        try:
-            t.unlink()
-        except OSError:
-            pass
+    finally:
+        # Clean up all intermediate files
+        intermediate_files = [
+            local_input,  # The copied input file
+            out_root / f"{stem}_oriented.nii.gz",
+            out_root / f"{stem}_fov.nii.gz", 
+            out_root / f"{stem}_brain.nii.gz",
+            out_root / f"{stem}.lta"
+        ]
+        
+        for temp_file in intermediate_files:
+            try:
+                if temp_file.exists():
+                    temp_file.unlink()
+                    log.debug(f"Cleaned up: {temp_file.name}")
+            except OSError as e:
+                log.warning(f"Could not clean up {temp_file.name}: {e}")
 
 
-def main():
-    p = argparse.ArgumentParser()
-    p.add_argument("base_root", type=Path)
-    p.add_argument("dataset", help="e.g. CamCAN")
-    args = p.parse_args()
-
+def main(data_root, out_root):
+    # Hardcoded paths
+    
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s: %(message)s"
     )
     log = logging.getLogger()
-
-    data_root = args.base_root / args.dataset
-    out_root = args.base_root / "brain_age_preprocessed" / args.dataset
+    
     out_root.mkdir(exist_ok=True, parents=True)
 
     # Cache file for image paths
@@ -234,11 +235,11 @@ def main():
     # W&B run
     run = wandb.init(
         project="thesis_preprocess",
-        name=args.dataset,
+        name=f"{out_root.name}",
         id=wandb.util.generate_id(),
         resume="allow",
         config={
-            "dataset": args.dataset,
+            "dataset": out_root.name,
             "total": total,
             "cpus": os.cpu_count(),
             "gpus": NUM_GPUS
@@ -250,11 +251,11 @@ def main():
 
     start = time.time()
     done = done0
-    mni = args.base_root / "Standard" / "MNI152_T1_1mm_Brain.nii.gz"
+    mni = Path("/mnt/c/Projects/thesis_project/Data/MNI152lin_T1_1mm.nii.gz")
 
     with ThreadPoolExecutor(max_workers=os.cpu_count() or 4) as exe:
         futures = {
-            exe.submit(process_image, img, args.base_root, out_root, mni): img
+            exe.submit(process_image, img, data_root.parent, out_root, mni): img
             for img in pending
         }
         for fut in as_completed(futures):
@@ -290,4 +291,20 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # data_root = Path("/mnt/c/Projects/thesis_project/Data/CoRR")
+    # out_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed/CoRR")
+    # main(data_root, out_root)
+
+    # data_root = Path("/mnt/c/Projects/thesis_project/Data/SALD")
+    # out_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed/SALD")
+    # main(data_root, out_root)
+
+    # data_root = Path("/mnt/c/Projects/thesis_project/Data/PanGen")
+    # out_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed/PanGen")
+    # main(data_root, out_root)
+
+    data_root = Path("/mnt/c/Projects/thesis_project/Data/AOMIC_ID1000")
+    out_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed/AOMIC_ID1000")
+    main(data_root, out_root)
+
+
