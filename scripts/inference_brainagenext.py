@@ -37,8 +37,8 @@ project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
 
 # Import project modules
-from brain_age_pred.dom_rand.dataset import BADataset
-from brain_age_pred.dom_rand.domain_randomization import DomainRandomizer
+from brain_age_pred.dataset.dataset import BADataset
+from brain_age_pred.dataset.domain_randomization import DomainRandomizer
 from brain_age_pred.utils.utils import read_csv, load_checkpoint
 from brain_age_pred.training.metrics import calculate_metrics
 

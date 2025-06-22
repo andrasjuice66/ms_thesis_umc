@@ -25,7 +25,7 @@ import torch
 # ------------------------------------------------------------------ #
 #  EDIT HERE if your project import path is different
 # ------------------------------------------------------------------ #
-from brain_age_pred.dom_rand.domain_randomization import DomainRandomizer
+from brain_age_pred.dataset.domain_randomization import DomainRandomizer
 
 # ------------------------------------------------------------------ #
 #  HARD-CODED INPUT VOLUME (edit if you move the file)

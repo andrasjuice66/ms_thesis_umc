@@ -29,8 +29,8 @@ project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
 
 from brain_age_pred.configs.config import Config
-from brain_age_pred.dom_rand.dataset import BADataset
-from brain_age_pred.dom_rand.domain_randomization import DomainRandomizer
+from brain_age_pred.dataset.dataset import BADataset
+from brain_age_pred.dataset.domain_randomization import DomainRandomizer
 from brain_age_pred.models.sfcn import SFCN
 from brain_age_pred.models.sfcn_class import SFCNClass
 from brain_age_pred.models.brainagenext import BrainAgeNeXt
@@ -255,17 +255,8 @@ def run_multi_fold_evaluation(cfg: Config, model_type: str, model_path: str, dev
             **dl_kwargs,
         )
         
-        # Create model and load checkpoint for this fold
+        # Create model for this fold - no need to load checkpoint here since trainer.evaluate() will do it
         model = create_model(model_type, cfg.get("model", {}), device, logger)
-        
-        # Load checkpoint
-        try:
-            checkpoint_info = load_checkpoint(model, model_path, device, logger)
-            if checkpoint_info:
-                logger.info(f"Loaded checkpoint from epoch {checkpoint_info.get('epoch', 'unknown')}")
-        except Exception as e:
-            logger.error(f"Failed to load checkpoint: {e}")
-            raise
         
         # Create trainer for evaluation
         trainer = BrainAgeTrainer(
@@ -282,7 +273,7 @@ def run_multi_fold_evaluation(cfg: Config, model_type: str, model_path: str, dev
             age_max=cfg.get("data.age_max", 80),
         )
         
-        # Run evaluation
+        # Run evaluation - this will load the checkpoint
         metrics = trainer.evaluate(eval_test_loader, checkpoint_path=model_path)
         all_metrics.append(metrics)
     
@@ -450,8 +441,8 @@ def main() -> None:
                 checkpoint_dir="/home/ajoos/brain_age_pred/output/checkpoints/",
                 log_dir=log_dir,
                 use_wandb=False,
-                age_min=cfg.get("data.age_min", 18),
-                age_max=cfg.get("data.age_max", 90),
+                age_min=cfg.get("data.age_min",20),
+                age_max=cfg.get("data.age_max", 80),
             )
             
             normal_metrics = trainer.evaluate(normal_test_loader, checkpoint_path=args.model_path)

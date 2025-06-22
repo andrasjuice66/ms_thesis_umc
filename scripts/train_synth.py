@@ -31,6 +31,7 @@ from brain_age_pred.training.trainer import BrainAgeTrainer
 from brain_age_pred.utils.logger import setup_logger
 from brain_age_pred.utils.utils import set_seed, read_csv, load_checkpoint
 from torch.utils.data import WeightedRandomSampler, DataLoader
+from brain_age_pred.brain_gen.brain_generator import BABrainGenerator
 
 
 
@@ -64,7 +65,7 @@ def main() -> None:
         WANDB_API = '2abdb867a9244072f2237704a3cacc77fa548dd8'
         wandb.login(key=WANDB_API)
         wandb.init(
-            project = cfg.get("wandb.project", "brain-age-pred"),
+            project = cfg.get("wandb.project", "brain-age-synth"),
             entity  = cfg.get("wandb.entity"),
             name    = experiment_name,
             config  = cfg.config,
@@ -77,53 +78,90 @@ def main() -> None:
     device = torch.device(cfg.get("device") or ("cuda" if torch.cuda.is_available() else "cpu"))
     logger.info(f"Using device: {device}")
 
-    # 5. ─── transforms (GPU-ready) with tumor simulation ─────── #
-    logger.info("Initializing domain randomization transforms...")
-    rand_cfg = cfg.get("domain_randomization", {})
-    if rand_cfg.get("use_domain_randomization", False):
-        transform = DomainRandomizer(
-            **rand_cfg,
-        )
+    # 5. ─── Brain Generator ──────────────────────────────────── #
+    logger.info("Initializing Brain Generator...")
+    prob_dict = {
+    "flip": 0.5,
+    "affine": 0.8,  # Now includes translation
+    "contrast": 0.7,
+    "gamma": 0.6,
+    "scale_int": 0.5,
+    "shift_int": 0.5,
+    "hist_shift": 0.3,
+    "noise": 0.4,
+    "rician": 0.3,
+    "gibbs": 0.2,
+    "blur": 0.3,
+    "bias": 0.4,
+    "resolution": 0.8,
+    }
+
+    # Example prior means and stds for multi-channel generation
+    # Shape: (n_labels, n_channels) or (n_modalities * 2, n_labels) for channel-specific stats
+    prior_means = np.array([
+        [0, 30, 50, 70, 90, 110],    # Channel 1 (e.g., T1)
+        [0, 20, 40, 60, 80, 100],    # Channel 2 (e.g., T2)
+    ]).T  # Shape: (n_labels, n_channels)
+
+    prior_stds = np.array([
+        [5, 8, 10, 12, 15, 18],      # Channel 1 std
+        [4, 6, 8, 10, 12, 14],       # Channel 2 std  
+    ]).T
+
+    # Create enhanced generator with all new features
+    brain_generator = BABrainGenerator(
+        prior_means=prior_means,
+        prior_stds=prior_stds,
+        distribution="uniform",
+        prob=prob_dict,
         
-        if rand_cfg.get("use_tumor_simulation", False):
-            tumor_cfg = rand_cfg.get("tumor_config", {})
-            logger.info(f"✓ Tumor simulation enabled with probability: {tumor_cfg.get('prob', 0.3)}")
-            
-            if tumor_cfg.get("use_age_based_segmentation", False):
-                logger.info("✓ Using age-based segmentation for tumor placement:")
-                seg_paths = tumor_cfg.get("segmentation_paths", {})
-                age_ranges = tumor_cfg.get("age_ranges", {})
-                
-                # Validate segmentation files exist
-                missing_files = []
-                for age_group, seg_path in seg_paths.items():
-                    if not Path(seg_path).exists():
-                        missing_files.append(f"{age_group}: {seg_path}")
-                    else:
-                        age_range = age_ranges.get(age_group, "unknown")
-                        logger.info(f"  • {age_group}: {seg_path} (ages {age_range})")
-                
-                if missing_files:
-                    logger.error("Missing segmentation files:")
-                    for missing in missing_files:
-                        logger.error(f"  ✗ {missing}")
-                    raise FileNotFoundError("Required segmentation files not found")
-                
-                logger.info("All segmentation files found and will be preloaded")
-            else:
-                logger.info("Using intensity-based brain mask for tumor placement")
-                
-            # Log tumor generation parameters
-            logger.info(f"Tumor parameters: perlin_res={tumor_cfg.get('perlin_res', [2,2,2])}, "
-                       f"size_range={tumor_cfg.get('tumor_size_factor_range', [0.5, 2.0])}, "
-                       f"fluid_dynamics={tumor_cfg.get('use_fluid_dynamics', True)}")
-        else:
-            logger.info("Tumor simulation disabled")
-    else:
-        transform = None
-        logger.info("Domain randomization disabled")
-    
-    logger.info(f"Domain randomizer initialized: {rand_cfg.get('use_domain_randomization', False)}")
+        # Spatial transforms (now with translation!)
+        rotation_range=15.0,
+        scaling_range=0.2,
+        shearing_bounds=0.012,
+        translation_bounds=10.0,  # NEW: Translation in voxels
+        
+        # Intensity transforms
+        contrast_range=(0.8, 1.2),
+        log_gamma_std=0.3,
+        shift_offset=0.1,
+        hist_control_points=5,
+        
+        # Noise parameters
+        noise_mean=0.0,
+        noise_std=0.05,
+        rician_std=0.03,
+        gibbs_alpha=0.7,
+        blur_sigma=1.0,
+        bias_field_rng=(0.0, 0.4),
+        
+        # Resolution parameters
+        min_res=1.0,
+        max_res_iso=4.0,
+        max_res_aniso=8.0,
+        atlas_res=1.0,
+        thickness=1.5,  # NEW: Slice thickness simulation
+        
+        # SynthSeg parameters
+        generation_labels=None,  # Use defaults
+        n_neutral_labels=None,   # Use defaults
+        output_labels=np.array([0, 1, 2, 3, 4, 5]),  # NEW: Remap to simpler labels
+        
+        # NEW: Multi-channel support
+        n_channels=2,  # Generate T1 + T2-like images
+        use_specific_stats_for_channel=True,
+        
+        # NEW: Cropping
+        output_shape=(128, 128, 128),  # Desired output size
+        use_random_cropping=True,
+        
+        # NEW: Additional options
+        return_gradients=False,  # Set to True for gradient images
+        use_hemisphere_aware_flip=True,
+        use_dynamic_resolution=True,
+        use_intensity_clip_normalize=True,
+    )
+        
 
     # 6. ─── CSV → dataset / sampler ─────────────────────────── #
     logger.info("Reading CSV files...")
@@ -171,7 +209,7 @@ def main() -> None:
         sample_wts   = train_w,
         sexes        = train_s,
         modalities   = train_m,
-        transform    = transform,
+        transform    = brain_generator,
         mode         = "train",
         cache_size   = cfg.get("data.cache_size", 0),
     )

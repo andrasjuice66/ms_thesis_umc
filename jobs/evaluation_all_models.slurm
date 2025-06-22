@@ -50,7 +50,7 @@ echo "=== Starting SFCN_Class Model Evaluations"
 echo "--- Evaluating SFCN_Class Baseline ---"
 python -m brain_age_pred.scripts.evaluate \
     --model SFCN_Class \
-    --model_path /home/ajoos/brain_age_pred/output/checkpoints/sfcn_class_baseline/sfcn_class_baseline_best_loss.pt \
+    --model_path /home/ajoos/brain_age_pred/output/checkpoints/sfcn_class_baseline/sfcn_class_baseline_epoch144.pt \
     --config $CONFIG_FILE
 
 # SFCN_Class Domain Randomization
