@@ -97,6 +97,7 @@ class BABrainGenerator:
         output_shape: Sequence[int] | int | None = None,
         use_random_cropping: bool = False,
         return_gradients: bool = False,
+        device: torch.device | str | None = None,
     ):
         # store trivial fields -----------------------------------------
         self.image_key, self.label_key = "image", "labels"
@@ -149,6 +150,12 @@ class BABrainGenerator:
         self.use_random_cropping         = use_random_cropping
         self.return_gradients            = return_gradients
 
+        # Set device
+        if device is None:
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        else:
+            self.device = torch.device(device) if isinstance(device, str) else device
+        
         # build transform pipeline
         self._build_pipeline()
 

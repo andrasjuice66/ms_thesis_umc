@@ -11,11 +11,12 @@ import nibabel as nib
 from pathlib import Path
 from brain_age_pred.brain_gen.brain_generator import BABrainGenerator
 from brain_age_pred.brain_gen.labels import GENERATION_CLASSES, GENERATION_LABELS, N_NEUTRAL_LABELS
+import torch
 
 # ------------------------------------------------------------------
 # 1) INPUT SEGMENTATION (integer labels in SynthSeg space)
 # ------------------------------------------------------------------
-SEG_PATH = "/Users/andrasjoos/Documents/AI_masters/Thesis/thesis_project/brain_age_pred/tests/segmentation.nii.gz"              # <-- change to an existing file
+SEG_PATH = "C:/Projects/thesis_project/brain_age_pred/tests/segmentation.nii.gz"              # <-- change to an existing file
 seg_img  = nib.load(SEG_PATH)
 seg_data = seg_img.get_fdata().astype(np.int16)          # numpy array [D,H,W]
 
@@ -27,6 +28,13 @@ print(f"Original seg_data type: {type(seg_data)}")
 if seg_data.ndim == 3:
     seg_data = seg_data[None, ...]  # Add channel dimension: (1, D, H, W)
     print(f"After adding channel dim: {seg_data.shape}")
+
+# Add device setup
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f"Using device: {device}")
+
+# Convert to tensor and move to device
+seg_data = torch.from_numpy(seg_data).float().to(device)
 
 # ------------------------------------------------------------------
 # 2) BUILD A GENERATOR  –  UNIFORM distributions
@@ -120,7 +128,7 @@ brain_gen = BABrainGenerator(
 # ------------------------------------------------------------------
 # 3) OUTPUT FOLDER
 # ------------------------------------------------------------------
-out_dir = Path("/Users/andrasjoos/Documents/AI_masters/Thesis/thesis_project/brain_age_pred/tests/brain_gen_images")
+out_dir = Path("C:/Projects/thesis_project/brain_age_pred/tests/brain_gen_images")
 out_dir.mkdir(exist_ok=True)
 
 # ------------------------------------------------------------------
@@ -128,8 +136,8 @@ out_dir.mkdir(exist_ok=True)
 # ------------------------------------------------------------------
 for k in range(20):
     out_dict = brain_gen({"image": seg_data})     # forward pass
-    vol = out_dict["image"].squeeze(0).numpy()    # (D,H,W)
-
+    vol = out_dict["image"].squeeze(0).cpu().numpy()    # Move to CPU for saving
+    
     nifti = nib.Nifti1Image(vol, affine=seg_img.affine, header=seg_img.header)
     fname = out_dir / f"synthetic_{k:02d}.nii.gz"
     nib.save(nifti, fname)

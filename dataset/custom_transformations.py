@@ -416,7 +416,9 @@ class ConvertLabelsD(MapTransform):
         elif isinstance(arr, torch.Tensor):
             if arr.max() >= self._lut_size:
                 raise ValueError("Label value out of LUT bounds – enlarge generation_labels.")
-            return self._lut[arr.long()].to(arr.device)
+            # Move LUT to the same device as the input tensor
+            lut_device = self._lut.to(arr.device)
+            return lut_device[arr.long()]
         else:
             raise TypeError("Unsupported array type, must be numpy.ndarray or torch.Tensor")
 
