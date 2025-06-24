@@ -270,16 +270,16 @@ if __name__ == "__main__":
     # input_dir = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed/CoRR")
     # output_dir = Path("/mnt/c/Projects/thesis_project/Data/brain_age_segmented/CoRR")
     # main(input_dir, output_dir)
-    # input_dir = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed/PanGen")
-    # output_dir = Path("/mnt/c/Projects/thesis_project/Data/brain_age_segmented/PanGen")
-    # main(input_dir, output_dir)
+    input_dir = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed/PanGen")
+    output_dir = Path("/mnt/c/Projects/thesis_project/Data/brain_age_segmented/PanGen")
+    main(input_dir, output_dir)
     # input_dir = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed/SALD")
     # output_dir = Path("/mnt/c/Projects/thesis_project/Data/brain_age_segmented/SALD")
     # main(input_dir, output_dir)
 
-    input_dir = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed/AOMIC_ID1000")
-    output_dir = Path("/mnt/c/Projects/thesis_project/Data/brain_age_segmented/AOMIC_ID1000")
-    main(input_dir, output_dir)
+    # input_dir = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed/AOMIC_ID1000")
+    # output_dir = Path("/mnt/c/Projects/thesis_project/Data/brain_age_segmented/AOMIC_ID1000")
+    # main(input_dir, output_dir)
 
 
 """
