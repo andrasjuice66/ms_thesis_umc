@@ -89,8 +89,8 @@ brain_gen = BABrainGenerator(
     translation_bounds = 10,
 
     # Intensity augmentation parameters
-    contrast_range      = (0.7, 1.3),
-    log_gamma_std       = 0.4,
+    contrast_range      = (0.8, 1.2),
+    log_gamma_std       = 0.2,
     shift_offset        = 0.1,
     hist_control_points = 5,
 
@@ -100,7 +100,7 @@ brain_gen = BABrainGenerator(
     rician_std    = 0.02,
     gibbs_alpha   = 0.4,
     blur_sigma    = 0.5,
-    bias_field_rng= (0.0, 0.7),
+    bias_field_rng= (0.0, 0.3),
 
     # Resolution parameters
     min_res       = 0.7,
@@ -117,10 +117,10 @@ brain_gen = BABrainGenerator(
     # Toggle parameters
     use_hemisphere_aware_flip     = True,  # Default was True
     use_dynamic_resolution        = True,  # Default was True
-    use_intensity_clip_normalize  = True,  # Default was True
+    use_intensity_clip_normalize  = False,  # Default was True
     n_channels                    = 1,     # Default was 1
     use_specific_stats_for_channel= False, # Default was False
-    output_shape = (208, 240, 208),  # Should match the spatial dims (D, H, W)
+    output_shape = (208, 240, 256),  # Should match the spatial dims (D, H, W)
     use_random_cropping          = True,   # Disable for debugging
     return_gradients             = False, # Default was False
 )

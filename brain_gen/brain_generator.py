@@ -324,7 +324,7 @@ class BABrainGenerator:
                     keys=[self.image_key],
                     clip_percentiles=(1.0, 99.0),  # 1% and 99% percentiles
                     normalise=True,
-                    gamma_std=0.5,
+                    gamma_std=0.2,
                     separate_channels=True,
                     prob=0.95,
                 )
