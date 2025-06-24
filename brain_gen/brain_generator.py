@@ -136,15 +136,15 @@ class BABrainGenerator:
         self.intensity_clip_value = intensity_clip_value
         self.intensity_gamma_std = intensity_gamma_std
         
-        # NEW: Multi-channel support
+        # Multi-channel support
         self.n_channels = n_channels
         self.use_specific_stats_for_channel = use_specific_stats_for_channel
         
-        # NEW: Cropping parameters
+        # Cropping parameters
         self.output_shape = output_shape
         self.use_random_cropping = use_random_cropping
         
-        # NEW: Gradient computation
+        # Gradient computation
         self.return_gradients = return_gradients
 
         self._build_pipeline()
@@ -205,7 +205,6 @@ class BABrainGenerator:
                 translate_range=(self.translation_bounds,) * 3,  # NEW: Translation!
                 mode="nearest",   # preserve labels
                 padding_mode="constant",
-                constant_values=0,
             )
         )
 
@@ -318,7 +317,7 @@ class BABrainGenerator:
                     atlas_res=self.atlas_res,
                     max_res_iso=self.max_res_iso,
                     max_res_aniso=self.max_res_aniso,
-                    thickness=self.thickness,  # NEW: Slice thickness
+                    thickness_factor=self.thickness,  # NEW: Slice thickness
                     randomise_res=True,
                     prob=self.prob["resolution"],
                 )
