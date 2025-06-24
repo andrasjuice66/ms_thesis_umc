@@ -1,191 +1,191 @@
-# brain_age_pred/dataset/synthseg_generator.py
+"""
+Domain–randomised brain-image generator (SynthSeg-style)
+-------------------------------------------------------
+Takes a *segmentation* as input and returns a synthetic MRI volume that
+shares the same anatomy but random contrast, artefacts, resolution, etc.
+"""
 
+from __future__ import annotations
 import numpy as np
-from monai.transforms import (
-    Compose,
-    RandFlipd,
-    RandAffined,
-    RandAdjustContrastd,
-    RandBiasFieldd,
-    RandGaussianSmoothd,
-    RandGaussianNoised,
-    RandRicianNoised,
-    RandGibbsNoised,
-    RandScaleIntensityd,
-    RandShiftIntensityd,
-    RandHistogramShiftd,
-    ToTensord,
-    RandSpatialCropd,
-    SpatialPadd,
-)
-from brain_age_pred.dataset.custom_transformations import (
-    RandomResolutionD, 
-    RandGammaD,
-    HemisphereAwareFlipD,
-    DynamicResolutionD, 
-    IntensityClipNormalizeD,
-    ConvertLabelsD, 
-    ImageGradientsD
-)
-from brain_age_pred.brain_gen.gen_image_from_labels import SampleConditionalGMMd, MultiChannelSampleConditionalGMMd
+from typing import Sequence, Mapping, Hashable, Dict
 
-# Default SynthSeg label configuration
-DEFAULT_GENERATION_LABELS = np.array([
-    0,   # background
-    14, 15, 16, 24, 77, 85,  # neutral structures (ventricles, brainstem, etc.)
-    2, 3, 4, 7, 8, 10, 11, 12, 13, 17, 18, 26, 28,  # left structures
-    41, 42, 43, 46, 47, 49, 50, 51, 52, 53, 54, 58, 60  # right structures
-])
-DEFAULT_N_NEUTRAL_LABELS = 7  # background + 6 neutral structures
+import torch
+from monai.transforms import (
+    Compose, RandFlipd, RandAffined, RandAdjustContrastd, RandBiasFieldd,
+    RandGaussianSmoothd, RandGaussianNoised, RandRicianNoised, RandGibbsNoised,
+    RandScaleIntensityd, RandShiftIntensityd, RandHistogramShiftd, ToTensord,
+    RandSpatialCropd, SpatialPadd,  CopyItemsd
+)
+
+
+# project imports -------------------------------------------------------
+from brain_age_pred.dataset.custom_transformations import (
+    RandomResolutionD, RandGammaD, HemisphereAwareFlipD, DynamicResolutionD,
+    IntensityClipNormalizeD, ConvertLabelsD
+)
+from brain_age_pred.brain_gen.gen_image_from_labels import (
+    SampleConditionalGMMd, MultiChannelSampleConditionalGMMd, 
+)
+from brain_age_pred.brain_gen.labels import (
+    GENERATION_LABELS, GENERATION_CLASSES, N_NEUTRAL_LABELS,
+)
 
 
 class BABrainGenerator:
     """
-    Turn a segmentation map into a *new*, domain‐randomized synthetic brain volume.
-    Enhanced with SynthSeg-style hemisphere-aware flipping, dynamic resolution, and intensity normalization.
-    Now includes: translation, cropping, label mapping, multi-channel support, and gradient computation.
+    Build a MONAI ``Compose`` that maps a dict
+      {"image": <segmentation nparray or tensor>}
+    to
+      {"image": <synthetic MRI tensor> [, "labels": <original seg>]}.
+
+    Key extras over vanilla SynthSeg:
+      • hemisphere-aware flipping
+      • dynamic resolution & slice-thickness
+      • intensity normalisation / clipping
+      • optional multi-channel output
+      • optional gradient output
     """
 
+    # ------------------------------------------------------------------ #
+    # constructor                                                        #
+    # ------------------------------------------------------------------ #
     def __init__(
         self,
         prior_means:  np.ndarray,
         prior_stds:   np.ndarray,
         distribution: str,
         prob:         dict,
-        rotation_range: float,
-        scaling_range:  float,
-        shearing_bounds: float,
-        # NEW: Translation bounds
+
+        # spatial augmentation
+        rotation_range:   float,
+        scaling_range:    float,
+        shear_bounds:     float,
         translation_bounds: float,
-        contrast_range:  tuple,
-        log_gamma_std:   float,
-        shift_offset:    float,
+
+        # intensity augmentation
+        contrast_range:   tuple[float, float],
+        log_gamma_std:    float,
+        shift_offset:     float,
         hist_control_points: int,
+
+        # artefacts
         noise_mean: float,
         noise_std:  float,
         rician_std: float,
         gibbs_alpha: float,
         blur_sigma:  float,
-        bias_field_rng: tuple,
-        min_res:       float,
-        max_res_iso:   float,
-        # SynthSeg-style parameters
-        generation_labels: np.ndarray = None,
-        n_neutral_labels: int = None,
-        # NEW: Output labels for remapping
-        output_labels: np.ndarray = None,
-        use_hemisphere_aware_flip: bool = True,
-        use_dynamic_resolution: bool = True,
-        use_intensity_clip_normalize: bool = True,
+        bias_field_rng: tuple[float, float],
+
+        # resolution
+        min_res: float,
+        max_res_iso: float,
         max_res_aniso: float = 8.0,
         atlas_res: float = 1.0,
-        intensity_clip_value: float = 300.0,
-        intensity_gamma_std: float = 0.5,
-        # NEW: Multi-channel support
+        thickness: float | None = None,
+
+        # SynthSeg label config
+        generation_labels: np.ndarray | None = None,
+        n_neutral_labels:  int | None = None,
+        output_labels:     np.ndarray | None = None,
+
+        # toggles
+        use_hemisphere_aware_flip:  bool = True,
+        use_dynamic_resolution:     bool = True,
+        use_intensity_clip_normalize: bool = True,
         n_channels: int = 1,
         use_specific_stats_for_channel: bool = False,
-        # NEW: Cropping parameters
-        output_shape: tuple = None,
+        output_shape: Sequence[int] | int | None = None,
         use_random_cropping: bool = False,
-        # NEW: Gradient computation
         return_gradients: bool = False,
-        # NEW: Slice thickness simulation
-        thickness: float = None,
     ):
-        self.image_key    = "image"
-        self.label_key    = "labels"  # For output labels
-        self.prior_means  = prior_means
-        self.prior_stds   = prior_stds
+        # store trivial fields -----------------------------------------
+        self.image_key, self.label_key = "image", "labels"
+        self.prob = prob
+        self.prior_means, self.prior_stds = prior_means, prior_stds
         self.distribution = distribution
-        self.prob         = prob
-        
-        # Spatial transform parameters
-        self.rotate_rad   = np.deg2rad(rotation_range)
-        self.scaling_rng  = scaling_range
-        self.shearing    = shearing_bounds
-        self.translation_bounds = translation_bounds  # NEW
-        
-        # Intensity transform parameters
-        self.contrast_rng= contrast_range
-        self.log_gamma_std = log_gamma_std
-        self.shift_offset  = shift_offset
-        self.hist_control_points = hist_control_points
-        
-        # Noise parameters
-        self.noise_mean  = noise_mean
-        self.noise_std   = noise_std
-        self.rician_std  = rician_std
-        self.gibbs_alpha = gibbs_alpha
-        self.blur_sigma  = blur_sigma
-        self.bias_field_rng = bias_field_rng
-        
-        # Resolution parameters
-        self.min_res     = min_res
-        self.max_res_iso = max_res_iso
-        self.max_res_aniso = max_res_aniso
-        self.atlas_res = atlas_res
-        self.thickness = thickness if thickness is not None else atlas_res  # NEW
-        
-        # SynthSeg-style enhancements
-        self.generation_labels = generation_labels if generation_labels is not None else DEFAULT_GENERATION_LABELS
-        self.n_neutral_labels = n_neutral_labels if n_neutral_labels is not None else DEFAULT_N_NEUTRAL_LABELS
-        self.output_labels = output_labels if output_labels is not None else self.generation_labels  # NEW
-        self.use_hemisphere_aware_flip = use_hemisphere_aware_flip
-        self.use_dynamic_resolution = use_dynamic_resolution
-        self.use_intensity_clip_normalize = use_intensity_clip_normalize
-        self.intensity_clip_value = intensity_clip_value
-        self.intensity_gamma_std = intensity_gamma_std
-        
-        # NEW: Multi-channel support
-        self.n_channels = n_channels
-        self.use_specific_stats_for_channel = use_specific_stats_for_channel
-        
-        # NEW: Cropping parameters
-        self.output_shape = output_shape
-        self.use_random_cropping = use_random_cropping
-        
-        # NEW: Gradient computation
-        self.return_gradients = return_gradients
 
+        # --- spatial ranges ------------------------------------------
+        self.rotate_rad = np.deg2rad(rotation_range)
+        self.scale_bounds = scaling_range            # SynthSeg "scaling_bounds"
+        self.shear_bounds = shear_bounds
+        self.translation_bounds = translation_bounds
+
+        # --- intensity ranges ----------------------------------------
+        self.contrast_range  = contrast_range
+        self.log_gamma_std   = log_gamma_std
+        self.shift_offset    = shift_offset
+        self.hist_control_points = hist_control_points
+
+        # --- artefact params ----------------------------------------
+        self.noise_mean,  self.noise_std  = noise_mean, noise_std
+        self.rician_std, self.gibbs_alpha = rician_std, gibbs_alpha
+        self.blur_sigma   = blur_sigma
+        self.bias_field_rng = bias_field_rng
+
+        # --- resolution ---------------------------------------------
+        self.min_res, self.max_res_iso, self.max_res_aniso = min_res, max_res_iso, max_res_aniso
+        self.atlas_res = atlas_res
+        self.thickness = thickness if thickness is not None else atlas_res
+
+        # --- labels --------------------------------------------------
+        self.generation_labels = (
+            generation_labels if generation_labels is not None else GENERATION_LABELS
+        )
+        self.n_neutral_labels = (
+            n_neutral_labels if n_neutral_labels is not None else N_NEUTRAL_LABELS
+        )
+        #  default: *no* remapping
+        self.output_labels = (
+            output_labels if output_labels is not None else self.generation_labels
+        )
+
+        # --- options -------------------------------------------------
+        self.use_hemisphere_aware_flip   = use_hemisphere_aware_flip
+        self.use_dynamic_resolution      = use_dynamic_resolution
+        self.use_intensity_clip_normalize= use_intensity_clip_normalize
+        self.n_channels                  = n_channels
+        self.use_specific_stats_for_channel = use_specific_stats_for_channel
+        self.output_shape                = tuple(output_shape) if output_shape is not None else None
+        self.use_random_cropping         = use_random_cropping
+        self.return_gradients            = return_gradients
+
+        # build transform pipeline
         self._build_pipeline()
 
+    # ------------------------------------------------------------------ #
+    # pipeline                                                           #
+    # ------------------------------------------------------------------ #
     def _build_pipeline(self):
         tx = []
 
-        # 0) OPTIONAL: Random cropping of input labels (SynthSeg-style)
+        # 0) optional cropping ----------------------------------------
         if self.use_random_cropping and self.output_shape is not None:
-            # First pad to ensure we have enough space for cropping
-            tx.append(
+            tx += [
                 SpatialPadd(
                     keys=[self.image_key],
                     spatial_size=self.output_shape,
                     mode="constant",
                     constant_values=0,
-                )
-            )
-            # Then randomly crop to desired output shape
-            tx.append(
+                ),
                 RandSpatialCropd(
                     keys=[self.image_key],
                     roi_size=self.output_shape,
                     random_size=False,
-                )
-            )
+                ),
+            ]
 
-        # 1) Spatial transforms on the *segmentation*
+        # 1) spatial transforms on *segmentation* ---------------------
         if self.use_hemisphere_aware_flip:
-            # Use hemisphere-aware flipping instead of simple random flip
             tx.append(
                 HemisphereAwareFlipD(
                     keys=[self.image_key],
                     generation_labels=self.generation_labels,
                     n_neutral_labels=self.n_neutral_labels,
-                    spatial_axis=0,  # Left-right axis
+                    spatial_axis=0,
                     prob=self.prob["flip"],
                 )
             )
         else:
-            # Use standard MONAI flip
             tx.append(
                 RandFlipd(
                     keys=[self.image_key],
@@ -193,38 +193,48 @@ class BABrainGenerator:
                     spatial_axis=(0, 1, 2),
                 )
             )
-        
-        # Affine transforms - NOW WITH TRANSLATION!
+
         tx.append(
             RandAffined(
                 keys=[self.image_key],
                 prob=self.prob["affine"],
                 rotate_range=(self.rotate_rad,) * 3,
-                scale_range=(self.scaling_rng - 1,) * 3,
-                shear_range=(self.shearing,) * 3,
-                translate_range=(self.translation_bounds,) * 3,  # NEW: Translation!
-                mode="nearest",   # preserve labels
+                scale_range=(self.scale_bounds,) * 3,   # ← fixed
+                shear_range=(self.shear_bounds,) * 3,
+                translate_range=(self.translation_bounds,) * 3,
+                mode="nearest",
                 padding_mode="constant",
-                constant_values=0,
             )
         )
 
-        # 2) Sample intensities from labels → synthetic image
+        tx.append(CopyItemsd(keys=[self.image_key], times=1, names=["class_map"]))
+
+        tx.append(
+            ConvertLabelsD(
+                keys=["class_map"],
+                generation_labels=self.generation_labels,
+                output_labels=GENERATION_CLASSES,   # <- class IDs 0‥14
+                background_label=0,
+            )
+        )
+
+
+
+
+        # 2) label → image via conditional GMM -----------------------
         if self.n_channels == 1:
-            # Single channel - standard approach
             tx.append(
                 SampleConditionalGMMd(
-                    seg_key=self.image_key,
+                    seg_key="class_map",
                     out_key=self.image_key,
                     prior_means=self.prior_means,
-                    prior_stds =self.prior_stds,
+                    prior_stds=self.prior_stds,
                     distribution=self.distribution,
                 )
             )
         else:
-            # Multi-channel generation
             tx.append(
-                MultiChannelSampleConditionalGMMd(  # NEW: Multi-channel version
+                MultiChannelSampleConditionalGMMd(
                     seg_key=self.image_key,
                     out_key=self.image_key,
                     prior_means=self.prior_means,
@@ -235,96 +245,61 @@ class BABrainGenerator:
                 )
             )
 
-        # 3) Intensity clipping and normalization (SynthSeg-style)
-        if self.use_intensity_clip_normalize:
-            tx.append(
-                IntensityClipNormalizeD(
-                    keys=[self.image_key],
-                    clip_value=self.intensity_clip_value,
-                    normalise=True,
-                    gamma_std=self.intensity_gamma_std,
-                    separate_channels=True,
-                    prob=0.95,
-                )
-            )
 
-        # 4) Additional intensity‐space augmentations
-        tx.extend([
-            RandAdjustContrastd(
-                keys=[self.image_key],
-                prob=self.prob["contrast"],
-                gamma=self.contrast_rng,
-            ),
-            RandGammaD(
-                keys=[self.image_key],
-                log_gamma_std=self.log_gamma_std,
-                prob=self.prob["gamma"],
-            ),
-            RandScaleIntensityd(
-                keys=[self.image_key],
-                prob=self.prob["scale_int"],
-                factors=self.contrast_rng,
-            ),
-            RandShiftIntensityd(
-                keys=[self.image_key],
-                prob=self.prob["shift_int"],
-                offsets=self.shift_offset,
-            ),
-            RandHistogramShiftd(
-                keys=[self.image_key],
-                prob=self.prob["hist_shift"],
-                num_control_points=self.hist_control_points,
-            ),
-        ])
+        # 4) intensity augmentations ---------------------------------
+        tx += [
+            RandAdjustContrastd(keys=[self.image_key],
+                                prob=self.prob["contrast"],
+                                gamma=self.contrast_range),
+            RandGammaD(keys=[self.image_key],
+                       log_gamma_std=self.log_gamma_std,
+                       prob=self.prob["gamma"]),
+            RandScaleIntensityd(keys=[self.image_key],
+                                prob=self.prob["scale_int"],
+                                factors=self.contrast_range),
+            RandShiftIntensityd(keys=[self.image_key],
+                                prob=self.prob["shift_int"],
+                                offsets=self.shift_offset),
+            RandHistogramShiftd(keys=[self.image_key],
+                                prob=self.prob["hist_shift"],
+                                num_control_points=self.hist_control_points),
+        ]
 
-        # 5) Add artifacts & simulate resolution
-        tx.extend([
-            RandGaussianNoised(
-                keys=[self.image_key],
-                prob=self.prob["noise"],
-                mean=self.noise_mean,
-                std=self.noise_std,
-            ),
-            RandRicianNoised(
-                keys=[self.image_key],
-                prob=self.prob["rician"],
-                std=self.rician_std,
-            ),
-            RandGibbsNoised(
-                keys=[self.image_key],
-                prob=self.prob["gibbs"],
-                alpha=self.gibbs_alpha,
-            ),
-            RandGaussianSmoothd(
-                keys=[self.image_key],
-                prob=self.prob["blur"],
-                sigma_x=self.blur_sigma,
-                sigma_y=self.blur_sigma,
-                sigma_z=self.blur_sigma,
-            ),
-            RandBiasFieldd(
-                keys=[self.image_key],
-                prob=self.prob["bias"],
-                coeff_range=self.bias_field_rng,
-            ),
-        ])
-        
-        # 6) Resolution simulation - WITH SLICE THICKNESS
+        # 5) artefacts -----------------------------------------------
+        tx += [
+            RandGaussianNoised(keys=[self.image_key],
+                               prob=self.prob["noise"],
+                               mean=self.noise_mean, std=self.noise_std),
+            RandRicianNoised(keys=[self.image_key],
+                             prob=self.prob["rician"],
+                             std=self.rician_std),
+            RandGibbsNoised(keys=[self.image_key],
+                            prob=self.prob["gibbs"],
+                            alpha=self.gibbs_alpha),
+            RandGaussianSmoothd(keys=[self.image_key],
+                                prob=self.prob["blur"],
+                                sigma_x=(0.0, self.blur_sigma),
+                                sigma_y=(0.0, self.blur_sigma),
+                                sigma_z=(0.0, self.blur_sigma)),
+            RandBiasFieldd(keys=[self.image_key],
+                           prob=self.prob["bias"],
+                           coeff_range=self.bias_field_rng),
+        ]
+
+        # 6) resolution simulation -----------------------------------
         if self.use_dynamic_resolution:
-            # Dynamic resolution sampling (SynthSeg-style)
             tx.append(
                 DynamicResolutionD(
                     keys=[self.image_key],
                     atlas_res=self.atlas_res,
                     max_res_iso=self.max_res_iso,
                     max_res_aniso=self.max_res_aniso,
-                    thickness=self.thickness,  # NEW: Slice thickness
+                    thickness_factor=self.thickness,
                     randomise_res=True,
                     prob=self.prob["resolution"],
                 )
             )
         else:
-            # Use the original static resolution transform
             tx.append(
                 RandomResolutionD(
                     keys=[self.image_key],
@@ -334,41 +309,37 @@ class BABrainGenerator:
                 )
             )
 
-        # 7) NEW: Gradient computation (optional)
-        if self.return_gradients:
+        # 3) clip + normalise ----------------------------------------
+        if self.use_intensity_clip_normalize:
+            print("Using intensity clip normalization")
             tx.append(
-                ImageGradientsD(
+                IntensityClipNormalizeD(
                     keys=[self.image_key],
-                    method="sobel",
-                    normalize=True,
+                    clip_percentiles=(1.0, 99.0),  # 1% and 99% percentiles
+                    normalise=True,
+                    gamma_std=0.5,
+                    separate_channels=True,
+                    prob=0.95,
                 )
             )
 
-        # 8) NEW: Label remapping (convert generation labels to output labels)
-        if not np.array_equal(self.generation_labels, self.output_labels):
-            tx.append(
-                ConvertLabelsD(
-                    keys=[self.image_key + "_original_labels"],  # We'll need to preserve original labels
-                    generation_labels=self.generation_labels,
-                    output_labels=self.output_labels,
-                    background_label=0,
-                )
-            )
 
-        # 9) Convert to tensor
+        # 9) tensor conversion ---------------------------------------
         tx.append(ToTensord(keys=[self.image_key]))
 
         self.transform = Compose(tx)
 
+    # ------------------------------------------------------------------ #
+    # callable                                                           #
+    # ------------------------------------------------------------------ #
     def __call__(self, sample: dict) -> dict:
-        # Store original labels if we need label remapping
+        # preserve original labels for potential remap
         if not np.array_equal(self.generation_labels, self.output_labels):
             sample[self.image_key + "_original_labels"] = sample[self.image_key].copy()
-        
-        result = self.transform(sample)
-        
-        # Return both image and labels if label conversion was applied
+
+        out = self.transform(sample)
+
         if not np.array_equal(self.generation_labels, self.output_labels):
-            result[self.label_key] = result.pop(self.image_key + "_original_labels")
-        
-        return result
+            out[self.label_key] = out.pop(self.image_key + "_original_labels")
+
+        return out
