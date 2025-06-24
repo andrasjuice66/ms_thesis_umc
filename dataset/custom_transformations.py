@@ -76,81 +76,97 @@ class RandomResolutionD(MapTransform):
         return d
 
 
+# -------------------------------------------------------------------------
+# HemisphereAwareFlipD  –  version that accepts numpy *or* torch tensors
+# -------------------------------------------------------------------------
+from monai.transforms import MapTransform
+from typing import Sequence, Mapping, Hashable, Dict
+import numpy as np
+import torch, random
+
+
 class HemisphereAwareFlipD(MapTransform):
     """
-    Hemisphere-aware random flipping with label swapping following SynthSeg logic.
-    
-    This transform:
-    1. Flips the image/labels along the left-right axis (typically axis 0)
-    2. Swaps corresponding left-right anatomical labels to maintain anatomical consistency
-    3. Leaves neutral (non-sided) labels unchanged
+    Random left–right flip that also swaps hemisphere‐specific labels so the
+    anatomy stays consistent.
+
+    • `generation_labels`  must list labels [neutral … left … right] in that
+      exact SynthSeg order.
+    • `n_neutral_labels`   = how many labels at the beginning are non-sided.
     """
-    
-    def __init__(self,
-                 keys,
-                 generation_labels: np.ndarray = None,
-                 n_neutral_labels: int = 7,
-                 spatial_axis: int = 0,  # Left-right axis
-                 prob: float = 0.5):
-        super().__init__(keys)
-        self.generation_labels = generation_labels
-        self.n_neutral_labels = n_neutral_labels
+
+    def __init__(
+        self,
+        keys: Sequence[str],
+        generation_labels: np.ndarray,
+        n_neutral_labels: int,
+        spatial_axis: int = 0,   # 0 = left–right in the label volume
+        prob: float = 0.5,
+        allow_missing_keys: bool = False,
+    ):
+        super().__init__(keys, allow_missing_keys)
         self.spatial_axis = spatial_axis
         self.prob = prob
-        
-        # Create label swapping lookup table if labels are provided
-        if generation_labels is not None:
-            self.swap_lut = self._create_swap_lut()
-        else:
-            self.swap_lut = None
-    
-    def _create_swap_lut(self):
-        """Create lookup table for swapping left-right labels."""
-        n_labels = len(self.generation_labels)
-        
-        # If all labels are neutral, no swapping needed
-        if self.n_neutral_labels >= n_labels:
-            return None
-        
-        # Split labels: neutral, left hemisphere, right hemisphere
-        neutral = self.generation_labels[:self.n_neutral_labels]
-        n_sided = (n_labels - self.n_neutral_labels) // 2
-        left = self.generation_labels[self.n_neutral_labels:self.n_neutral_labels + n_sided]
-        right = self.generation_labels[self.n_neutral_labels + n_sided:]
-        
-        # Create mapping for label swapping (neutral stays, left<->right swap)
-        swapped_labels = np.concatenate([neutral, right, left])
-        
-        # Create lookup table that maps each original label to its swapped version
-        max_label = max(np.max(self.generation_labels), np.max(swapped_labels))
-        lut = np.arange(max_label + 1)  # Identity mapping by default
-        
-        for orig, swap in zip(self.generation_labels, swapped_labels):
-            lut[orig] = swap
-            
-        return lut
-    
-    def __call__(self, data):
+
+        # ---------- build LUT for label swapping --------------------
+        n_labels   = len(generation_labels)
+        neutral    = generation_labels[:n_neutral_labels]
+        n_sided    = (n_labels - n_neutral_labels) // 2
+        left       = generation_labels[n_neutral_labels : n_neutral_labels + n_sided]
+        right      = generation_labels[n_neutral_labels + n_sided :]
+
+        swapped    = np.concatenate([neutral, right, left])
+        max_val    = max(generation_labels.max(), swapped.max())
+        lut        = np.arange(max_val + 1, dtype=np.int64)
+        for a, b in zip(generation_labels, swapped):
+            lut[a] = b
+        self._lut = lut                    # numpy LUT, stays on CPU
+
+    # ------------------------------------------------------------------
+    def _flip_ndarray(self, arr: np.ndarray, axis: int) -> np.ndarray:
+        return np.flip(arr, axis=axis).copy()     # copy: keep array C-contiguous
+
+    def _flip_tensor(self, ten: torch.Tensor, axis: int) -> torch.Tensor:
+        return torch.flip(ten, dims=[axis])
+
+    # ------------------------------------------------------------------
+    def __call__(self, data: Mapping[Hashable, np.ndarray]) -> Dict[Hashable, np.ndarray]:  # noqa: D401
         d = dict(data)
-        
-        if random.random() < self.prob:
-            for key in self.keys:
-                # Flip along the specified spatial axis
-                # Add 1 to account for channel dimension in MONAI format (C,H,W,D)
+
+        if random.random() >= self.prob:
+            return d   # no flip this time
+
+        for key in self.key_iterator(d):
+            arr = d[key]
+
+            # --------------------------------------------------------
+            # 1) flip along the requested spatial axis
+            # --------------------------------------------------------
+            if arr.ndim == 4:          # (C, D, H, W)
                 flip_axis = self.spatial_axis + 1
-                d[key] = torch.flip(d[key], dims=[flip_axis])
-                
-                # Apply label swapping if this is a segmentation and we have labels
-                if self.swap_lut is not None and key == self.keys[0]:  # Assume first key is segmentation
-                    # Convert to numpy for indexing, then back to tensor
-                    seg = d[key].cpu().numpy().astype(int)
-                    # Apply lookup table to swap labels
-                    seg_swapped = self.swap_lut[np.clip(seg, 0, len(self.swap_lut)-1)]
-                    d[key] = torch.from_numpy(seg_swapped).to(d[key].device).type(d[key].dtype)
-        
+            else:                      # (D, H, W)
+                flip_axis = self.spatial_axis
+
+            if isinstance(arr, torch.Tensor):
+                arr_flipped = self._flip_tensor(arr, flip_axis)
+            else:  # numpy
+                arr_flipped = self._flip_ndarray(arr, flip_axis)
+
+            # --------------------------------------------------------
+            # 2) swap left/right labels – **only** for the first key,
+            #    which is assumed to be the segmentation map.
+            # --------------------------------------------------------
+            if key == self.keys[0]:
+                if isinstance(arr_flipped, torch.Tensor):
+                    arr_int   = arr_flipped.long()
+                    arr_swapped = torch.as_tensor(self._lut, device=arr_int.device)[arr_int]
+                    arr_flipped = arr_swapped.type(arr_flipped.dtype)
+                else:
+                    arr_flipped = self._lut[arr_flipped.astype(np.int64)].astype(arr_flipped.dtype)
+
+            d[key] = arr_flipped
+
         return d
-
-
 class DynamicResolutionD(MapTransform):
     """
     Dynamic resolution sampling following SynthSeg's approach.
@@ -240,7 +256,7 @@ class DynamicResolutionD(MapTransform):
                         size=new_size,
                         mode='trilinear',
                         align_corners=False,
-                        antialias=True
+                        antialias=False
                     ).squeeze(0)
                     
                     # Upsample back to original size
@@ -258,23 +274,23 @@ class DynamicResolutionD(MapTransform):
 
 class IntensityClipNormalizeD(MapTransform):
     """
-    Intensity clipping and normalization following SynthSeg's IntensityAugmentation.
+    Intensity clipping and normalization using percentiles.
     
     This transform:
-    1. Clips intensities to remove outliers
+    1. Clips intensities to 1st and 99th percentiles to remove outliers
     2. Normalizes to [0, 1] range
     3. Optionally applies gamma correction
     """
     
     def __init__(self,
                  keys,
-                 clip_value: float = 300.0,
+                 clip_percentiles: tuple[float, float] = (1.0, 99.0),  # 1% and 99% percentiles
                  normalise: bool = True,
                  gamma_std: float = 0.5,
                  separate_channels: bool = True,
                  prob: float = 0.95):
         super().__init__(keys)
-        self.clip_value = clip_value
+        self.clip_percentiles = clip_percentiles
         self.normalise = normalise
         self.gamma_std = gamma_std
         self.separate_channels = separate_channels
@@ -292,16 +308,21 @@ class IntensityClipNormalizeD(MapTransform):
                     for c in range(img.shape[0]):
                         channel = img[c]
                         
-                        # Clip intensities
-                        if self.clip_value > 0:
-                            channel = torch.clamp(channel, 0, self.clip_value)
+                        # Clip intensities using percentiles
+                        low_percentile, high_percentile = self.clip_percentiles
+                        min_val = torch.quantile(channel, low_percentile / 100.0)
+                        max_val = torch.quantile(channel, high_percentile / 100.0)
+                        
+                        # Ensure we don't have min_val == max_val
+                        if max_val <= min_val:
+                            max_val = min_val + 1e-8
+                        
+                        # Clip to percentile range
+                        channel = torch.clamp(channel, min_val, max_val)
                         
                         # Normalize to [0, 1]
                         if self.normalise:
-                            min_val = channel.min()
-                            max_val = channel.max()
-                            if max_val > min_val:
-                                channel = (channel - min_val) / (max_val - min_val)
+                            channel = (channel - min_val) / (max_val - min_val)
                         
                         # Apply gamma correction
                         if self.gamma_std > 0:
@@ -311,14 +332,19 @@ class IntensityClipNormalizeD(MapTransform):
                         img[c] = channel
                 else:
                     # Process all channels together
-                    if self.clip_value > 0:
-                        img = torch.clamp(img, 0, self.clip_value)
+                    low_percentile, high_percentile = self.clip_percentiles
+                    min_val = torch.quantile(img, low_percentile / 100.0)
+                    max_val = torch.quantile(img, high_percentile / 100.0)
+                    
+                    # Ensure we don't have min_val == max_val
+                    if max_val <= min_val:
+                        max_val = min_val + 1e-8
+                    
+                    # Clip to percentile range
+                    img = torch.clamp(img, min_val, max_val)
                     
                     if self.normalise:
-                        min_val = img.min()
-                        max_val = img.max()
-                        if max_val > min_val:
-                            img = (img - min_val) / (max_val - min_val)
+                        img = (img - min_val) / (max_val - min_val)
                     
                     if self.gamma_std > 0:
                         gamma = torch.exp(torch.randn(1) * self.gamma_std).item()
@@ -329,289 +355,74 @@ class IntensityClipNormalizeD(MapTransform):
         return d
     
 
-# brain_age_pred/brain_gen/synthseg_transforms.py
 
+# -------------------------------------------------------------------------
+# ConvertLabelsD
+# -------------------------------------------------------------------------
+from monai.transforms import MapTransform
+from typing import Sequence, Mapping, Hashable, Dict, Union
 import numpy as np
 import torch
-from typing import Dict, Hashable, Mapping, Optional, Sequence, Union
-from monai.config import KeysCollection
-from monai.transforms import MapTransform, Transform
-from monai.utils import ensure_tuple_rep
-import torch.nn.functional as F
-
-
-class MultiChannelSampleConditionalGMMd(MapTransform):
-    """
-    Multi-channel version of SampleConditionalGMMd that generates different 
-    intensities per channel, following SynthSeg's approach.
-    """
-    
-    def __init__(
-        self,
-        keys: KeysCollection,
-        seg_key: str = "image",
-        out_key: str = "image", 
-        prior_means: np.ndarray = None,
-        prior_stds: np.ndarray = None,
-        distribution: str = "uniform",
-        n_channels: int = 1,
-        use_specific_stats_for_channel: bool = False,
-        allow_missing_keys: bool = False,
-    ):
-        super().__init__(keys, allow_missing_keys)
-        self.seg_key = seg_key
-        self.out_key = out_key
-        self.prior_means = prior_means
-        self.prior_stds = prior_stds
-        self.distribution = distribution
-        self.n_channels = n_channels  
-        self.use_specific_stats_for_channel = use_specific_stats_for_channel
-        
-    def __call__(self, data: Mapping[Hashable, torch.Tensor]) -> Dict[Hashable, torch.Tensor]:
-        d = dict(data)
-        
-        seg = d[self.seg_key]
-        
-        if self.n_channels == 1:
-            # Single channel - use existing logic
-            from brain_age_pred.brain_gen.gen_image_from_labels import SampleConditionalGMMd
-            single_channel_transform = SampleConditionalGMMd(
-                seg_key=self.seg_key,
-                out_key=self.out_key,
-                prior_means=self.prior_means,
-                prior_stds=self.prior_stds,
-                distribution=self.distribution,
-            )
-            return single_channel_transform(d)
-        
-        # Multi-channel generation
-        channels = []
-        for ch in range(self.n_channels):
-            # Select channel-specific stats if available
-            if self.use_specific_stats_for_channel and self.prior_means.shape[0] >= self.n_channels:
-                channel_means = self.prior_means[ch::self.n_channels]  # Every n_channels row
-                channel_stds = self.prior_stds[ch::self.n_channels]
-            else:
-                # Use same stats for all channels (with some randomization)
-                channel_means = self.prior_means
-                channel_stds = self.prior_stds
-            
-            # Generate channel using single channel transform
-            single_channel_data = {self.seg_key: seg}
-            single_channel_transform = SampleConditionalGMMd(
-                seg_key=self.seg_key,
-                out_key=self.out_key,
-                prior_means=channel_means,
-                prior_stds=channel_stds,
-                distribution=self.distribution,
-            )
-            
-            channel_result = single_channel_transform(single_channel_data)
-            channels.append(channel_result[self.out_key])
-        
-        # Stack channels
-        if len(channels) > 1:
-            d[self.out_key] = torch.cat(channels, dim=-1)  # Concatenate along channel dimension
-        else:
-            d[self.out_key] = channels[0]
-            
-        return d
-
 
 class ConvertLabelsD(MapTransform):
     """
-    Convert generation labels to output labels following SynthSeg's approach.
-    Maps label values from one set to another (e.g., to remove certain structures).
+    Replace integer labels of a segmentation **in-place**:
+
+        every voxel with value  generation_labels[i]
+        → becomes             output_labels[i]
+
+    Parameters
+    ----------
+    keys : str | Sequence[str]
+        Dict keys that should be remapped (usually just ["image"] or ["label"]).
+    generation_labels : Sequence[int]
+        Source label values (must be unique).
+    output_labels : Sequence[int]
+        Target label values (same length & order as generation_labels).
+    background_label : int
+        Fallback value for voxels whose label is *not* in generation_labels.
     """
-    
     def __init__(
         self,
-        keys: KeysCollection,
-        generation_labels: np.ndarray,
-        output_labels: np.ndarray,
+        keys: Union[str, Sequence[str]],
+        generation_labels: Sequence[int],
+        output_labels: Sequence[int],
         background_label: int = 0,
         allow_missing_keys: bool = False,
     ):
         super().__init__(keys, allow_missing_keys)
-        self.generation_labels = generation_labels
-        self.output_labels = output_labels
-        self.background_label = background_label
-        
-        # Create mapping dictionary
-        self.label_mapping = {}
-        for gen_label, out_label in zip(generation_labels, output_labels):
-            self.label_mapping[int(gen_label)] = int(out_label)
-    
-    def __call__(self, data: Mapping[Hashable, torch.Tensor]) -> Dict[Hashable, torch.Tensor]:
+
+        gen = np.asarray(generation_labels, dtype=np.int64)
+        out = np.asarray(output_labels,    dtype=np.int64)
+        if gen.shape != out.shape:
+            raise ValueError(
+                f"`generation_labels` and `output_labels` must have same length "
+                f"(got {gen.shape} vs {out.shape})."
+            )
+
+        # build a vectorised look-up table for fast mapping
+        self._lut_size = int(gen.max()) + 1
+        lut = np.full(self._lut_size, background_label, dtype=np.int64)
+        lut[gen] = out
+        self._lut = torch.from_numpy(lut)  # 1-D tensor, lives on CPU
+
+    # ------------------------------------------------------------------ #
+    def _convert(self, arr: Union[np.ndarray, torch.Tensor]) -> Union[np.ndarray, torch.Tensor]:
+        """Vectorised remap – works for numpy or torch arrays."""
+        if isinstance(arr, np.ndarray):
+            if arr.max() >= self._lut_size:
+                raise ValueError("Label value out of LUT bounds – enlarge generation_labels.")
+            return self._lut.numpy()[arr]          # fancy-indexing on numpy array
+        elif isinstance(arr, torch.Tensor):
+            if arr.max() >= self._lut_size:
+                raise ValueError("Label value out of LUT bounds – enlarge generation_labels.")
+            return self._lut[arr.long()].to(arr.device)
+        else:
+            raise TypeError("Unsupported array type, must be numpy.ndarray or torch.Tensor")
+
+    # ------------------------------------------------------------------ #
+    def __call__(self, data: Mapping[Hashable, torch.Tensor]) -> Dict[Hashable, torch.Tensor]:  # noqa: D401
         d = dict(data)
-        
-        for key in self.key_iterator(d):
-            labels = d[key]
-            
-            # Convert to numpy for easier label mapping
-            if isinstance(labels, torch.Tensor):
-                was_tensor = True
-                device = labels.device
-                labels_np = labels.cpu().numpy()
-            else:
-                was_tensor = False
-                labels_np = labels
-            
-            # Create output array filled with background
-            output_labels_np = np.full_like(labels_np, self.background_label)
-            
-            # Apply mapping
-            for gen_label, out_label in self.label_mapping.items():
-                mask = labels_np == gen_label
-                output_labels_np[mask] = out_label
-            
-            # Convert back if it was a tensor
-            if was_tensor:
-                d[key] = torch.tensor(output_labels_np, device=device, dtype=labels.dtype)
-            else:
-                d[key] = output_labels_np
-                
-        return d
-
-
-class ImageGradientsD(MapTransform):
-    """
-    Compute spatial gradients of images using Sobel filters, following SynthSeg's approach.
-    Returns the magnitude of the gradient.
-    """
-    
-    def __init__(
-        self,
-        keys: KeysCollection,
-        method: str = "sobel",
-        normalize: bool = True,
-        allow_missing_keys: bool = False,
-    ):
-        super().__init__(keys, allow_missing_keys)
-        self.method = method
-        self.normalize = normalize
-        
-    def _sobel_gradients_3d(self, img: torch.Tensor) -> torch.Tensor:
-        """Compute 3D Sobel gradients."""
-        # Sobel kernels for 3D
-        sobel_x = torch.tensor([
-            [[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]],
-            [[-2, 0, 2], [-4, 0, 4], [-2, 0, 2]],
-            [[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]]
-        ], dtype=img.dtype, device=img.device).unsqueeze(0).unsqueeze(0)
-        
-        sobel_y = torch.tensor([
-            [[-1, -2, -1], [0, 0, 0], [1, 2, 1]],
-            [[-2, -4, -2], [0, 0, 0], [2, 4, 2]],
-            [[-1, -2, -1], [0, 0, 0], [1, 2, 1]]
-        ], dtype=img.dtype, device=img.device).unsqueeze(0).unsqueeze(0)
-        
-        sobel_z = torch.tensor([
-            [[-1, -2, -1], [-2, -4, -2], [-1, -2, -1]],
-            [[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-            [[1, 2, 1], [2, 4, 2], [1, 2, 1]]
-        ], dtype=img.dtype, device=img.device).unsqueeze(0).unsqueeze(0)
-        
-        # Apply convolutions
-        grad_x = F.conv3d(img.unsqueeze(0).unsqueeze(0), sobel_x, padding=1)
-        grad_y = F.conv3d(img.unsqueeze(0).unsqueeze(0), sobel_y, padding=1)  
-        grad_z = F.conv3d(img.unsqueeze(0).unsqueeze(0), sobel_z, padding=1)
-        
-        # Compute magnitude
-        gradient_magnitude = torch.sqrt(grad_x**2 + grad_y**2 + grad_z**2)
-        
-        return gradient_magnitude.squeeze(0).squeeze(0)
-    
-    def __call__(self, data: Mapping[Hashable, torch.Tensor]) -> Dict[Hashable, torch.Tensor]:
-        d = dict(data)
-        
-        for key in self.key_iterator(d):
-            img = d[key]
-            
-            if not isinstance(img, torch.Tensor):
-                img = torch.tensor(img)
-            
-            if self.method == "sobel":
-                if img.ndim == 3:  # 3D image
-                    gradient_mag = self._sobel_gradients_3d(img)
-                else:
-                    raise NotImplementedError("Only 3D Sobel gradients implemented")
-            else:
-                raise ValueError(f"Unknown gradient method: {self.method}")
-            
-            if self.normalize:
-                # Normalize to [0, 1] range
-                gradient_mag = gradient_mag / (gradient_mag.max() + 1e-8)
-            
-            d[key] = gradient_mag
-            
-        return d
-
-
-class RandomCropWithPaddingD(MapTransform):
-    """
-    Random crop with padding if necessary, following SynthSeg's approach.
-    Ensures we can always get the desired crop size.
-    """
-    
-    def __init__(
-        self,
-        keys: KeysCollection,
-        crop_size: Sequence[int],
-        mode: str = "constant",
-        constant_values: float = 0,
-        allow_missing_keys: bool = False,
-    ):
-        super().__init__(keys, allow_missing_keys)
-        self.crop_size = ensure_tuple_rep(crop_size, 3)
-        self.mode = mode
-        self.constant_values = constant_values
-    
-    def __call__(self, data: Mapping[Hashable, torch.Tensor]) -> Dict[Hashable, torch.Tensor]:
-        d = dict(data)
-        
-        for key in self.key_iterator(d):
-            img = d[key]
-            
-            # Get current shape
-            current_shape = img.shape
-            
-            # Calculate padding needed
-            padding = []
-            for i, (curr_size, crop_size) in enumerate(zip(current_shape, self.crop_size)):
-                if curr_size < crop_size:
-                    pad_total = crop_size - curr_size
-                    pad_before = pad_total // 2
-                    pad_after = pad_total - pad_before
-                    padding.extend([pad_before, pad_after])
-                else:
-                    padding.extend([0, 0])
-            
-            # Apply padding if needed
-            if any(p > 0 for p in padding):
-                img = F.pad(img, padding, mode=self.mode, value=self.constant_values)
-            
-            # Random crop
-            new_shape = img.shape
-            starts = []
-            for curr_size, crop_size in zip(new_shape, self.crop_size):
-                if curr_size > crop_size:
-                    max_start = curr_size - crop_size
-                    start = torch.randint(0, max_start + 1, (1,)).item()
-                else:
-                    start = 0
-                starts.append(start)
-            
-            # Extract crop
-            if img.ndim == 3:
-                cropped = img[
-                    starts[0]:starts[0] + self.crop_size[0],
-                    starts[1]:starts[1] + self.crop_size[1], 
-                    starts[2]:starts[2] + self.crop_size[2]
-                ]
-            else:
-                raise NotImplementedError("Only 3D cropping implemented")
-            
-            d[key] = cropped
-            
+        for k in self.key_iterator(d):
+            d[k] = self._convert(d[k])
         return d

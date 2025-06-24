@@ -10,3 +10,4 @@ HD_BET/
 *.pt
 __pycache__/
 *.log
+brain_gen_images/
