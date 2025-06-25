@@ -16,7 +16,7 @@ import torch
 # ------------------------------------------------------------------
 # 1) INPUT SEGMENTATION (integer labels in SynthSeg space)
 # ------------------------------------------------------------------
-SEG_PATH = "C:/Projects/thesis_project/brain_age_pred/tests/segmentation.nii.gz"              # <-- change to an existing file
+SEG_PATH = "/Users/andrasjoos/Documents/AI_masters/Thesis/thesis_project/brain_age_pred/tests/segmentation.nii.gz"              # <-- change to an existing file
 seg_img  = nib.load(SEG_PATH)
 seg_data = seg_img.get_fdata().astype(np.int16)          # numpy array [D,H,W]
 
@@ -58,6 +58,9 @@ prior_stds = np.vstack([
     np.full(n_classes, std_scale,  dtype=float),
 ])
 
+prior_means[:, 0] = 0.0    
+prior_stds[:, 0] = 0.0     
+
 # probabilities required by the generator
 prob = dict(
     flip        = 0.5,
@@ -84,30 +87,30 @@ brain_gen = BABrainGenerator(
 
     # Spatial augmentation parameters
     rotation_range     = 15,
-    scaling_range      = 0.15,          # ±15 %
-    shear_bounds       = 0.01,
-    translation_bounds = 10,
+    scaling_range      = 0.2,
+    shear_bounds       = 0.012,
+    translation_bounds = False,
 
     # Intensity augmentation parameters
     contrast_range      = (0.8, 1.2),
-    log_gamma_std       = 0.2,
+    log_gamma_std       = 0.1,
     shift_offset        = 0.1,
     hist_control_points = 5,
 
     # Artefacts parameters
-    noise_mean    = 0.0,
+    noise_mean    = 0.05,
     noise_std     = 0.03,
     rician_std    = 0.02,
     gibbs_alpha   = 0.4,
     blur_sigma    = 0.5,
-    bias_field_rng= (0.0, 0.3),
+    bias_field_rng= (0.0, 0.5),
 
     # Resolution parameters
     min_res       = 0.7,
     max_res_iso   = 3.0,
     max_res_aniso = 3.0,        # Default was 8.0
     atlas_res     = 1.0,        # Default was 1.0
-    thickness     = 2.0,       # Default was None
+    thickness     = None,       # Default was None
 
     # SynthSeg label config parameters
     generation_labels = GENERATION_LABELS,   # Default was None (uses GENERATION_LABELS)
@@ -117,7 +120,7 @@ brain_gen = BABrainGenerator(
     # Toggle parameters
     use_hemisphere_aware_flip     = True,  # Default was True
     use_dynamic_resolution        = True,  # Default was True
-    use_intensity_clip_normalize  = False,  # Default was True
+    use_intensity_clip_normalize  = True,  # Default was True
     n_channels                    = 1,     # Default was 1
     use_specific_stats_for_channel= False, # Default was False
     output_shape = (208, 240, 256),  # Should match the spatial dims (D, H, W)
@@ -128,13 +131,13 @@ brain_gen = BABrainGenerator(
 # ------------------------------------------------------------------
 # 3) OUTPUT FOLDER
 # ------------------------------------------------------------------
-out_dir = Path("C:/Projects/thesis_project/brain_age_pred/tests/brain_gen_images")
+out_dir = Path("/Users/andrasjoos/Documents/AI_masters/Thesis/thesis_project/brain_age_pred/tests/brain_gen_images")
 out_dir.mkdir(exist_ok=True)
 
 # ------------------------------------------------------------------
 # 4) GENERATE & SAVE 5 VOLUMES
 # ------------------------------------------------------------------
-for k in range(20):
+for k in range(50):
     out_dict = brain_gen({"image": seg_data})     # forward pass
     vol = out_dict["image"].squeeze(0).cpu().numpy()    # Move to CPU for saving
     
@@ -143,4 +146,4 @@ for k in range(20):
     nib.save(nifti, fname)
     print(f"saved → {fname}")
 
-print("Done.  Five volumes are in:", out_dir.resolve())
+print("Done.  Fifty volumes are in:", out_dir.resolve())

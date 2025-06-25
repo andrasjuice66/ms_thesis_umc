@@ -11,10 +11,11 @@ class RandGammaD(MapTransform):
     """
     Voxel‐wise gamma exponentiation: gamma = exp(N(0, log_gamma_std^2))
     """
-    def __init__(self, keys, log_gamma_std: float = 0.2, prob: float = 0.5):
+    def __init__(self, keys, log_gamma_std: float = 0.2, prob: float = 0.5, gamma_range: tuple[float, float] = (0.5, 2.0)):
         super().__init__(keys)
         self.log_gamma_std = log_gamma_std
         self.prob = prob
+        self.gamma_range = gamma_range
 
     def __call__(self, data):
         d = dict(data)
@@ -23,9 +24,20 @@ class RandGammaD(MapTransform):
             # sample exponent in log‐domain
             log_g = torch.randn(1, device=img.device) * self.log_gamma_std
             gamma = torch.exp(log_g).item()
-            d[self.keys[0]] = img.pow(gamma)
+            
+            # Clamp gamma to reasonable range to prevent extreme values
+            gamma = max(self.gamma_range[0], min(self.gamma_range[1], gamma))
+            
+            # Apply gamma correction with small epsilon to prevent numerical issues
+            epsilon = 1e-7
+            img_clamped = torch.clamp(img, min=epsilon)
+            result = img_clamped.pow(gamma)
+            
+            # Handle edge case where original image had exact zeros
+            result = torch.where(img == 0, torch.zeros_like(result), result)
+            
+            d[self.keys[0]] = result
         return d
-
 
 class RandomResolutionD(MapTransform):
     """
@@ -427,4 +439,54 @@ class ConvertLabelsD(MapTransform):
         d = dict(data)
         for k in self.key_iterator(d):
             d[k] = self._convert(d[k])
+        return d
+
+class SetBackgroundToZeroD(MapTransform):
+    """
+    Set background pixels (label 0) to intensity 0 in the final image.
+    
+    This transform should be applied at the very end of the pipeline to ensure
+    that background regions maintain zero intensity regardless of previous
+    intensity augmentations.
+    """
+    
+    def __init__(self, 
+                 keys,
+                 seg_key: str = "class_map",
+                 background_label: int = 0,
+                 allow_missing_keys: bool = False):
+        super().__init__(keys, allow_missing_keys)
+        self.seg_key = seg_key
+        self.background_label = background_label
+    
+    def __call__(self, data):
+        d = dict(data)
+        
+        # Get the segmentation map to identify background pixels
+        if self.seg_key not in d:
+            # If no segmentation map available, skip this transform
+            return d
+            
+        seg = d[self.seg_key]
+        
+        # Create background mask (where segmentation == background_label)
+        if isinstance(seg, torch.Tensor):
+            background_mask = (seg == self.background_label)
+        else:
+            background_mask = (seg == self.background_label)
+            background_mask = torch.from_numpy(background_mask).to(seg.device if hasattr(seg, 'device') else 'cpu')
+        
+        # Apply mask to each key
+        for key in self.key_iterator(d):
+            img = d[key]
+            
+            if isinstance(img, torch.Tensor):
+                # Set background pixels to 0
+                d[key] = img * (~background_mask).float()
+            else:
+                # Convert to tensor, apply mask, convert back
+                img_tensor = torch.from_numpy(img)
+                masked = img_tensor * (~background_mask).float()
+                d[key] = masked.numpy()
+        
         return d

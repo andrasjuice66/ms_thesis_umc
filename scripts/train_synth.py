@@ -32,7 +32,7 @@ from brain_age_pred.utils.logger import setup_logger
 from brain_age_pred.utils.utils import set_seed, read_csv, load_checkpoint
 from torch.utils.data import WeightedRandomSampler, DataLoader
 from brain_age_pred.brain_gen.brain_generator import BABrainGenerator
-
+from brain_age_pred.brain_gen.labels import GENERATION_CLASSES, GENERATION_LABELS, N_NEUTRAL_LABELS
 
 
 def main() -> None:
@@ -80,113 +80,117 @@ def main() -> None:
 
     # 5. ─── Brain Generator ──────────────────────────────────── #
     logger.info("Initializing Brain Generator...")
-    prob_dict = {
-    "flip": 0.5,
-    "affine": 0.8,  # Now includes translation
-    "contrast": 0.7,
-    "gamma": 0.6,
-    "scale_int": 0.5,
-    "shift_int": 0.5,
-    "hist_shift": 0.3,
-    "noise": 0.4,
-    "rician": 0.3,
-    "gibbs": 0.2,
-    "blur": 0.3,
-    "bias": 0.4,
-    "resolution": 0.8,
-    }
-
-    # Example prior means and stds for multi-channel generation
-    # Shape: (n_labels, n_channels) or (n_modalities * 2, n_labels) for channel-specific stats
-    prior_means = np.array([
-        [0, 30, 50, 70, 90, 110],    # Channel 1 (e.g., T1)
-        [0, 20, 40, 60, 80, 100],    # Channel 2 (e.g., T2)
-    ]).T  # Shape: (n_labels, n_channels)
-
-    prior_stds = np.array([
-        [5, 8, 10, 12, 15, 18],      # Channel 1 std
-        [4, 6, 8, 10, 12, 14],       # Channel 2 std  
-    ]).T
-
-    # Create enhanced generator with all new features
-    brain_generator = BABrainGenerator(
-        prior_means=prior_means,
-        prior_stds=prior_stds,
-        distribution="uniform",
-        prob=prob_dict,
-        
-        # Spatial transforms (now with translation!)
-        rotation_range=15.0,
-        scaling_range=0.2,
-        shearing_bounds=0.012,
-        translation_bounds=10.0,  # NEW: Translation in voxels
-        
-        # Intensity transforms
-        contrast_range=(0.8, 1.2),
-        log_gamma_std=0.3,
-        shift_offset=0.1,
-        hist_control_points=5,
-        
-        # Noise parameters
-        noise_mean=0.0,
-        noise_std=0.05,
-        rician_std=0.03,
-        gibbs_alpha=0.7,
-        blur_sigma=1.0,
-        bias_field_rng=(0.0, 0.4),
-        
-        # Resolution parameters
-        min_res=1.0,
-        max_res_iso=4.0,
-        max_res_aniso=8.0,
-        atlas_res=1.0,
-        thickness=1.5,  # NEW: Slice thickness simulation
-        
-        # SynthSeg parameters
-        generation_labels=None,  # Use defaults
-        n_neutral_labels=None,   # Use defaults
-        output_labels=np.array([0, 1, 2, 3, 4, 5]),  # NEW: Remap to simpler labels
-        
-        # NEW: Multi-channel support
-        n_channels=2,  # Generate T1 + T2-like images
-        use_specific_stats_for_channel=True,
-        
-        # NEW: Cropping
-        output_shape=(128, 128, 128),  # Desired output size
-        use_random_cropping=True,
-        
-        # NEW: Additional options
-        return_gradients=False,  # Set to True for gradient images
-        use_hemisphere_aware_flip=True,
-        use_dynamic_resolution=True,
-        use_intensity_clip_normalize=True,
+    prob = dict(
+        flip        = 0.5,
+        affine      = 0.9,
+        contrast    = 0.5,
+        gamma       = 0.5,
+        scale_int   = 0.5,
+        shift_int   = 0.5,
+        hist_shift  = 0.5,
+        noise       = 0.5,
+        rician      = 0.3,
+        gibbs       = 0.3,
+        blur        = 0.3,
+        bias        = 0.5,
+        resolution  = 0.5,
     )
-        
+    n_classes = GENERATION_CLASSES.max() + 1     # = 15 with the default label set
+
+    # "loc" = mid-point,  "scale" = half-range  (SampleConditionalGMMd convention)
+    mean_loc   = 125.0
+    mean_scale = 125.0                           # 0 … 250
+    std_loc    = 17.5
+    std_scale  = 17.5    
+    # ------------------------------------------------------------------
+    prior_means = np.vstack([
+        np.full(n_classes, mean_loc,   dtype=float),
+        np.full(n_classes, mean_scale, dtype=float),
+    ])
+
+    prior_stds = np.vstack([
+        np.full(n_classes, std_loc,    dtype=float),
+        np.full(n_classes, std_scale,  dtype=float),
+    ])
+
+
+
+    brain_generator = BABrainGenerator(
+        # Required parameters
+        prior_means  = prior_means,
+        prior_stds   = prior_stds,
+        distribution = "uniform",           # ← uniform, no Gaussian priors
+        prob         = prob,
+
+        # Spatial augmentation parameters
+        rotation_range     = 15,
+        scaling_range      = 0.2,
+        shear_bounds       = 0.012,
+        translation_bounds = False,
+
+        # Intensity augmentation parameters
+        contrast_range      = (0.8, 1.2),
+        log_gamma_std       = 0.1,
+        shift_offset        = 0.1,
+        hist_control_points = 5,
+
+        # Artefacts parameters
+        noise_mean    = 0.05,
+        noise_std     = 0.03,
+        rician_std    = 0.02,
+        gibbs_alpha   = 0.4,
+        blur_sigma    = 0.5,
+        bias_field_rng= (0.0, 0.5),
+
+        # Resolution parameters
+        min_res       = 0.7,
+        max_res_iso   = 3.0,
+        max_res_aniso = 3.0,        # Default was 8.0
+        atlas_res     = 1.0,        # Default was 1.0
+        thickness     = None,       # Default was None
+
+        # SynthSeg label config parameters
+        generation_labels = GENERATION_LABELS,   # Default was None (uses GENERATION_LABELS)
+        n_neutral_labels  = N_NEUTRAL_LABELS,   # Default was None (uses N_NEUTRAL_LABELS)
+        output_labels     = None,   # Default was None (no remapping)
+
+        # Toggle parameters
+        use_hemisphere_aware_flip     = True,  # Default was True
+        use_dynamic_resolution        = True,  # Default was True
+        use_intensity_clip_normalize  = True,  # Default was True
+        n_channels                    = 1,     # Default was 1
+        use_specific_stats_for_channel= False, # Default was False
+        output_shape = (182, 218, 182),  # Should match the spatial dims (D, H, W)
+        use_random_cropping          = True,   # Disable for debugging
+        return_gradients             = False, # Default was False
+    )
+            
 
     # 6. ─── CSV → dataset / sampler ─────────────────────────── #
     logger.info("Reading CSV files...")
     train_csv = Path(cfg.get("data.train_csv"))
     val_csv   = Path(cfg.get("data.val_csv"))
     test_csv  = Path(cfg.get("data.test_csv"))
-    data_dir  = Path(cfg.get("data.data_dir"))
+    segmented_data_dir = Path(cfg.get("data.segmented_data_dir"))
+    real_data_dir  = Path(cfg.get("data.data_dir"))
     
 
     logger.info(f"Reading train CSV from {train_csv}")
     train_p, train_a, train_w, train_s, train_m = read_csv(
         train_csv,
-        data_dir,
+        segmented_data_dir,
     )
     logger.info(f"Reading val CSV from {val_csv}")
 
     val_p, val_a, val_w, val_s, val_m = read_csv(
         val_csv,
-        data_dir,
+        real_data_dir,
     )
     logger.info(f"Reading test CSV from {test_csv}")
 
     test_p, test_a, test_w, test_s, test_m = read_csv(
         test_csv,
-        data_dir,
+        real_data_dir,
     )
     
     logger.info(f"Train={len(train_p)}  Val={len(val_p)}  Test={len(test_p)}")

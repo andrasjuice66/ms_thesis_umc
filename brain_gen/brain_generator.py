@@ -21,13 +21,31 @@ from monai.transforms import (
 # project imports -------------------------------------------------------
 from brain_age_pred.dataset.custom_transformations import (
     RandomResolutionD, RandGammaD, HemisphereAwareFlipD, DynamicResolutionD,
-    IntensityClipNormalizeD, ConvertLabelsD
+    IntensityClipNormalizeD, ConvertLabelsD,
 )
 from brain_age_pred.brain_gen.gen_image_from_labels import (
     SampleConditionalGMMd, MultiChannelSampleConditionalGMMd, 
 )
 from brain_age_pred.brain_gen.labels import (
     GENERATION_LABELS, GENERATION_CLASSES, N_NEUTRAL_LABELS,
+)
+# ---------------------------------------------------------------
+# After your existing imports – add these two one-liners
+# ---------------------------------------------------------------
+from monai.transforms import Lambdad, MaskIntensityd
+
+
+# 1. copy class_map  →  brain_mask
+# 2. convert to binary mask in-place
+MakeBrainMaskd = Compose([
+    CopyItemsd(keys=["class_map"], times=1, names=["brain_mask"]),
+    Lambdad(keys=["brain_mask"], func=lambda x: (x > 0).float()),
+])
+
+# === set background to zero at the end ==========================
+ApplyBrainMaskd = MaskIntensityd(
+    keys="image",
+    mask_key="brain_mask",
 )
 
 
@@ -206,7 +224,7 @@ class BABrainGenerator:
                 keys=[self.image_key],
                 prob=self.prob["affine"],
                 rotate_range=(self.rotate_rad,) * 3,
-                scale_range=(self.scale_bounds,) * 3,   # ← fixed
+                scale_range=(self.scale_bounds,) * 3,   
                 shear_range=(self.shear_bounds,) * 3,
                 translate_range=(self.translation_bounds,) * 3,
                 mode="nearest",
@@ -224,9 +242,6 @@ class BABrainGenerator:
                 background_label=0,
             )
         )
-
-
-
 
         # 2) label → image via conditional GMM -----------------------
         if self.n_channels == 1:
@@ -251,6 +266,8 @@ class BABrainGenerator:
                     use_specific_stats_for_channel=self.use_specific_stats_for_channel,
                 )
             )
+
+        tx.append(MakeBrainMaskd)
 
 
         # 4) intensity augmentations ---------------------------------
@@ -318,7 +335,6 @@ class BABrainGenerator:
 
         # 3) clip + normalise ----------------------------------------
         if self.use_intensity_clip_normalize:
-            print("Using intensity clip normalization")
             tx.append(
                 IntensityClipNormalizeD(
                     keys=[self.image_key],
@@ -329,6 +345,8 @@ class BABrainGenerator:
                     prob=0.95,
                 )
             )
+
+        tx.append(ApplyBrainMaskd)
 
 
         # 9) tensor conversion ---------------------------------------
@@ -345,6 +363,7 @@ class BABrainGenerator:
             sample[self.image_key + "_original_labels"] = sample[self.image_key].copy()
 
         out = self.transform(sample)
+        
 
         if not np.array_equal(self.generation_labels, self.output_labels):
             out[self.label_key] = out.pop(self.image_key + "_original_labels")
