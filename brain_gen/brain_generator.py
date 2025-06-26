@@ -378,6 +378,5 @@ class BABrainGenerator:
 
         if not np.array_equal(self.generation_labels, self.output_labels):
             out[self.label_key] = out.pop(self.image_key + "_original_labels")
-        print("image generated successfully")
             
         return out
