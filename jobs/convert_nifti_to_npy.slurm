@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=convert_nifti
-#SBATCH --partition=cpu            
+#SBATCH --partition=tcn rome            
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
 #SBATCH --time=01:00:00
