@@ -1,6 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=convert_nifti
-#SBATCH --partition=tcn_rome      
+#SBATCH --partition=gpu_a100        
+#SBATCH --gres=gpu:a100:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
 #SBATCH --time=02:00:00
