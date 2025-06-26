@@ -1,0 +1,173 @@
+data:
+  age_key: age
+  age_max: 80
+  age_min: 20
+  cache_dir: data/cache
+  cache_mode: memory
+  cache_size: 0
+  image_key: image_path
+  num_workers: 8
+  persistent_workers: false
+  pin_memory: false
+  pin_memory_device: ''
+  prefetch_factor: 4
+  preload: true
+  real_data_dir: C:/Projects/thesis_project/Data/brain_age_preprocessed/
+  segmented_data_dir: C:/Projects/thesis_project/Data/brain_age_segmented_converted/
+  shared_cache: 0
+  target_shape:
+  - 160
+  - 192
+  - 160
+  test_csv: C:/Projects/thesis_project/brain_age_pred/data/labels/test_balanced.csv
+  train_csv: C:/Projects/thesis_project/brain_age_pred/data/labels/train.csv
+  val_csv: C:/Projects/thesis_project/brain_age_pred/data/labels/val.csv
+  weight_key: sample_weight
+device: cuda
+domain_randomization:
+  augmentation_strength: 0.5
+  bias_field_range:
+  - 0.0
+  - 0.8
+  blur_sigma:
+  - 0.5
+  - 2.0
+  coarse_dropout_holes: 8
+  coarse_dropout_size:
+  - 20
+  - 20
+  - 20
+  contrast_range:
+  - 0.1
+  - 2.0
+  elastic_control_points: 7
+  elastic_max_displacement: 5.0
+  ghost_num:
+  - 2
+  - 10
+  gibbs_alpha:
+  - 0.0
+  - 1.0
+  hist_control_points:
+  - 4
+  - 12
+  image_key: image
+  log_gamma_std: 0.3
+  max_res_iso: 1.8
+  min_res: 1.0
+  noise_mean: 0.5
+  noise_std: 0.08
+  output_shape:
+  - 160
+  - 192
+  - 160
+  progressive_epochs: 50
+  progressive_start: 0.2
+  random_center: true
+  rician_std: 0.08
+  rotation_range: 15.0
+  scaling_range:
+  - 0.85
+  - 1.15
+  shearing_bounds: 0.3
+  shift_offset:
+  - -0.15
+  - 0.15
+  spike_intensity:
+  - 0.1
+  - 0.6
+  spike_num:
+  - 1
+  - 6
+  transform_probs:
+    affine: 0.7
+    bias: 0.5
+    blur: 0.2
+    coarse_do: 0.0
+    contrast: 0.6
+    flip: 0.5
+    gamma: 0.5
+    gibbs: 0.3
+    hist_shift: 0.3
+    noise: 0.4
+    resolution: 0.1
+    rician: 0.3
+    scale_int: 0.4
+    shift_int: 0.4
+    tumor: 0.7
+  tumor_config:
+    V_multiplier: 500.0
+    age_ranges:
+      middle:
+      - 40
+      - 60
+      old:
+      - 60
+      - 80
+      young:
+      - 20
+      - 40
+    bc: neumann
+    brain_threshold: 0.1
+    dt: 0.1
+    integ_method: dopri5
+    intensity_variation: 0.3
+    mask_percentile_max: 99.6
+    mask_percentile_min: 90.0
+    max_nt: 20
+    min_nt: 10
+    min_tumor_size: 100
+    pathol_thres: 0.2
+    perlin_res:
+    - 2
+    - 2
+    - 2
+    segmentation_paths:
+      middle: brain_age_pred/data/segmentations/seg_40_60.nii.gz
+      old: brain_age_pred/data/segmentations/seg_60_85.nii.gz
+      young: brain_age_pred/data/segmentations/seg_18_40.nii.gz
+    tumor_size_factor_range:
+    - 0.5
+    - 2.0
+    use_age_based_segmentation: true
+    use_fluid_dynamics: false
+  use_domain_randomization: true
+  use_torchio: false
+  use_tumor_simulation: true
+model:
+  checkpoint: null
+  dropout_rate: 0.3
+  in_channels: 1
+  type: sfcn_class
+  use_attention: false
+output:
+  checkpoint_dir: checkpoints
+  experiment_name: sfcn_class_segmented_synth
+  log_dir: logs
+  output_dir: C:/Projects/thesis_project/brain_age_pred/output
+seed: 42
+training:
+  batch_size: 16
+  early_stopping_patience: 30
+  epochs: 150
+  gradient_accumulation_steps: 1
+  learning_rate: 0.002
+  loss: kl_div
+  loss_params:
+    delta: 1.0
+    mae_weight: 0.5
+  optimizer: adamw
+  scheduler: step
+  scheduler_params:
+    T_max: 100
+    epochs: 200
+    eta_min: 1.0e-05
+    gamma: 0.3
+    step_size: 30
+    steps_per_epoch: 534
+  use_amp: true
+  weight_decay: 0.001
+wandb:
+  entity: null
+  project: brain_age_synth
+  use_wandb: true

@@ -164,12 +164,12 @@ def process_image(img, base, out_root, mni):
         # run_n4(log, d, n4)
 
         # Using fov result directly for brain extraction since denoising and n4 are skipped
-        # b = out_root / f"{stem}_brain.nii.gz"
-        # run_synthstrip(log, f, b)
+        b = out_root / f"{stem}_brain.nii.gz"
+        run_synthstrip(log, f, b)
 
         # Final registration step
         xfm = out_root / f"{stem}.lta"
-        run_synthmorph_affine(log, f, mni, final, xfm)
+        run_synthmorph_affine(log, b, mni, final, xfm)
         
         log.info(f"Successfully processed: {img.name}")
 
@@ -251,7 +251,7 @@ def main(data_root, out_root):
 
     start = time.time()
     done = done0
-    mni = Path("/mnt/c/Projects/thesis_project/Data/MNI152lin_T1_1mm.nii.gz")
+    mni = Path("/mnt/c/Projects/thesis_project/Data/MNI152_T1_1mm_Brain.nii.gz")
 
     with ThreadPoolExecutor(max_workers=os.cpu_count() or 4) as exe:
         futures = {
@@ -291,20 +291,20 @@ def main(data_root, out_root):
 
 
 if __name__ == "__main__":
-    # data_root = Path("/mnt/c/Projects/thesis_project/Data/CoRR")
-    # out_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed/CoRR")
-    # main(data_root, out_root)
+    data_root = Path("/mnt/c/Projects/thesis_project/Data/CoRR")
+    out_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed/CoRR_")
+    main(data_root, out_root)
 
-    # data_root = Path("/mnt/c/Projects/thesis_project/Data/SALD")
-    # out_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed/SALD")
-    # main(data_root, out_root)
+    data_root = Path("/mnt/c/Projects/thesis_project/Data/SALD")
+    out_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed/SALD_")
+    main(data_root, out_root)
 
-    # data_root = Path("/mnt/c/Projects/thesis_project/Data/PanGen")
-    # out_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed/PanGen")
-    # main(data_root, out_root)
+    data_root = Path("/mnt/c/Projects/thesis_project/Data/PanGen")
+    out_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed/PanGen_")
+    main(data_root, out_root)
 
     data_root = Path("/mnt/c/Projects/thesis_project/Data/AOMIC_ID1000")
-    out_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed/AOMIC_ID1000")
+    out_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed/AOMIC_ID1000_")
     main(data_root, out_root)
 
 

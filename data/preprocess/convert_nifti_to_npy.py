@@ -161,7 +161,7 @@ def main():
     parser = argparse.ArgumentParser(description='Convert Nifti files to normalized NumPy arrays')
     parser.add_argument('--input', required=True, help='Input directory containing Nifti files')
     parser.add_argument('--output', required=True, help='Output directory for NumPy files')
-    parser.add_argument('--normalize', action='store_true', default=True, 
+    parser.add_argument('--normalize', action='store_true', default=False, 
                         help='Apply percentile-based normalization')
     parser.add_argument('--percentile_low', type=int, default=1,
                         help='Lower percentile for normalization')

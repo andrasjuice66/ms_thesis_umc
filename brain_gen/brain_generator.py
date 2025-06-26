@@ -35,11 +35,16 @@ from brain_age_pred.brain_gen.labels import (
 from monai.transforms import Lambdad, MaskIntensityd
 
 
+# Define a picklable function instead of using lambda
+def brain_mask_function(x):
+    """Picklable function for brain masking instead of lambda"""
+    return (x > 0).float()
+
 # 1. copy class_map  →  brain_mask
 # 2. convert to binary mask in-place
 MakeBrainMaskd = Compose([
     CopyItemsd(keys=["class_map"], times=1, names=["brain_mask"]),
-    Lambdad(keys=["brain_mask"], func=lambda x: (x > 0).float()),
+    Lambdad(keys=["brain_mask"], func=brain_mask_function),
 ])
 
 # === set background to zero at the end ==========================
@@ -353,6 +358,12 @@ class BABrainGenerator:
         tx.append(ToTensord(keys=[self.image_key]))
 
         self.transform = Compose(tx)
+        
+        # ADD THIS: Set device for MONAI transforms if using CUDA
+        if self.device.type == "cuda":
+            for t in self.transform.transforms:
+                if hasattr(t, "set_device"):
+                    t.set_device(self.device)
 
     # ------------------------------------------------------------------ #
     # callable                                                           #
@@ -367,5 +378,6 @@ class BABrainGenerator:
 
         if not np.array_equal(self.generation_labels, self.output_labels):
             out[self.label_key] = out.pop(self.image_key + "_original_labels")
-
+        print("image generated successfully")
+            
         return out

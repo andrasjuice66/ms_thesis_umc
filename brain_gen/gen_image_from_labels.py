@@ -59,11 +59,11 @@ class SampleConditionalGMMd(Transform):
             seg_s = seg
         device = seg.device
 
-        # sample GMM parameters
-        loc_means  = torch.from_numpy(self.hyper_mean_loc).to(device)
-        scale_means= torch.from_numpy(self.hyper_mean_scale).to(device)
-        loc_stds   = torch.from_numpy(self.hyper_std_loc).to(device)
-        scale_stds = torch.from_numpy(self.hyper_std_scale).to(device)
+        # sample GMM parameters - FORCE FLOAT32
+        loc_means  = torch.from_numpy(self.hyper_mean_loc).to(device, dtype=torch.float32)
+        scale_means= torch.from_numpy(self.hyper_mean_scale).to(device, dtype=torch.float32)
+        loc_stds   = torch.from_numpy(self.hyper_std_loc).to(device, dtype=torch.float32)
+        scale_stds = torch.from_numpy(self.hyper_std_scale).to(device, dtype=torch.float32)
 
         if self.distribution == "normal":
             gmm_means = torch.normal(loc_means,  scale_means)
