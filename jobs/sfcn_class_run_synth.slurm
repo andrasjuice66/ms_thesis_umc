@@ -1,8 +1,8 @@
 #!/bin/bash
-#SBATCH --job-name=sfcn
+#SBATCH --job-name=sfcn_synth
 #SBATCH --partition=gpu_a100            
 #SBATCH --gres=gpu:a100:1
-#SBATCH --cpus-per-task=8
+#SBATCH --cpus-per-task=32
 #SBATCH --mem=64G
 #SBATCH --time=20:00:00
 #SBATCH --output=/home/%u/run_logs/%x_%j.out   
