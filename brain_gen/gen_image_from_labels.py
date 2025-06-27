@@ -121,12 +121,19 @@ class MultiChannelSampleConditionalGMMd(MapTransform):
         self.distribution = distribution
         self.n_channels = n_channels  
         self.use_specific_stats_for_channel = use_specific_stats_for_channel
+
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        self.loc_means   = torch.as_tensor(prior_means[0], dtype=torch.float32, device=device)
+        self.scale_means = torch.as_tensor(prior_means[1], dtype=torch.float32, device=device)
+        self.loc_stds    = torch.as_tensor(prior_stds [0], dtype=torch.float32, device=device)
+        self.scale_stds  = torch.as_tensor(prior_stds [1], dtype=torch.float32, device=device)
         
     def __call__(self, data: Mapping[Hashable, torch.Tensor]) -> Dict[Hashable, torch.Tensor]:
         d = dict(data)
         
-        seg = d[self.seg_key]
-        
+        seg = data[self.seg_key].to(self.loc_means.device)      
+          
         if self.n_channels == 1:
             # Single channel - use existing logic
             from brain_age_pred.brain_gen.gen_image_from_labels import SampleConditionalGMMd
