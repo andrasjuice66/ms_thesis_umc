@@ -80,29 +80,36 @@ def main() -> None:
 
     # 5. ─── Brain Generator ──────────────────────────────────── #
     logger.info("Initializing Brain Generator...")
-    prob = dict(
-        flip        = 0.5,
-        affine      = 0.9,
-        contrast    = 0.5,
-        gamma       = 0.5,
-        scale_int   = 0.5,
-        shift_int   = 0.5,
-        hist_shift  = 0.5,
-        noise       = 0.5,
-        rician      = 0.3,
-        gibbs       = 0.3,
-        blur        = 0.3,
-        bias        = 0.5,
-        resolution  = 0.5,
-    )
+    
+    # Read brain generator config from file
+    bg_cfg = cfg.get("brain_generator", {})
+    
+    # Prior distribution parameters
+    mean_loc = bg_cfg.get("mean_loc", 125.0)
+    mean_scale = bg_cfg.get("mean_scale", 125.0)
+    std_loc = bg_cfg.get("std_loc", 17.5)
+    std_scale = bg_cfg.get("std_scale", 17.5)
+    
+    # Augmentation probabilities from config
+    prob = bg_cfg.get("prob", {
+        "flip": 0.5,
+        "affine": 0.0,
+        "contrast": 0.3,
+        "gamma": 0.3,
+        "scale_int": 0.3,
+        "shift_int": 0.3,
+        "hist_shift": 0.3,
+        "noise": 0.3,
+        "rician": 0.3,
+        "gibbs": 0.3,
+        "blur": 0.3,
+        "bias": 0.0,
+        "resolution": 0.3,
+    })
+    
     n_classes = GENERATION_CLASSES.max() + 1     # = 15 with the default label set
 
     # "loc" = mid-point,  "scale" = half-range  (SampleConditionalGMMd convention)
-    mean_loc   = 125.0
-    mean_scale = 125.0                           # 0 … 250
-    std_loc    = 17.5
-    std_scale  = 17.5    
-    # ------------------------------------------------------------------
     prior_means = np.vstack([
         np.full(n_classes, mean_loc,   dtype=float),
         np.full(n_classes, mean_scale, dtype=float),
@@ -113,56 +120,58 @@ def main() -> None:
         np.full(n_classes, std_scale,  dtype=float),
     ])
 
-
+    # Set background class (label 0) to zero
+    prior_means[:, 0] = 0.0    
+    prior_stds[:, 0] = 0.0     
 
     brain_generator = BABrainGenerator(
         # Required parameters
         prior_means  = prior_means,
         prior_stds   = prior_stds,
-        distribution = "uniform",           # ← uniform, no Gaussian priors
+        distribution = bg_cfg.get("distribution", "normal"),
         prob         = prob,
 
         # Spatial augmentation parameters
-        rotation_range     = 15,
-        scaling_range      = 0.2,
-        shear_bounds       = 0.012,
-        translation_bounds = False,
+        rotation_range     = bg_cfg.get("rotation_range", 10),
+        scaling_range      = bg_cfg.get("scaling_range", 0.1),
+        shear_bounds       = bg_cfg.get("shear_bounds", 0.005),
+        translation_bounds = bg_cfg.get("translation_bounds", False),
 
         # Intensity augmentation parameters
-        contrast_range      = (0.8, 1.2),
-        log_gamma_std       = 0.1,
-        shift_offset        = 0.1,
-        hist_control_points = 5,
+        contrast_range      = tuple(bg_cfg.get("contrast_range", [0.8, 1.2])),
+        log_gamma_std       = bg_cfg.get("log_gamma_std", 0.1),
+        shift_offset        = bg_cfg.get("shift_offset", 0.1),
+        hist_control_points = bg_cfg.get("hist_control_points", 5),
 
         # Artefacts parameters
-        noise_mean    = 0.05,
-        noise_std     = 0.03,
-        rician_std    = 0.02,
-        gibbs_alpha   = 0.4,
-        blur_sigma    = 0.5,
-        bias_field_rng= (0.0, 0.5),
+        noise_mean    = bg_cfg.get("noise_mean", 0.02),
+        noise_std     = bg_cfg.get("noise_std", 0.015),
+        rician_std    = bg_cfg.get("rician_std", 0.01),
+        gibbs_alpha   = bg_cfg.get("gibbs_alpha", 0.4),
+        blur_sigma    = bg_cfg.get("blur_sigma", 0.25),
+        bias_field_rng= tuple(bg_cfg.get("bias_field_rng", [0.0, 0.5])),
 
         # Resolution parameters
-        min_res       = 0.7,
-        max_res_iso   = 3.0,
-        max_res_aniso = 3.0,        # Default was 8.0
-        atlas_res     = 1.0,        # Default was 1.0
-        thickness     = None,       # Default was None
+        min_res       = bg_cfg.get("min_res", 0.8),
+        max_res_iso   = bg_cfg.get("max_res_iso", 2.0),
+        max_res_aniso = bg_cfg.get("max_res_aniso", 2.0),
+        atlas_res     = bg_cfg.get("atlas_res", 1.0),
+        thickness     = bg_cfg.get("thickness", None),
 
         # SynthSeg label config parameters
-        generation_labels = GENERATION_LABELS,   # Default was None (uses GENERATION_LABELS)
-        n_neutral_labels  = N_NEUTRAL_LABELS,   # Default was None (uses N_NEUTRAL_LABELS)
-        output_labels     = None,   # Default was None (no remapping)
+        generation_labels = GENERATION_LABELS,
+        n_neutral_labels  = N_NEUTRAL_LABELS,
+        output_labels     = None,
 
         # Toggle parameters
-        use_hemisphere_aware_flip     = True,  # Default was True
-        use_dynamic_resolution        = True,  # Default was True
-        use_intensity_clip_normalize  = True,  # Default was True
-        n_channels                    = 1,     # Default was 1
-        use_specific_stats_for_channel= False, # Default was False
-        output_shape = (182, 218, 182),  # Should match the spatial dims (D, H, W)
-        use_random_cropping          = True,   # Disable for debugging
-        return_gradients             = False, # Default was False
+        use_hemisphere_aware_flip     = bg_cfg.get("use_hemisphere_aware_flip", True),
+        use_dynamic_resolution        = bg_cfg.get("use_dynamic_resolution", True),
+        use_intensity_clip_normalize  = bg_cfg.get("use_intensity_clip_normalize", True),
+        n_channels                    = bg_cfg.get("n_channels", 1),
+        use_specific_stats_for_channel= bg_cfg.get("use_specific_stats_for_channel", False),
+        output_shape = tuple(bg_cfg.get("output_shape", [182, 218, 182])),
+        use_random_cropping          = bg_cfg.get("use_random_cropping", True),
+        return_gradients             = bg_cfg.get("return_gradients", False),
     )
             
 
@@ -381,170 +390,6 @@ def main() -> None:
         logger.error(f"Training failed")
         raise
 
-    # 10. ─── 3-fold evaluation ─────────────────────────────────────── #
-    def create_eval_transforms(use_domain_rand=False, use_tumor=False):
-        """Create evaluation-specific transforms"""
-        if not use_domain_rand:
-            return None
-        
-        # Create domain randomization for evaluation using same config as training
-        eval_rand_cfg = cfg.get("domain_randomization", {}).copy()
-        eval_tumor_cfg = eval_rand_cfg.get("tumor_config", {}).copy() if use_tumor else {}
-        
-        # IMPORTANT: For tumor evaluation, always set probability to 1.0 to ensure tumors are always added
-        if use_tumor and eval_tumor_cfg:
-            eval_tumor_cfg["prob"] = 1.0
-            logger.info(f"Overriding tumor probability to 1.0 for evaluation (was {cfg.get('domain_randomization', {}).get('tumor_config', {}).get('prob', 'unknown')})")
-        
-        # Remove conflicting keys that we want to override
-        eval_rand_cfg.pop("use_domain_randomization", None)
-        eval_rand_cfg.pop("use_tumor_simulation", None)
-        eval_rand_cfg.pop("tumor_config", None)
-        
-        eval_transform = DomainRandomizer(
-            device=device,
-            use_domain_randomization=True,
-            use_tumor_simulation=use_tumor,
-            tumor_config=eval_tumor_cfg if use_tumor else None,
-            **eval_rand_cfg,
-        )
-        
-        return eval_transform
-
-    def create_evaluation_tables(normal_metrics, dom_rand_metrics, dom_rand_tumor_metrics):
-        """Create wandb tables summarizing evaluation metrics by modality"""
-        
-        # Get unique modalities from the metrics keys
-        modalities = set()
-        for metrics in [normal_metrics, dom_rand_metrics, dom_rand_tumor_metrics]:
-            for key in metrics.keys():
-                if '_mae' in key and key != 'mae':
-                    modality = key.replace('_mae', '')
-                    if modality not in ['mae_std']:  # Skip std metrics
-                        modalities.add(modality)
-        
-        modalities = sorted(list(modalities))
-        
-        # Create table data
-        table_data = []
-        
-        # Add overall (average) row
-        table_data.append([
-            "Average",
-            f"{normal_metrics['mae']:.4f}",
-            f"{normal_metrics['mse']:.4f}",
-            f"{normal_metrics['r2']:.4f}",
-            f"{normal_metrics['correlation']:.4f}",
-            f"{dom_rand_metrics['mae']:.4f} ± {dom_rand_metrics.get('mae_std', 0):.4f}",
-            f"{dom_rand_metrics['mse']:.4f} ± {dom_rand_metrics.get('mse_std', 0):.4f}",
-            f"{dom_rand_metrics['r2']:.4f} ± {dom_rand_metrics.get('r2_std', 0):.4f}",
-            f"{dom_rand_metrics['correlation']:.4f} ± {dom_rand_metrics.get('correlation_std', 0):.4f}",
-            f"{dom_rand_tumor_metrics['mae']:.4f} ± {dom_rand_tumor_metrics.get('mae_std', 0):.4f}",
-            f"{dom_rand_tumor_metrics['mse']:.4f} ± {dom_rand_tumor_metrics.get('mse_std', 0):.4f}",
-            f"{dom_rand_tumor_metrics['r2']:.4f} ± {dom_rand_tumor_metrics.get('r2_std', 0):.4f}",
-            f"{dom_rand_tumor_metrics['correlation']:.4f} ± {dom_rand_tumor_metrics.get('correlation_std', 0):.4f}",
-        ])
-        
-        # Add modality-specific rows
-        for modality in modalities:
-            # Get metrics for this modality (with fallbacks)
-            normal_mae = normal_metrics.get(f"{modality}_mae", 0)
-            normal_mse = normal_metrics.get(f"{modality}_mse", 0)
-            normal_r2 = normal_metrics.get(f"{modality}_r2", 0)
-            normal_corr = normal_metrics.get(f"{modality}_correlation", 0)
-            
-            dom_rand_mae = dom_rand_metrics.get(f"{modality}_mae", 0)
-            dom_rand_mse = dom_rand_metrics.get(f"{modality}_mse", 0)
-            dom_rand_r2 = dom_rand_metrics.get(f"{modality}_r2", 0)
-            dom_rand_corr = dom_rand_metrics.get(f"{modality}_correlation", 0)
-            dom_rand_mae_std = dom_rand_metrics.get(f"{modality}_mae_std", 0)
-            dom_rand_mse_std = dom_rand_metrics.get(f"{modality}_mse_std", 0)
-            dom_rand_r2_std = dom_rand_metrics.get(f"{modality}_r2_std", 0)
-            dom_rand_corr_std = dom_rand_metrics.get(f"{modality}_correlation_std", 0)
-            
-            tumor_mae = dom_rand_tumor_metrics.get(f"{modality}_mae", 0)
-            tumor_mse = dom_rand_tumor_metrics.get(f"{modality}_mse", 0)
-            tumor_r2 = dom_rand_tumor_metrics.get(f"{modality}_r2", 0)
-            tumor_corr = dom_rand_tumor_metrics.get(f"{modality}_correlation", 0)
-            tumor_mae_std = dom_rand_tumor_metrics.get(f"{modality}_mae_std", 0)
-            tumor_mse_std = dom_rand_tumor_metrics.get(f"{modality}_mse_std", 0)
-            tumor_r2_std = dom_rand_tumor_metrics.get(f"{modality}_r2_std", 0)
-            tumor_corr_std = dom_rand_tumor_metrics.get(f"{modality}_correlation_std", 0)
-            
-            table_data.append([
-                modality,
-                f"{normal_mae:.4f}",
-                f"{normal_mse:.4f}",
-                f"{normal_r2:.4f}",
-                f"{normal_corr:.4f}",
-                f"{dom_rand_mae:.4f} ± {dom_rand_mae_std:.4f}",
-                f"{dom_rand_mse:.4f} ± {dom_rand_mse_std:.4f}",
-                f"{dom_rand_r2:.4f} ± {dom_rand_r2_std:.4f}",
-                f"{dom_rand_corr:.4f} ± {dom_rand_corr_std:.4f}",
-                f"{tumor_mae:.4f} ± {tumor_mae_std:.4f}",
-                f"{tumor_mse:.4f} ± {tumor_mse_std:.4f}",
-                f"{tumor_r2:.4f} ± {tumor_r2_std:.4f}",
-                f"{tumor_corr:.4f} ± {tumor_corr_std:.4f}",
-            ])
-        
-        # Create wandb table
-        table = wandb.Table(
-            columns=[
-                "Modality",
-                "Normal MAE", "Normal MSE", "Normal R²", "Normal Correlation",
-                "Dom Rand MAE", "Dom Rand MSE", "Dom Rand R²", "Dom Rand Correlation", 
-                "Dom Rand + Tumor MAE", "Dom Rand + Tumor MSE", "Dom Rand + Tumor R²", "Dom Rand + Tumor Correlation"
-            ],
-            data=table_data
-        )
-        
-        return table
-
-    def run_multi_fold_evaluation(transform, n_folds=10, eval_name="test"):
-        """Run evaluation multiple times with different augmentations and average results"""
-        logger.info(f"Running {n_folds}-fold {eval_name} evaluation...")
-        
-        all_metrics = []
-        
-        for fold in range(n_folds):
-            logger.info(f"{eval_name} evaluation fold {fold+1}/{n_folds}")
-            
-            # Create test dataset with transform
-            eval_test_ds = BADataset(
-                file_paths=test_p,
-                age_labels=test_a,
-                sexes=test_s,
-                modalities=test_m,
-                transform=transform,
-                mode="test",
-                cache_size=0,  # No caching for evaluation
-            )
-            
-            # Create data loader
-            eval_test_loader = torch.utils.data.DataLoader(
-                eval_test_ds,
-                batch_size=cfg.get("training.batch_size", 8),
-                shuffle=False,
-                **dl_kwargs,
-            )
-            
-            # Run evaluation
-            metrics = trainer.evaluate(eval_test_loader, checkpoint_path=best_mae_checkpoint)
-            all_metrics.append(metrics)
-        
-        # Average metrics across folds
-        avg_metrics = {}
-        for key in all_metrics[0].keys():
-            values = [m[key] for m in all_metrics]
-            avg_metrics[key] = np.mean(values)
-            avg_metrics[f"{key}_std"] = np.std(values)
-        
-        logger.info(f"{eval_name} evaluation results (averaged over {n_folds} folds):")
-        logger.info(f"MAE: {avg_metrics['mae']:.4f} ± {avg_metrics['mae_std']:.4f}")
-        logger.info(f"MSE: {avg_metrics['mse']:.4f} ± {avg_metrics['mse_std']:.4f}")
-        logger.info(f"R²: {avg_metrics['r2']:.4f} ± {avg_metrics['r2_std']:.4f}")
-        
-        return avg_metrics
 
     try:
         logger.info("Starting 3-fold evaluation using best MAE checkpoint...")
@@ -552,64 +397,12 @@ def main() -> None:
         logger.info(f"Loading best checkpoint from epoch {best_mae_info['epoch']+1} with MAE {best_mae_info['value']:.4f}")
         
         # 1. Normal test evaluation
-        logger.info("=== 1/3: Normal test evaluation ===")
+        logger.info("=== Normal test evaluation ===")
         normal_metrics = trainer.evaluate(test_loader, checkpoint_path=best_mae_checkpoint)
         logger.info(f"Normal test results: {normal_metrics}")
         
-        # 2. Domain randomized test evaluation (10 folds)
-        logger.info("=== 2/3: Domain randomized test evaluation ===")
-        dom_rand_transform = create_eval_transforms(use_domain_rand=True, use_tumor=False)
-        dom_rand_metrics = run_multi_fold_evaluation(
-            dom_rand_transform, n_folds=5, eval_name="domain_randomized"
-        )
-        
-        # 3. Domain randomized + tumor simulation test evaluation (10 folds)
-        logger.info("=== 3/3: Domain randomized + tumor simulation test evaluation ===")
-        dom_rand_tumor_transform = create_eval_transforms(use_domain_rand=True, use_tumor=True)
-        dom_rand_tumor_metrics = run_multi_fold_evaluation(
-            dom_rand_tumor_transform, n_folds=5, eval_name="domain_rand_tumor"
-        )
-        
-        # Log all results to W&B with appropriate prefixes
-        if use_wandb:
-            # Normal test results
-            wandb.log({f"test/{k}": v for k, v in normal_metrics.items()})
-            
-            # Domain randomized results
-            wandb.log({f"test_dom_rand/{k}": v for k, v in dom_rand_metrics.items()})
-            
-            # Domain randomized + tumor results
-            wandb.log({f"test_dom_rand_tumor/{k}": v for k, v in dom_rand_tumor_metrics.items()})
-            
-            # Log summary comparison
-            wandb.log({
-                "evaluation_summary/normal_mae": normal_metrics["mae"],
-                "evaluation_summary/dom_rand_mae": dom_rand_metrics["mae"],
-                "evaluation_summary/dom_rand_tumor_mae": dom_rand_tumor_metrics["mae"],
-                "evaluation_summary/dom_rand_mae_std": dom_rand_metrics["mae_std"],
-                "evaluation_summary/dom_rand_tumor_mae_std": dom_rand_tumor_metrics["mae_std"],
-            })
-            
-            # Create and log wandb table
-            logger.info("Creating evaluation summary table for W&B...")
-            evaluation_table = create_evaluation_tables(normal_metrics, dom_rand_metrics, dom_rand_tumor_metrics)
-            wandb.log({"test_evaluation_summary": evaluation_table})
-        
-        # Save evaluation results
-        eval_results = {
-            "normal": normal_metrics,
-            "domain_randomized": dom_rand_metrics,
-            "domain_rand_tumor": dom_rand_tumor_metrics,
-        }
-        json.dump(eval_results, open(ckpt_dir/"evaluation_results.json","w"), indent=2)
-        
-        logger.info("=== Evaluation Summary ===")
-        logger.info(f"Normal test MAE: {normal_metrics['mae']:.4f}")
-        logger.info(f"Domain rand test MAE: {dom_rand_metrics['mae']:.4f} ± {dom_rand_metrics['mae_std']:.4f}")
-        logger.info(f"Domain rand + tumor test MAE: {dom_rand_tumor_metrics['mae']:.4f} ± {dom_rand_tumor_metrics['mae_std']:.4f}")
-        
     except Exception as e:
-        logger.error(f"3-fold evaluation failed: {e}")
+        logger.error(f"Evaluation failed: {e}")
         import traceback
         traceback.print_exc()
     finally:

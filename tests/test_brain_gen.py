@@ -64,31 +64,31 @@ prior_stds[:, 0] = 0.0
 # probabilities required by the generator
 prob = dict(
     flip        = 0.5,
-    affine      = 0.9,
-    contrast    = 0.5,
-    gamma       = 0.5,
-    scale_int   = 0.5,
-    shift_int   = 0.5,
-    hist_shift  = 0.5,
-    noise       = 0.5,
+    affine      = 0.0,
+    contrast    = 0.3,
+    gamma       = 0.3,
+    scale_int   = 0.3,
+    shift_int   = 0.3,
+    hist_shift  = 0.3,
+    noise       = 0.3,
     rician      = 0.3,
     gibbs       = 0.3,
     blur        = 0.3,
-    bias        = 0.5,
-    resolution  = 0.5,
+    bias        = 0.0,
+    resolution  = 0.3,
 )
 
 brain_gen = BABrainGenerator(
     # Required parameters
     prior_means  = prior_means,
     prior_stds   = prior_stds,
-    distribution = "uniform",           # ← uniform, no Gaussian priors
+    distribution = "normal",           # ← uniform, no Gaussian priors
     prob         = prob,
 
     # Spatial augmentation parameters
-    rotation_range     = 15,
-    scaling_range      = 0.2,
-    shear_bounds       = 0.012,
+    rotation_range     = 10,
+    scaling_range      = 0.1,
+    shear_bounds       = 0.005,
     translation_bounds = False,
 
     # Intensity augmentation parameters
@@ -98,17 +98,17 @@ brain_gen = BABrainGenerator(
     hist_control_points = 5,
 
     # Artefacts parameters
-    noise_mean    = 0.05,
-    noise_std     = 0.03,
-    rician_std    = 0.02,
+    noise_mean    = 0.02,
+    noise_std     = 0.015,
+    rician_std    = 0.01,
     gibbs_alpha   = 0.4,
-    blur_sigma    = 0.5,
+    blur_sigma    = 0.25,
     bias_field_rng= (0.0, 0.5),
 
     # Resolution parameters
-    min_res       = 0.7,
-    max_res_iso   = 3.0,
-    max_res_aniso = 3.0,        # Default was 8.0
+    min_res       = 0.8,
+    max_res_iso   = 2.0,
+    max_res_aniso = 2.0,
     atlas_res     = 1.0,        # Default was 1.0
     thickness     = None,       # Default was None
 
@@ -123,7 +123,7 @@ brain_gen = BABrainGenerator(
     use_intensity_clip_normalize  = True,  # Default was True
     n_channels                    = 1,     # Default was 1
     use_specific_stats_for_channel= False, # Default was False
-    output_shape = (208, 240, 256),  # Should match the spatial dims (D, H, W)
+    output_shape = (182, 218, 182),  # Should match the spatial dims (D, H, W)
     use_random_cropping          = True,   # Disable for debugging
     return_gradients             = False, # Default was False
 )

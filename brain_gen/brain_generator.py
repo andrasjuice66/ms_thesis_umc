@@ -18,7 +18,8 @@ from monai.transforms import (
     Compose, RandFlipd, RandAffined, RandAdjustContrastd, RandBiasFieldd,
     RandGaussianSmoothd, RandGaussianNoised, RandRicianNoised, RandGibbsNoised,
     RandScaleIntensityd, RandShiftIntensityd, RandHistogramShiftd, ToTensord,
-    RandSpatialCropd, SpatialPadd, CopyItemsd, DeleteItemsd, Transform
+    RandSpatialCropd, SpatialPadd, CopyItemsd, DeleteItemsd, Transform, 
+    CenterSpatialCropd
 )
 
 # ------------------------------------------------------------------ #
@@ -273,6 +274,7 @@ class BABrainGenerator:
         # 7) clean-up & tensor-convert
         tx.append(DeleteItemsd(keys=["class_map"]))          # works on every MONAI
         tx.append(ToTensord(keys=[self.image_key]))
+        # tx.append(CenterSpatialCropd(keys=[self.image_key], roi_size=(160, 192, 160)))
 
         self.transform = Compose(tx)
 
