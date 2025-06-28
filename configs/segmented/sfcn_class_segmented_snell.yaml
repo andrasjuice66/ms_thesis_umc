@@ -4,7 +4,7 @@ data:
   val_csv:   "/home/ajoos/brain_age_pred/data/labels/val.csv"
   test_csv:  "/home/ajoos/brain_age_pred/data/labels/test_balanced.csv"
   segmented_data_dir: "/scratch-shared/ajoos/brain_age_segmented_converted/"   
-  real_data_dir: "/scratch-shared/ajoos/brain_age_preprocessed_converted/"   
+  real_data_dir: "/scratch-shared/ajoos/brain_age_segmented_converted/"   
 
   image_key:  "image_path"
   age_key:    "age"
