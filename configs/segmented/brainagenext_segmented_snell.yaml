@@ -98,7 +98,7 @@ brain_generator:
 # ──────────────────────────  TRAINING  ────────────────────────── #
 training:
   batch_size: 4
-  epochs: 150
+  epochs: 60
 
   # optimiser & LR
   learning_rate: 0.001 #0.002193
@@ -108,7 +108,7 @@ training:
   scheduler_params:
     T_max: 100
     eta_min: 0.00001
-    epochs: 200
+    epochs: 60
     steps_per_epoch: 534
 
     step_size: 30
