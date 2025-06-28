@@ -33,11 +33,36 @@ def calculate_metrics(
     if np.isnan(predictions).any():
         nan_count = np.isnan(predictions).sum()
         total_count = len(predictions)
+        nan_indices = np.where(np.isnan(predictions))[0]
+        
         print(f"ERROR: Found {nan_count}/{total_count} NaN values in predictions!")
         print(f"Predictions shape: {predictions.shape}")
         print(f"Predictions min: {np.nanmin(predictions)}, max: {np.nanmax(predictions)}")
         print(f"Non-NaN predictions range: {predictions[~np.isnan(predictions)][:10] if nan_count < total_count else 'All NaN!'}")
-        print(f"All predictions: {predictions}")
+        
+        # Show which specific indices/samples have NaN values
+        print(f"NaN prediction indices: {nan_indices}")
+        print(f"First 10 NaN indices: {nan_indices[:10]}")
+        
+        # Show corresponding target values for NaN predictions
+        print(f"Target values for NaN predictions: {targets[nan_indices]}")
+        
+        # If modalities are provided, show which modalities have NaN predictions
+        if modalities is not None:
+            nan_modalities = [modalities[i] for i in nan_indices]
+            print(f"Modalities with NaN predictions: {nan_modalities}")
+            from collections import Counter
+            modality_counts = Counter(nan_modalities)
+            print(f"NaN count by modality: {dict(modality_counts)}")
+        
+        # If sexes are provided, show sex distribution of NaN predictions
+        if sexes is not None:
+            nan_sexes = [sexes[i] for i in nan_indices]
+            print(f"Sexes with NaN predictions: {nan_sexes}")
+            from collections import Counter
+            sex_counts = Counter(nan_sexes)
+            print(f"NaN count by sex: {dict(sex_counts)}")
+            
         raise ValueError(f"Predictions contain {nan_count} NaN values out of {total_count} total predictions")
     
     if np.isnan(targets).any():
