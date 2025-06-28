@@ -4,7 +4,7 @@
 #SBATCH --gres=gpu:h100:1
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=128G
-#SBATCH --time=00:30:00
+#SBATCH --time=15:00:00
 #SBATCH --output=/home/%u/run_logs/%x_%j.out   
 #SBATCH --error=/home/%u/run_logs/%x_%j.err
 #SBATCH --mail-type=FAIL,END    
