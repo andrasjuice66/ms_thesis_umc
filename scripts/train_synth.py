@@ -173,6 +173,7 @@ def main() -> None:
         use_random_cropping          = bg_cfg.get("use_random_cropping", True),
         return_gradients             = bg_cfg.get("return_gradients", False),
     )
+    print(f"Brain Generator config: {bg_cfg}")
             
 
     # 6. ─── CSV → dataset / sampler ─────────────────────────── #

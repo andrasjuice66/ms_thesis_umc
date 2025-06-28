@@ -37,6 +37,7 @@ def calculate_metrics(
         print(f"Predictions shape: {predictions.shape}")
         print(f"Predictions min: {np.nanmin(predictions)}, max: {np.nanmax(predictions)}")
         print(f"Non-NaN predictions range: {predictions[~np.isnan(predictions)][:10] if nan_count < total_count else 'All NaN!'}")
+        print(f"All predictions: {predictions}")
         raise ValueError(f"Predictions contain {nan_count} NaN values out of {total_count} total predictions")
     
     if np.isnan(targets).any():
