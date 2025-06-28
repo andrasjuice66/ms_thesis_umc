@@ -37,11 +37,15 @@ def setup_logger(verbose=False):
     )
     return logging.getLogger("nifti_converter")
 
-def process_file(file_path, output_path, normalize=True, perc_low=1, perc_high=99, verbose=False):
+def process_file(file_path, output_path, normalize=True, perc_low=1, perc_high=99, zero_negatives=True, verbose=False):
     """Process a single Nifti file and save as normalized NumPy array."""
     try:
         # Load the Nifti file
         img = nib.load(str(file_path)).get_fdata(dtype=np.float32)
+        
+        # Set negative values to zero if requested
+        if zero_negatives:
+            img = np.where(img < 0, 0, img)
         
         # Apply normalization if requested
         if normalize:
@@ -62,13 +66,13 @@ def process_file(file_path, output_path, normalize=True, perc_low=1, perc_high=9
 
 def worker_task(args):
     """Worker function for multiprocessing."""
-    nifti_file, output_dir, input_dir, normalize, perc_low, perc_high, verbose = args
+    nifti_file, output_dir, input_dir, normalize, perc_low, perc_high, zero_negatives, verbose = args
     
     # Construct output path with same relative structure
     rel_path = nifti_file.relative_to(input_dir)
     output_file = output_dir / rel_path.with_suffix('.npy')
     
-    return process_file(nifti_file, output_file, normalize, perc_low, perc_high, verbose)
+    return process_file(nifti_file, output_file, normalize, perc_low, perc_high, zero_negatives, verbose)
 
 def find_nifti_files(input_dir, extensions):
     """Find all Nifti files with the specified extensions."""
@@ -128,7 +132,7 @@ def convert_nifti_to_numpy(input_dir, output_dir, normalize=True,
     
     # Prepare arguments for parallel processing
     worker_args = [
-        (nifti_file, output_path, input_path, normalize, perc_low, perc_high, verbose)
+        (nifti_file, output_path, input_path, normalize, perc_low, perc_high, True, verbose)
         for nifti_file in nifti_files
     ]
     

@@ -21,6 +21,6 @@ conda activate thesis
 cd $HOME/brain_age_pred/data/preprocess
 
 # 3) execute the conversion script
-#python convert_nifti_to_npy.py --input /scratch-shared/ajoos/brain_age_preprocessed --output /scratch-shared/ajoos/brain_age_preprocessed_converted 
+python convert_nifti_to_npy.py --input /scratch-shared/ajoos/brain_age_preprocessed --output /scratch-shared/ajoos/brain_age_preprocessed_converted --normalize --percentile_low 1 --percentile_high 99 --zero_negatives
 
-python check_normalistation.py /scratch-shared/ajoos/brain_age_preprocessed_converted -r
+#python check_normalistation.py /scratch-shared/ajoos/brain_age_preprocessed_converted -r
