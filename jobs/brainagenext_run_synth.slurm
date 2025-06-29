@@ -24,7 +24,7 @@ conda activate thesis
 # 3) launch training exactly as on your laptop
 cd $HOME/
 
-python -m brain_age_pred.scripts.train_synth brain_age_pred/configs/segmented/brainagenext_segmented_snell.yaml
+python -m brain_age_pred.scripts.train_synth brain_age_pred/configs/segmented/brainagenext_segmented_snell_debug.yaml
 
 
 
