@@ -1,10 +1,10 @@
 #!/bin/bash
-#SBATCH --job-name=sfcn_synth
+#SBATCH --job-name=brainagenext_synth
 #SBATCH --partition=gpu_h100            
 #SBATCH --gres=gpu:h100:1
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=128G
-#SBATCH --time=01:00:00
+#SBATCH --time=02:00:00
 #SBATCH --output=/home/%u/run_logs/%x_%j.out   
 #SBATCH --error=/home/%u/run_logs/%x_%j.err
 #SBATCH --mail-type=FAIL,END    
@@ -24,7 +24,7 @@ conda activate thesis
 # 3) launch training exactly as on your laptop
 cd $HOME/
 
-python -m brain_age_pred.scripts.train_synth brain_age_pred/configs/segmented/brainagenext_segmented_snell.yaml
+python -m brain_age_pred.scripts.train_synth brain_age_pred/configs/segmented/brainagenext_segmented_snell_debug.yaml
 
 
 

@@ -207,12 +207,13 @@ def main() -> None:
     logger.info(f"Sample weights from train: {train_w[0:10]}")
 
     # Add this right after reading CSVs
-    print("=== AGE RANGES DEBUG ===")
-    print(f"Train ages: min={min(train_a):.2f}, max={max(train_a):.2f}, mean={np.mean(train_a):.2f}")
-    print(f"Val ages:   min={min(val_a):.2f}, max={max(val_a):.2f}, mean={np.mean(val_a):.2f}")
-    print(f"Test ages:  min={min(test_a):.2f}, max={max(test_a):.2f}, mean={np.mean(test_a):.2f}")
-    print("Sample train ages:", train_a[:5])
-    print("Sample val ages:", val_a[:5])
+    print("=== AGE RANGES  ===")
+    print(f"Train ages: min={min(train_a):.2f}, max={max(train_a):.2f}, mean={np.mean(train_a):.2f}, std={np.std(train_a):.2f}")
+    print(f"Val ages:   min={min(val_a):.2f}, max={max(val_a):.2f}, mean={np.mean(val_a):.2f}, std={np.std(val_a):.2f}")
+    print(f"Test ages:  min={min(test_a):.2f}, max={max(test_a):.2f}, mean={np.mean(test_a):.2f}, std={np.std(test_a):.2f}")
+    print("Sample train ages:", train_a[:50])
+    print("Sample val ages:", val_a[:50])
+    print("Sample test ages:", test_a[:50])
 
     logger.info("Initializing datasets...")
     logger.info("Creating training dataset")
