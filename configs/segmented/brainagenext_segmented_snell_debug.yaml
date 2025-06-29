@@ -102,7 +102,6 @@ training:
 
   # optimiser & LR
   learning_rate: 0.001 #0.002193
-  weight_decay:  0.0
   optimizer: "adamw"                       # adam | adamw | sgd | rmsprop | radam | novograd
   scheduler: "step"                      # cosine | plateau | onecycle | step | none
   scheduler_params:

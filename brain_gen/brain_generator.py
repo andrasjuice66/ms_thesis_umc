@@ -150,129 +150,129 @@ class BABrainGenerator:
     def _build_pipeline(self):
         tx = []
 
-        # # 0) optional crop/pad
-        # if self.use_random_cropping and self.output_shape is not None:
-        #     tx += [
-        #         SpatialPadd(keys=[self.image_key], spatial_size=self.output_shape,
-        #                     mode="constant", constant_values=0),
-        #         RandSpatialCropd(keys=[self.image_key],
-        #                          roi_size=self.output_shape, random_size=False),
-        #     ]
+        # 0) optional crop/pad
+        if self.use_random_cropping and self.output_shape is not None:
+            tx += [
+                SpatialPadd(keys=[self.image_key], spatial_size=self.output_shape,
+                            mode="constant", constant_values=0),
+                RandSpatialCropd(keys=[self.image_key],
+                                 roi_size=self.output_shape, random_size=False),
+            ]
 
-        # # 1) spatial transforms (segmentation domain)
-        # if self.use_hemisphere_aware_flip:
-        #     tx.append(
-        #         HemisphereAwareFlipD(
-        #             keys=[self.image_key],
-        #             generation_labels=self.generation_labels,
-        #             n_neutral_labels=self.n_neutral_labels,
-        #             spatial_axis=0,
-        #             prob=self.prob["flip"],
-        #         )
-        #     )
-        # else:
-        #     tx.append(
-        #         RandFlipd(keys=[self.image_key], prob=self.prob["flip"],
-        #                   spatial_axis=(0, 1, 2))
-        #     )
+        # 1) spatial transforms (segmentation domain)
+        if self.use_hemisphere_aware_flip:
+            tx.append(
+                HemisphereAwareFlipD(
+                    keys=[self.image_key],
+                    generation_labels=self.generation_labels,
+                    n_neutral_labels=self.n_neutral_labels,
+                    spatial_axis=0,
+                    prob=self.prob["flip"],
+                )
+            )
+        else:
+            tx.append(
+                RandFlipd(keys=[self.image_key], prob=self.prob["flip"],
+                          spatial_axis=(0, 1, 2))
+            )
 
-        # tx.append(
-        #     RandAffined(keys=[self.image_key], prob=self.prob["affine"],
-        #                 rotate_range=(self.rotate_rad,)*3,
-        #                 scale_range=(self.scale_bounds,)*3,
-        #                 shear_range=(self.shear_bounds,)*3,
-        #                 translate_range=(self.translation_bounds,)*3,
-        #                 mode="nearest", padding_mode="constant")
-        # )
+        tx.append(
+            RandAffined(keys=[self.image_key], prob=self.prob["affine"],
+                        rotate_range=(self.rotate_rad,)*3,
+                        scale_range=(self.scale_bounds,)*3,
+                        shear_range=(self.shear_bounds,)*3,
+                        translate_range=(self.translation_bounds,)*3,
+                        mode="nearest", padding_mode="constant")
+        )
 
-        # # keep spatially-aligned copy
-        # tx.append(CopyItemsd(keys=[self.image_key], times=1, names=["class_map"]))
+        # keep spatially-aligned copy
+        tx.append(CopyItemsd(keys=[self.image_key], times=1, names=["class_map"]))
 
-        # tx.append(
-        #     ConvertLabelsD(keys=["class_map"],
-        #                    generation_labels=self.generation_labels,
-        #                    output_labels=GENERATION_CLASSES,
-        #                    background_label=0)
-        # )
+        tx.append(
+            ConvertLabelsD(keys=["class_map"],
+                           generation_labels=self.generation_labels,
+                           output_labels=GENERATION_CLASSES,
+                           background_label=0)
+        )
 
-        # # 2) label → intensities
-        # if self.n_channels == 1:
-        #     tx.append(
-        #         SampleConditionalGMMd(
-        #             seg_key="class_map", out_key=self.image_key,
-        #             prior_means=self.prior_means, prior_stds=self.prior_stds,
-        #             distribution=self.distribution)
-        #     )
-        # else:
-        #     tx.append(
-        #         MultiChannelSampleConditionalGMMd(
-        #             seg_key="class_map", out_key=self.image_key,
-        #             prior_means=self.prior_means, prior_stds=self.prior_stds,
-        #             distribution=self.distribution,
-        #             n_channels=self.n_channels,
-        #             use_specific_stats_for_channel=self.use_specific_stats_for_channel)
-        #     )
+        # 2) label → intensities
+        if self.n_channels == 1:
+            tx.append(
+                SampleConditionalGMMd(
+                    seg_key="class_map", out_key=self.image_key,
+                    prior_means=self.prior_means, prior_stds=self.prior_stds,
+                    distribution=self.distribution)
+            )
+        else:
+            tx.append(
+                MultiChannelSampleConditionalGMMd(
+                    seg_key="class_map", out_key=self.image_key,
+                    prior_means=self.prior_means, prior_stds=self.prior_stds,
+                    distribution=self.distribution,
+                    n_channels=self.n_channels,
+                    use_specific_stats_for_channel=self.use_specific_stats_for_channel)
+            )
 
-        # # 3) intensity + artefact augments
-        # tx += [
-        #     RandAdjustContrastd(keys=[self.image_key], prob=self.prob["contrast"],
-        #                         gamma=self.contrast_range),
-        #     RandGammaD(keys=[self.image_key], log_gamma_std=self.log_gamma_std,
-        #                prob=self.prob["gamma"]),
-        #     RandScaleIntensityd(keys=[self.image_key], prob=self.prob["scale_int"],
-        #                         factors=self.contrast_range),
-        #     RandShiftIntensityd(keys=[self.image_key], prob=self.prob["shift_int"],
-        #                         offsets=self.shift_offset),
-        #     RandHistogramShiftd(keys=[self.image_key], prob=self.prob["hist_shift"],
-        #                         num_control_points=self.hist_control_points),
+        # 3) intensity + artefact augments
+        tx += [
+            RandAdjustContrastd(keys=[self.image_key], prob=self.prob["contrast"],
+                                gamma=self.contrast_range),
+            RandGammaD(keys=[self.image_key], log_gamma_std=self.log_gamma_std,
+                       prob=self.prob["gamma"]),
+            RandScaleIntensityd(keys=[self.image_key], prob=self.prob["scale_int"],
+                                factors=self.contrast_range),
+            RandShiftIntensityd(keys=[self.image_key], prob=self.prob["shift_int"],
+                                offsets=self.shift_offset),
+            RandHistogramShiftd(keys=[self.image_key], prob=self.prob["hist_shift"],
+                                num_control_points=self.hist_control_points),
 
-        #     RandGaussianNoised(keys=[self.image_key], prob=self.prob["noise"],
-        #                        mean=self.noise_mean, std=self.noise_std),
-        #     RandRicianNoised(keys=[self.image_key], prob=self.prob["rician"],
-        #                      std=self.rician_std),
-        #     RandGibbsNoised(keys=[self.image_key], prob=self.prob["gibbs"],
-        #                     alpha=self.gibbs_alpha),
-        #     RandGaussianSmoothd(keys=[self.image_key], prob=self.prob["blur"],
-        #                         sigma_x=(0.0, self.blur_sigma),
-        #                         sigma_y=(0.0, self.blur_sigma),
-        #                         sigma_z=(0.0, self.blur_sigma)),
-        #     RandBiasFieldd(keys=[self.image_key], prob=self.prob["bias"],
-        #                    coeff_range=self.bias_field_rng),
-        # ]
+            RandGaussianNoised(keys=[self.image_key], prob=self.prob["noise"],
+                               mean=self.noise_mean, std=self.noise_std),
+            RandRicianNoised(keys=[self.image_key], prob=self.prob["rician"],
+                             std=self.rician_std),
+            RandGibbsNoised(keys=[self.image_key], prob=self.prob["gibbs"],
+                            alpha=self.gibbs_alpha),
+            RandGaussianSmoothd(keys=[self.image_key], prob=self.prob["blur"],
+                                sigma_x=(0.0, self.blur_sigma),
+                                sigma_y=(0.0, self.blur_sigma),
+                                sigma_z=(0.0, self.blur_sigma)),
+            RandBiasFieldd(keys=[self.image_key], prob=self.prob["bias"],
+                           coeff_range=self.bias_field_rng),
+        ]
 
-        # # 4) resolution simulation
-        # if self.use_dynamic_resolution:
-        #     tx.append(
-        #         DynamicResolutionD(keys=[self.image_key],
-        #                            atlas_res=self.atlas_res,
-        #                            max_res_iso=self.max_res_iso,
-        #                            max_res_aniso=self.max_res_aniso,
-        #                            thickness_factor=self.thickness,
-        #                            randomise_res=True,
-        #                            prob=self.prob["resolution"])
-        #     )
-        # else:
-        #     tx.append(
-        #         RandomResolutionD(keys=[self.image_key],
-        #                           min_res=self.min_res,
-        #                           max_res_iso=self.max_res_iso,
-        #                           prob=self.prob["resolution"])
-        #     )
+        # 4) resolution simulation
+        if self.use_dynamic_resolution:
+            tx.append(
+                DynamicResolutionD(keys=[self.image_key],
+                                   atlas_res=self.atlas_res,
+                                   max_res_iso=self.max_res_iso,
+                                   max_res_aniso=self.max_res_aniso,
+                                   thickness_factor=self.thickness,
+                                   randomise_res=True,
+                                   prob=self.prob["resolution"])
+            )
+        else:
+            tx.append(
+                RandomResolutionD(keys=[self.image_key],
+                                  min_res=self.min_res,
+                                  max_res_iso=self.max_res_iso,
+                                  prob=self.prob["resolution"])
+            )
 
-        # # 5) optional clip / normalise
-        # if self.use_intensity_clip_normalize:
-        #     tx.append(
-        #         IntensityClipNormalizeD(keys=[self.image_key],
-        #                                 clip_percentiles=(1.0, 99.0),
-        #                                 normalise=True, gamma_std=0.2,
-        #                                 separate_channels=True, prob=0.95)
-        #     )
+        # 5) optional clip / normalise
+        if self.use_intensity_clip_normalize:
+            tx.append(
+                IntensityClipNormalizeD(keys=[self.image_key],
+                                        clip_percentiles=(1.0, 99.0),
+                                        normalise=True, gamma_std=0.2,
+                                        separate_channels=True, prob=0.95)
+            )
 
-        # # 6) zero background (after all augmentations)
-        # tx.append(ZeroBackgroundd(img_key=self.image_key, seg_key="class_map"))
+        # 6) zero background (after all augmentations)
+        tx.append(ZeroBackgroundd(img_key=self.image_key, seg_key="class_map"))
 
-        # # 7) clean-up & tensor-convert
-        # tx.append(DeleteItemsd(keys=["class_map"]))          # works on every MONAI
+        # 7) clean-up & tensor-convert
+        tx.append(DeleteItemsd(keys=["class_map"]))          # works on every MONAI
         tx.append(ToTensord(keys=[self.image_key]))
         # tx.append(CenterSpatialCropd(keys=[self.image_key], roi_size=(160, 192, 160)))
 
