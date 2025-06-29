@@ -121,7 +121,7 @@ training:
     mae_weight: 0.5
 
   # misc
-  early_stopping_patience: 30
+  early_stopping_patience: 300
   gradient_accumulation_steps: 1
   use_amp: true                            # mixed precision if CUDA present
 
@@ -130,7 +130,7 @@ output:
   output_dir: "C:/Projects/thesis_project/brain_age_pred/output"
   checkpoint_dir: "checkpoints"
   log_dir: "logs"
-  experiment_name: brainagenext_segmented_synth #"brain_age_with_tumors"                   # auto-generate if left null
+  experiment_name: brainagenext_segmented_synth_debug_real_images #"brain_age_with_tumors"                   # auto-generate if left null
 
 # ─────────────────────────────  W&B  ──────────────────────────── #
 wandb:
