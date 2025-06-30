@@ -225,7 +225,7 @@ def main() -> None:
         sample_wts   = train_w,
         sexes        = train_s,
         modalities   = train_m,
-        transform    = brain_generator,
+        transform    = None,
         mode         = "train",
         cache_size   = cfg.get("data.cache_size", 0),
     )
