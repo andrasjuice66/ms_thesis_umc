@@ -63,19 +63,19 @@ prior_stds[:, 0] = 0.0
 
 # probabilities required by the generator
 prob = dict(
-    flip        = 0.5,
+    flip        = 0.0,
     affine      = 0.0,
-    contrast    = 0.3,
-    gamma       = 0.3,
-    scale_int   = 0.3,
-    shift_int   = 0.3,
-    hist_shift  = 0.3,
-    noise       = 0.3,
-    rician      = 0.3,
-    gibbs       = 0.3,
-    blur        = 0.3,
+    contrast    = 0.0,
+    gamma       = 0.0,
+    scale_int   = 0.0,
+    shift_int   = 0.0,
+    hist_shift  = 0.0,
+    noise       = 0.0,
+    rician      = 0.0,
+    gibbs       = 0.0,
+    blur        = 0.0,
     bias        = 0.0,
-    resolution  = 0.3,
+    resolution  = 0.0,
 )
 
 brain_gen = BABrainGenerator(

@@ -45,18 +45,18 @@ brain_generator:
   # Augmentation probabilities
   prob:
     flip: 0.5
-    affine: 0.0
+    affine: 0.8
     contrast: 0.3
-    gamma: 0.2
-    scale_int: 0.2
-    shift_int: 0.2
-    hist_shift: 0.2
-    noise: 0.2
-    rician: 0.2
-    gibbs: 0.2
-    blur: 0.0
-    bias: 0.0
-    resolution: 0.1
+    gamma: 0.4
+    scale_int: 0.4
+    shift_int: 0.4
+    hist_shift: 0.4
+    noise: 0.4
+    rician: 0.4
+    gibbs: 0.4
+    blur: 0.3
+    bias: 0.5
+    resolution: 0.3
   
   # Spatial augmentation parameters
   rotation_range: 5
