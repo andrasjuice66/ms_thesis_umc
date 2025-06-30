@@ -346,6 +346,16 @@ class BrainAgeTrainer:
         y_pred = np.concatenate(preds_all)
         y_true = np.concatenate(targets_all)
 
+        # Log every prediction vs ground truth for debugging
+        self.logger.info(f"=== TRAIN EPOCH {epoch+1} PREDICTIONS vs GROUND TRUTH ===")
+        for i, (pred, true) in enumerate(zip(y_pred, y_true)):
+            error = abs(pred - true)
+            self.logger.info(f"Train sample {i:3d}: pred={pred:6.2f}, true={true:6.2f}, error={error:5.2f}")
+        
+        # Log summary statistics
+        self.logger.info(f"TRAIN SUMMARY - Pred: min={y_pred.min():.2f}, max={y_pred.max():.2f}, mean={y_pred.mean():.2f}, std={y_pred.std():.2f}")
+        self.logger.info(f"TRAIN SUMMARY - True: min={y_true.min():.2f}, max={y_true.max():.2f}, mean={y_true.mean():.2f}, std={y_true.std():.2f}")
+
         metrics = calculate_metrics(y_pred, y_true)
         metrics.update({
             "loss"      : running_loss / len(self.train_loader),
@@ -386,9 +396,22 @@ class BrainAgeTrainer:
                     sexes_all.extend(batch["sex"])
                 pbar.set_postfix(loss=loss.item())
 
+        y_pred = np.concatenate(preds_all)
+        y_true = np.concatenate(targets_all)
+        
+        # Log every validation prediction vs ground truth for debugging
+        self.logger.info(f"=== VAL EPOCH {epoch+1} PREDICTIONS vs GROUND TRUTH ===")
+        for i, (pred, true) in enumerate(zip(y_pred, y_true)):
+            error = abs(pred - true)
+            self.logger.info(f"Val sample {i:3d}: pred={pred:6.2f}, true={true:6.2f}, error={error:5.2f}")
+        
+        # Log summary statistics
+        self.logger.info(f"VAL SUMMARY - Pred: min={y_pred.min():.2f}, max={y_pred.max():.2f}, mean={y_pred.mean():.2f}, std={y_pred.std():.2f}")
+        self.logger.info(f"VAL SUMMARY - True: min={y_true.min():.2f}, max={y_true.max():.2f}, mean={y_true.mean():.2f}, std={y_true.std():.2f}")
+
         metrics = calculate_metrics(
-            np.concatenate(preds_all),
-            np.concatenate(targets_all),
+            y_pred,
+            y_true,
             modalities=modalities_all if modalities_all else None,
             sexes=sexes_all if sexes_all else None,
         )
