@@ -29,7 +29,7 @@ data:
 model:
   type: "brainagenext"                             # sfcn | resnet3d | efficientnet3d
   in_channels: 1
-  dropout_rate: 0.0
+  dropout_rate: 0.2
   use_attention: false                   
   checkpoint: null #"/home/ajoos/brain_age_pred/output/checkpoints/sfcn_20250522_104159/sfcn_20250522_104159_epoch057.pt"
 
@@ -102,7 +102,7 @@ training:
 
   # optimiser & LR
   learning_rate: 0.001 #0.002193
-  weight_decay:  0.0
+  weight_decay:  0.001
   optimizer: "adamw"                       # adam | adamw | sgd | rmsprop | radam | novograd
   scheduler: "step"                      # cosine | plateau | onecycle | step | none
   scheduler_params:
