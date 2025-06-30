@@ -48,18 +48,18 @@ brain_generator:
     affine: 0.0
     contrast: 0.3
     gamma: 0.2
-    scale_int: 0.3
-    shift_int: 0.3
-    hist_shift: 0.3
-    noise: 0.3
-    rician: 0.3
-    gibbs: 0.3
-    blur: 0.3
+    scale_int: 0.2
+    shift_int: 0.2
+    hist_shift: 0.2
+    noise: 0.2
+    rician: 0.2
+    gibbs: 0.2
+    blur: 0.0
     bias: 0.0
-    resolution: 0.3
+    resolution: 0.1
   
   # Spatial augmentation parameters
-  rotation_range: 10
+  rotation_range: 5
   scaling_range: 0.1
   shear_bounds: 0.005
   translation_bounds: false
