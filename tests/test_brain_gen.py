@@ -63,26 +63,26 @@ prior_stds[:, 0] = 0.0
 
 # probabilities required by the generator
 prob = dict(
-    flip        = 0.0,
-    affine      = 0.0,
-    contrast    = 0.0,
-    gamma       = 0.0,
-    scale_int   = 0.0,
-    shift_int   = 0.0,
-    hist_shift  = 0.0,
-    noise       = 0.0,
-    rician      = 0.0,
-    gibbs       = 0.0,
-    blur        = 0.0,
+    flip        = 0.5,
+    affine      = 0.9,
+    contrast    = 0.4,
+    gamma       = 0.4,
+    scale_int   = 0.4,
+    shift_int   = 0.4,
+    hist_shift  = 0.4,
+    noise       = 0.4,
+    rician      = 0.4,
+    gibbs       = 0.4,
+    blur        = 0.4,
     bias        = 0.0,
-    resolution  = 0.0,
+    resolution  = 0.4,
 )
 
 brain_gen = BABrainGenerator(
     # Required parameters
     prior_means  = prior_means,
     prior_stds   = prior_stds,
-    distribution = "normal",           # ← uniform, no Gaussian priors
+    distribution = "uniform",           # ← uniform, no Gaussian priors
     prob         = prob,
 
     # Spatial augmentation parameters

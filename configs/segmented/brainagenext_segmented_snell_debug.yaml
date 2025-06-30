@@ -1,9 +1,9 @@
 # ────────────────────────────  DATA  ──────────────────────────── #
 data:
   train_csv: "/home/ajoos/brain_age_pred/data/labels/train_debug.csv"
-  val_csv:   "/home/ajoos/brain_age_pred/data/labels/val.csv"
-  test_csv:  "/home/ajoos/brain_age_pred/data/labels/test_balanced.csv"
-  segmented_data_dir: "/scratch-shared/ajoos/brain_age_segmented_converted/"   
+  val_csv:   "/home/ajoos/brain_age_pred/data/labels/val_30_40.csv"
+  test_csv:  "/home/ajoos/brain_age_pred/data/labels/test_30_40.csv"
+  segmented_data_dir: "/scratch-shared/ajoos/brain_age_preprocessed_converted/"   
   real_data_dir: "/scratch-shared/ajoos/brain_age_preprocessed_converted/"   
 
   image_key:  "image_path"
@@ -86,14 +86,14 @@ brain_generator:
   thickness: null
   
   # Toggle parameters
-  use_sample: true
-  use_hemisphere_aware_flip: true
-  use_dynamic_resolution: true
-  use_intensity_clip_normalize: true
+  use_sample: false
+  use_hemisphere_aware_flip: false
+  use_dynamic_resolution: false
+  use_intensity_clip_normalize: false
   n_channels: 1
   use_specific_stats_for_channel: false
   output_shape: [182, 218, 182]
-  use_random_cropping: true
+  use_random_cropping: false
   return_gradients: false
 
 # ──────────────────────────  TRAINING  ────────────────────────── #

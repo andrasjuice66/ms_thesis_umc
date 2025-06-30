@@ -24,7 +24,7 @@ print(f"Using device: {device}")
 
 # a) Where to find an example brain image (nifti or .npy) – leave None to synthesize one
 BRAIN_IMG_PATH = "/Users/andrasjoos/Documents/AI_masters/Thesis/thesis_project/brain_age_pred/UNA/output/T1_original.nii.gz"   # r"/path/to/your/T1.nii.gz"
-BRAIN_IMG_PATH = r"C:/Projects/thesis_project/brain_age_pred/UNA/output/T1_original.nii.gz"   # r"/path/to/your/T1.nii.gz"
+# BRAIN_IMG_PATH = r"C:/Projects/thesis_project/brain_age_pred/UNA/output/T1_original.nii.gz"   # r"/path/to/your/T1.nii.gz"
 
 # b) (Optional) – provide age-specific segmentations if you have them
 USE_SEG = True
@@ -35,9 +35,9 @@ USE_SEG = True
 # }
 
 SEGMENTATION_PATHS = {
-    "young":  r"C:/Projects/thesis_project/brain_age_pred/data/segmentations/seg_18_40.nii.gz",
-    "middle": r"C:/Projects/thesis_project/brain_age_pred/data/segmentations/seg_40_60.nii.gz",
-    "old":    r"C:/Projects/thesis_project/brain_age_pred/data/segmentations/seg_60_85.nii.gz",
+    "young":  r"/Users/andrasjoos/Documents/AI_masters/Thesis/thesis_project/brain_age_pred/data/segmentations/seg_18_40.nii.gz",
+    "middle": r"/Users/andrasjoos/Documents/AI_masters/Thesis/thesis_project/brain_age_pred/data/segmentations/seg_40_60.nii.gz",
+    "old":    r"/Users/andrasjoos/Documents/AI_masters/Thesis/thesis_project/brain_age_pred/data/segmentations/seg_60_85.nii.gz",
 }
 AGE_RANGES = {
     "young":  (18, 40),
