@@ -273,7 +273,7 @@ def main() -> None:
     train_loader = torch.utils.data.DataLoader(
         train_ds,
         batch_size = cfg.get("training.batch_size", 8),
-        sampler    = sampler,
+        # sampler    = sampler,
         **dl_kwargs,
     )
 
