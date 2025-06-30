@@ -195,23 +195,23 @@ class BABrainGenerator:
                            background_label=0)
         )
 
-        # 2) label → intensities
-        if self.n_channels == 1:
-            tx.append(
-                SampleConditionalGMMd(
-                    seg_key="class_map", out_key=self.image_key,
-                    prior_means=self.prior_means, prior_stds=self.prior_stds,
-                    distribution=self.distribution)
-            )
-        else:
-            tx.append(
-                MultiChannelSampleConditionalGMMd(
-                    seg_key="class_map", out_key=self.image_key,
-                    prior_means=self.prior_means, prior_stds=self.prior_stds,
-                    distribution=self.distribution,
-                    n_channels=self.n_channels,
-                    use_specific_stats_for_channel=self.use_specific_stats_for_channel)
-            )
+        # # 2) label → intensities
+        # if self.n_channels == 1:
+        #     tx.append(
+        #         SampleConditionalGMMd(
+        #             seg_key="class_map", out_key=self.image_key,
+        #             prior_means=self.prior_means, prior_stds=self.prior_stds,
+        #             distribution=self.distribution)
+        #     )
+        # else:
+        #     tx.append(
+        #         MultiChannelSampleConditionalGMMd(
+        #             seg_key="class_map", out_key=self.image_key,
+        #             prior_means=self.prior_means, prior_stds=self.prior_stds,
+        #             distribution=self.distribution,
+        #             n_channels=self.n_channels,
+        #             use_specific_stats_for_channel=self.use_specific_stats_for_channel)
+        #     )
 
         # 3) intensity + artefact augments
         tx += [
@@ -259,14 +259,14 @@ class BABrainGenerator:
                                   prob=self.prob["resolution"])
             )
 
-        # 5) optional clip / normalise
-        if self.use_intensity_clip_normalize:
-            tx.append(
-                IntensityClipNormalizeD(keys=[self.image_key],
-                                        clip_percentiles=(1.0, 99.0),
-                                        normalise=True, gamma_std=0.2,
-                                        separate_channels=True, prob=0.95)
-            )
+        # # 5) optional clip / normalise
+        # if self.use_intensity_clip_normalize:
+        #     tx.append(
+        #         IntensityClipNormalizeD(keys=[self.image_key],
+        #                                 clip_percentiles=(1.0, 99.0),
+        #                                 normalise=True, gamma_std=0.2,
+        #                                 separate_channels=True, prob=0.95)
+        #     )
 
         # 6) zero background (after all augmentations)
         tx.append(ZeroBackgroundd(img_key=self.image_key, seg_key="class_map"))
