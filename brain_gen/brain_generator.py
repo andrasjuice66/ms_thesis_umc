@@ -88,6 +88,7 @@ class BABrainGenerator:
         n_neutral_labels:  int | None = None,
         output_labels:     np.ndarray | None = None,
         # toggles
+        use_sample: bool = True,
         use_hemisphere_aware_flip: bool = True,
         use_dynamic_resolution:    bool = True,
         use_intensity_clip_normalize: bool = True,
@@ -133,6 +134,7 @@ class BABrainGenerator:
         self.output_labels     = output_labels     if output_labels     is not None else self.generation_labels
 
         # toggles
+        self.use_sample = use_sample
         self.use_hemisphere_aware_flip   = use_hemisphere_aware_flip
         self.use_dynamic_resolution      = use_dynamic_resolution
         self.use_intensity_clip_normalize= use_intensity_clip_normalize
@@ -196,22 +198,14 @@ class BABrainGenerator:
         )
 
         # 2) label → intensities
-        if self.n_channels == 1:
+        if self.use_sample:
             tx.append(
                 SampleConditionalGMMd(
                     seg_key="class_map", out_key=self.image_key,
                     prior_means=self.prior_means, prior_stds=self.prior_stds,
                     distribution=self.distribution)
             )
-        else:
-            tx.append(
-                MultiChannelSampleConditionalGMMd(
-                    seg_key="class_map", out_key=self.image_key,
-                    prior_means=self.prior_means, prior_stds=self.prior_stds,
-                    distribution=self.distribution,
-                    n_channels=self.n_channels,
-                    use_specific_stats_for_channel=self.use_specific_stats_for_channel)
-            )
+
 
         # 3) intensity + artefact augments
         tx += [

@@ -164,6 +164,7 @@ def main() -> None:
         output_labels     = None,
 
         # Toggle parameters
+        use_sample                    = bg_cfg.get("use_sample", True),
         use_hemisphere_aware_flip     = bg_cfg.get("use_hemisphere_aware_flip", True),
         use_dynamic_resolution        = bg_cfg.get("use_dynamic_resolution", True),
         use_intensity_clip_normalize  = bg_cfg.get("use_intensity_clip_normalize", True),
