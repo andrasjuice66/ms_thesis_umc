@@ -1,6 +1,6 @@
 """
 Modern, *drop-in equivalent* implementation of the original SFCN
-(PAC 2019 brain-age “soft-classification” model).
+(PAC 2019 brain-age "soft-classification" model).
 
 Differences from the 2019 reference:
     • rewritten with type hints and cleaner sub-modules
@@ -27,7 +27,7 @@ import torch.nn.functional as F
 # ──────────────────────── helper block ───────────────────────── #
 class _ConvBlock(nn.Sequential):
     """
-    Conv3d → BatchNorm3d → (optional MaxPool3d) → ReLU
+    Conv3d → InstanceNorm3d → (optional MaxPool3d) → ReLU
     """
 
     def __init__(
@@ -41,7 +41,7 @@ class _ConvBlock(nn.Sequential):
     ) -> None:
         layers: list[nn.Module] = [
             nn.Conv3d(in_ch, out_ch, kernel_size=kernel_size, padding=padding, bias=False),
-            nn.InstanceNorm3d(out_ch),
+            nn.InstanceNorm3d(out_ch, affine=True),
         ]
         if use_pool:
             layers.append(nn.MaxPool3d(kernel_size=2, stride=2))
@@ -121,8 +121,10 @@ class SFCNClass(nn.Module):
             if m.bias is not None:
                 nn.init.zeros_(m.bias)
         elif isinstance(m, (nn.BatchNorm3d, nn.GroupNorm, nn.InstanceNorm3d)):
-            nn.init.ones_(m.weight)
-            nn.init.zeros_(m.bias)
+            if hasattr(m, 'weight') and m.weight is not None:
+                nn.init.ones_(m.weight)
+            if hasattr(m, 'bias') and m.bias is not None:
+                nn.init.zeros_(m.bias)
 
     # --------------------------------------------------------------- #
     def forward(self, x: torch.Tensor) -> torch.Tensor:
