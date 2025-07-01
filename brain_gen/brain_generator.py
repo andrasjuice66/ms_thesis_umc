@@ -161,22 +161,15 @@ class BABrainGenerator:
                                  roi_size=self.output_shape, random_size=False),
             ]
 
-        # 1) spatial transforms (segmentation domain)
-        if self.use_hemisphere_aware_flip:
-            tx.append(
-                HemisphereAwareFlipD(
-                    keys=[self.image_key],
-                    generation_labels=self.generation_labels,
-                    n_neutral_labels=self.n_neutral_labels,
-                    spatial_axis=0,
-                    prob=self.prob["flip"],
-                )
+        tx.append(
+            HemisphereAwareFlipD(
+                keys=[self.image_key],
+                generation_labels=self.generation_labels,
+                n_neutral_labels=self.n_neutral_labels,
+                spatial_axis=0,
+                prob=self.prob["flip"],
             )
-        else:
-            tx.append(
-                RandFlipd(keys=[self.image_key], prob=self.prob["flip"],
-                          spatial_axis=(0, 1, 2))
-            )
+        )
 
         tx.append(
             RandAffined(keys=[self.image_key], prob=self.prob["affine"],
@@ -235,23 +228,16 @@ class BABrainGenerator:
         ]
 
         # 4) resolution simulation
-        if self.use_dynamic_resolution:
-            tx.append(
-                DynamicResolutionD(keys=[self.image_key],
-                                   atlas_res=self.atlas_res,
-                                   max_res_iso=self.max_res_iso,
-                                   max_res_aniso=self.max_res_aniso,
-                                   thickness_factor=self.thickness,
-                                   randomise_res=True,
-                                   prob=self.prob["resolution"])
-            )
-        else:
-            tx.append(
-                RandomResolutionD(keys=[self.image_key],
-                                  min_res=self.min_res,
-                                  max_res_iso=self.max_res_iso,
-                                  prob=self.prob["resolution"])
-            )
+        tx.append(
+            DynamicResolutionD(keys=[self.image_key],
+                                atlas_res=self.atlas_res,
+                                max_res_iso=self.max_res_iso,
+                                max_res_aniso=self.max_res_aniso,
+                                thickness_factor=self.thickness,
+                                randomise_res=True,
+                                prob=self.prob["resolution"])
+        )
+
 
         # 5) optional clip / normalise
         if self.use_intensity_clip_normalize:
