@@ -347,10 +347,10 @@ class BrainAgeTrainer:
         y_true = np.concatenate(targets_all)
 
         # Log every prediction vs ground truth for debugging
-        self.logger.info(f"=== TRAIN EPOCH {epoch+1} PREDICTIONS vs GROUND TRUTH ===")
-        for i, (pred, true) in enumerate(zip(y_pred, y_true)):
-            error = abs(pred - true)
-            self.logger.info(f"Train sample {i:3d}: pred={pred:6.2f}, true={true:6.2f}, error={error:5.2f}")
+        # self.logger.info(f"=== TRAIN EPOCH {epoch+1} PREDICTIONS vs GROUND TRUTH ===")
+        # for i, (pred, true) in enumerate(zip(y_pred, y_true)):
+        #     error = abs(pred - true)
+        #     self.logger.info(f"Train sample {i:3d}: pred={pred:6.2f}, true={true:6.2f}, error={error:5.2f}")
         
         # Log summary statistics
         self.logger.info(f"TRAIN SUMMARY - Pred: min={y_pred.min():.2f}, max={y_pred.max():.2f}, mean={y_pred.mean():.2f}, std={y_pred.std():.2f}")
@@ -400,10 +400,10 @@ class BrainAgeTrainer:
         y_true = np.concatenate(targets_all)
         
         # Log every validation prediction vs ground truth for debugging
-        self.logger.info(f"=== VAL EPOCH {epoch+1} PREDICTIONS vs GROUND TRUTH ===")
-        for i, (pred, true) in enumerate(zip(y_pred, y_true)):
-            error = abs(pred - true)
-            self.logger.info(f"Val sample {i:3d}: pred={pred:6.2f}, true={true:6.2f}, error={error:5.2f}")
+        # self.logger.info(f"=== VAL EPOCH {epoch+1} PREDICTIONS vs GROUND TRUTH ===")
+        # for i, (pred, true) in enumerate(zip(y_pred, y_true)):
+        #     error = abs(pred - true)
+        #     self.logger.info(f"Val sample {i:3d}: pred={pred:6.2f}, true={true:6.2f}, error={error:5.2f}")
         
         # Log summary statistics
         self.logger.info(f"VAL SUMMARY - Pred: min={y_pred.min():.2f}, max={y_pred.max():.2f}, mean={y_pred.mean():.2f}, std={y_pred.std():.2f}")
