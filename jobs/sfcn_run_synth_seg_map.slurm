@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=sfcn_synth_seg_map
-#SBATCH --partition=gpu_a100            
-#SBATCH --gres=gpu:a100:1
+#SBATCH --partition=gpu_h100            
+#SBATCH --gres=gpu:h100:1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=64G
 #SBATCH --time=15:00:00
