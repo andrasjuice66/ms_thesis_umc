@@ -79,13 +79,8 @@ def main() -> None:
     device = torch.device(cfg.get("device") or ("cuda" if torch.cuda.is_available() else "cpu"))
     logger.info(f"Using device: {device}")
 
-    # 5. ─── Brain Generator ──────────────────────────────────── #
-    # This entire section is no longer needed for this script
-    # logger.info("Initializing Brain Generator...")
-    # ... all the brain_generator setup code ...
-    
-    n_classes = GENERATION_CLASSES.max() + 1     # = 15 with the default label set
-
+    # 5. ─── Cleaned up unused brain generator code ───────────────── #
+    n_classes = int(GENERATION_CLASSES.max() + 1)     # = 15 with the default label set
             
 
     # 6. ─── CSV → dataset / sampler ─────────────────────────── #
@@ -130,7 +125,6 @@ def main() -> None:
     logger.info("Initializing datasets...")
 
     # --- NEW: Define the one-hot encoding transform for the experiment ---
-    n_classes = GENERATION_CLASSES.max() + 1
     one_hot_transform = Compose([
         EnsureChannelFirstd(keys=["image"], channel_dim="no_channel"),
         AsDiscreted(keys=["image"], to_onehot=n_classes),
