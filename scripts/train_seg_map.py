@@ -14,7 +14,7 @@ import pandas as pd
 import numpy as np
 import torch
 import wandb
-from monai.transforms import Compose, AsDiscreted, EnsureChannelFirstd
+from monai.transforms import Compose, AsDiscreted, EnsureChannelFirstd, Squeezed
 
 # Set multiprocessing start method to 'spawn' for CUDA compatibility
 mp.set_start_method('spawn', force=True)
@@ -133,6 +133,7 @@ def main() -> None:
             generation_labels=GENERATION_LABELS,
             output_labels=GENERATION_CLASSES
         ),
+        Squeezed(keys=["image"], dim=0),
         AsDiscreted(keys=["image"], to_onehot=n_classes),
     ])
     # ---------------------------------------------------------------------
