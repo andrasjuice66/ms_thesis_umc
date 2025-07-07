@@ -34,6 +34,7 @@ from brain_age_pred.utils.utils import set_seed, read_csv, load_checkpoint
 from torch.utils.data import WeightedRandomSampler, DataLoader
 from brain_age_pred.brain_gen.brain_generator import BABrainGenerator
 from brain_age_pred.brain_gen.labels import GENERATION_CLASSES, GENERATION_LABELS, N_NEUTRAL_LABELS
+from brain_age_pred.dataset.custom_transformations import ConvertLabelsD
 
 
 def main() -> None:
@@ -127,6 +128,11 @@ def main() -> None:
     # --- NEW: Define the one-hot encoding transform for the experiment ---
     one_hot_transform = Compose([
         EnsureChannelFirstd(keys=["image"], channel_dim="no_channel"),
+        ConvertLabelsD(
+            keys=["image"],
+            generation_labels=GENERATION_LABELS,
+            output_labels=GENERATION_CLASSES
+        ),
         AsDiscreted(keys=["image"], to_onehot=n_classes),
     ])
     # ---------------------------------------------------------------------
