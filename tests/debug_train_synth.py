@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 import numpy as np
 import torch
+import nibabel as nib
 
 project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
@@ -17,6 +18,30 @@ from brain_age_pred.dataset.dataset import BADataset
 from brain_age_pred.brain_gen.brain_generator import BABrainGenerator
 from brain_age_pred.brain_gen.labels import GENERATION_CLASSES, GENERATION_LABELS, N_NEUTRAL_LABELS
 from brain_age_pred.utils.utils import read_csv
+
+def save_as_nifti(data, filepath, description=""):
+    """Save numpy array as NIfTI file with basic header"""
+    # Create a basic affine matrix (identity with 1mm voxel size)
+    affine = np.eye(4)
+    
+    # Handle different data shapes
+    if data.ndim == 4 and data.shape[0] == 1:
+        # Remove channel dimension if present
+        data = data.squeeze(0)
+    elif data.ndim == 4:
+        # If multiple channels, keep as 4D
+        pass
+    
+    # Create NIfTI image
+    nii_img = nib.Nifti1Image(data.astype(np.float32), affine)
+    
+    # Add description to header if provided
+    if description:
+        nii_img.header['descrip'] = description.encode('utf-8')[:80]  # Max 80 chars
+    
+    # Save as compressed NIfTI
+    nib.save(nii_img, str(filepath))
+    print(f"  ✓ Saved NIfTI: {filepath}")
 
 def debug_brain_generator(cfg, output_dir):
     """Debug brain generator setup and save samples"""
@@ -152,8 +177,10 @@ def debug_dataset_loading(cfg, brain_generator, output_dir, max_samples=5):
             print(f"  Raw data range: [{raw_data.min():.3f}, {raw_data.max():.3f}]")
             print(f"  Unique raw values: {len(np.unique(raw_data))}")
             
-            # Save raw data
-            np.save(debug_samples_dir / f"sample_{i}_raw.npy", raw_data)
+            # Save raw data as NIfTI
+            save_as_nifti(raw_data, 
+                         debug_samples_dir / f"train_sample_{i}_raw.nii.gz", 
+                         f"Raw train brain data sample {i}")
             
             # Process through dataset (includes brain generator)
             sample = dataset[i]
@@ -164,8 +191,10 @@ def debug_dataset_loading(cfg, brain_generator, output_dir, max_samples=5):
             print(f"  Generated range: [{generated_img.min():.3f}, {generated_img.max():.3f}]")
             print(f"  Age: {sample['age'].item():.1f}")
             
-            # Save generated data
-            np.save(debug_samples_dir / f"sample_{i}_generated.npy", generated_img)
+            # Save generated data as NIfTI
+            save_as_nifti(generated_img, 
+                         debug_samples_dir / f"train_sample_{i}_generated.nii.gz", 
+                         f"Generated train brain age={sample['age'].item():.1f}")
             
             # Save metadata
             metadata = {
@@ -177,10 +206,10 @@ def debug_dataset_loading(cfg, brain_generator, output_dir, max_samples=5):
                 "generated_range": [float(generated_img.min()), float(generated_img.max())],
             }
             
-            with open(debug_samples_dir / f"sample_{i}_metadata.json", "w") as f:
+            with open(debug_samples_dir / f"train_sample_{i}_metadata.json", "w") as f:
                 json.dump(metadata, f, indent=2)
             
-            print(f"  ✓ Saved to debug_samples/sample_{i}_*")
+            print(f"  ✓ Saved to debug_samples/train_sample_{i}_*")
             
         except Exception as e:
             print(f"  ✗ Error processing sample {i}: {e}")
@@ -189,9 +218,96 @@ def debug_dataset_loading(cfg, brain_generator, output_dir, max_samples=5):
     
     return dataset
 
-def debug_dataloader(dataset, output_dir, batch_size=2):
+def debug_validation_dataset_loading(cfg, brain_generator, output_dir, max_samples=5):
+    """Debug validation dataset loading and save intermediate results"""
+    print("\n=== DEBUG: Validation Dataset Loading ===")
+    
+    # Read validation data
+    val_csv = Path(cfg.get("data.val_csv"))
+    real_data_dir = Path(cfg.get("data.real_data_dir"))
+    
+    print(f"Reading validation CSV: {val_csv}")
+    print(f"Real data dir: {real_data_dir}")
+    
+    val_p, val_a, val_w, val_s, val_m = read_csv(val_csv, real_data_dir)
+    
+    print(f"✓ Read {len(val_p)} validation samples")
+    print(f"  Sample file extensions: {set(Path(p).suffix for p in val_p[:10])}")
+    print(f"  Sample paths: {val_p[:3]}")
+    print(f"  Sample ages: {val_a[:5]}")
+    
+    # Create validation dataset
+    val_dataset = BADataset(
+        file_paths=val_p[:max_samples],  # Limit for debugging
+        age_labels=val_a[:max_samples],
+        sample_wts=val_w[:max_samples] if val_w else None,
+        sexes=val_s[:max_samples] if val_s else None,
+        modalities=val_m[:max_samples] if val_m else None,
+        transform=brain_generator,
+        mode="val",  # Note: validation mode
+        cache_size=0,
+    )
+    
+    print(f"✓ Created validation dataset with {len(val_dataset)} samples")
+    
+    # Test each validation sample
+    debug_samples_dir = output_dir / "debug_samples"
+    debug_samples_dir.mkdir(exist_ok=True)
+    
+    for i in range(len(val_dataset)):
+        print(f"\n--- Processing validation sample {i} ---")
+        try:
+            # Load raw file first
+            raw_data = val_dataset._load_volume(val_dataset.file_paths[i])
+            print(f"  Raw data shape: {raw_data.shape}")
+            print(f"  Raw data type: {raw_data.dtype}")
+            print(f"  Raw data range: [{raw_data.min():.3f}, {raw_data.max():.3f}]")
+            print(f"  Unique raw values: {len(np.unique(raw_data))}")
+            
+            # Save raw data as NIfTI
+            save_as_nifti(raw_data, 
+                         debug_samples_dir / f"val_sample_{i}_raw.nii.gz", 
+                         f"Raw validation brain data sample {i}")
+            
+            # Process through dataset (includes brain generator)
+            sample = val_dataset[i]
+            generated_img = sample['image'].cpu().numpy()
+            
+            print(f"  Generated shape: {generated_img.shape}")
+            print(f"  Generated type: {generated_img.dtype}")
+            print(f"  Generated range: [{generated_img.min():.3f}, {generated_img.max():.3f}]")
+            print(f"  Age: {sample['age'].item():.1f}")
+            
+            # Save generated data as NIfTI
+            save_as_nifti(generated_img, 
+                         debug_samples_dir / f"val_sample_{i}_generated.nii.gz", 
+                         f"Generated validation brain age={sample['age'].item():.1f}")
+            
+            # Save metadata
+            metadata = {
+                "file_path": val_dataset.file_paths[i],
+                "age": sample['age'].item(),
+                "raw_shape": raw_data.shape,
+                "raw_range": [float(raw_data.min()), float(raw_data.max())],
+                "generated_shape": generated_img.shape,
+                "generated_range": [float(generated_img.min()), float(generated_img.max())],
+            }
+            
+            with open(debug_samples_dir / f"val_sample_{i}_metadata.json", "w") as f:
+                json.dump(metadata, f, indent=2)
+            
+            print(f"  ✓ Saved to debug_samples/val_sample_{i}_*")
+            
+        except Exception as e:
+            print(f"  ✗ Error processing validation sample {i}: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    return val_dataset
+
+def debug_dataloader(dataset, output_dir, batch_size=2, prefix="train"):
     """Debug dataloader behavior"""
-    print(f"\n=== DEBUG: DataLoader (batch_size={batch_size}) ===")
+    print(f"\n=== DEBUG: {prefix.title()} DataLoader (batch_size={batch_size}) ===")
     
     dataloader = torch.utils.data.DataLoader(
         dataset,
@@ -207,7 +323,7 @@ def debug_dataloader(dataset, output_dir, batch_size=2):
         if batch_idx >= 2:  # Only test first 2 batches
             break
             
-        print(f"\n--- Batch {batch_idx} ---")
+        print(f"\n--- {prefix.title()} Batch {batch_idx} ---")
         print(f"  Batch image shape: {batch['image'].shape}")
         print(f"  Batch image dtype: {batch['image'].dtype}")
         print(f"  Batch ages: {batch['age'].tolist()}")
@@ -218,9 +334,13 @@ def debug_dataloader(dataset, output_dir, batch_size=2):
             img = batch['image'][sample_idx].cpu().numpy()
             age = batch['age'][sample_idx].item()
             
-            np.save(debug_batches_dir / f"batch_{batch_idx}_sample_{sample_idx}.npy", img)
+            # Save as NIfTI instead of numpy
+            save_as_nifti(img, 
+                         debug_batches_dir / f"{prefix}_batch_{batch_idx}_sample_{sample_idx}.nii.gz",
+                         f"{prefix.title()} batch {batch_idx} sample {sample_idx} age={age:.1f}")
             
             metadata = {
+                "dataset": prefix,
                 "batch_idx": batch_idx,
                 "sample_idx": sample_idx,
                 "age": age,
@@ -228,12 +348,12 @@ def debug_dataloader(dataset, output_dir, batch_size=2):
                 "range": [float(img.min()), float(img.max())],
             }
             
-            with open(debug_batches_dir / f"batch_{batch_idx}_sample_{sample_idx}_metadata.json", "w") as f:
+            with open(debug_batches_dir / f"{prefix}_batch_{batch_idx}_sample_{sample_idx}_metadata.json", "w") as f:
                 json.dump(metadata, f, indent=2)
         
-        print(f"  ✓ Saved batch {batch_idx} to debug_batches/")
+        print(f"  ✓ Saved {prefix} batch {batch_idx} to debug_batches/")
     
-    print("✓ DataLoader debugging complete")
+    print(f"✓ {prefix.title()} DataLoader debugging complete")
 
 def main():
     """Main debug function"""
@@ -241,7 +361,7 @@ def main():
     print("=" * 60)
     
     # Setup
-    cfg_file = sys.argv[1] if len(sys.argv) > 1 else "brain_age_pred/configs/segmented/brainagenext_segmented_snell_debug.yaml"
+    cfg_file = sys.argv[1] if len(sys.argv) > 1 else "C:/Projects/thesis_project/brain_age_pred/configs/segmented/brainagenext_segmented_local_debug.yaml"
     cfg = Config(cfg_file)
     
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -255,15 +375,23 @@ def main():
         # Debug brain generator
         brain_generator = debug_brain_generator(cfg, debug_dir)
         
-        # Debug dataset loading
-        dataset = debug_dataset_loading(cfg, brain_generator, debug_dir, max_samples=5)
+        # Debug training dataset loading
+        train_dataset = debug_dataset_loading(cfg, brain_generator, debug_dir, max_samples=5)
         
-        # Debug dataloader
-        debug_dataloader(dataset, debug_dir)
+        # Debug validation dataset loading
+        val_dataset = debug_validation_dataset_loading(cfg, brain_generator, debug_dir, max_samples=5)
+        
+        # Debug training dataloader
+        debug_dataloader(train_dataset, debug_dir, prefix="train")
+        
+        # Debug validation dataloader
+        debug_dataloader(val_dataset, debug_dir, prefix="val")
         
         print(f"\n{'='*60}")
         print("✓ DEBUG COMPLETE - All components working!")
         print(f"✓ Results saved to: {debug_dir}")
+        print(f"✓ Training samples: {len(train_dataset)}")
+        print(f"✓ Validation samples: {len(val_dataset)}")
         
         return True
         

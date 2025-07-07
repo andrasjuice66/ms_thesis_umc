@@ -1,0 +1,144 @@
+# ────────────────────────────  DATA  ──────────────────────────── #
+data:
+  train_csv: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels/train_debug_local.csv"
+  val_csv:   "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels/train_debug_local.csv"
+  test_csv:  "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels/train_debug_local.csv"
+  segmented_data_dir: "/mnt/c/Projects/thesis_project/Data/brain_age_segmented/"   
+  real_data_dir: "/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed/" 
+
+  image_key:  "image_path"
+  age_key:    "age"
+  weight_key: "sample_weight"             
+
+  # loading / caching
+  cache_dir: "data/cache"
+  cache_mode: "memory"   
+  cache_size: 0            
+  shared_cache: 0
+  preload: true
+  num_workers: 2
+  pin_memory: true
+  pin_memory_device: "cuda"
+  persistent_workers: true
+  prefetch_factor: 2
+  target_shape: [160, 192, 160]            # (D,H,W) after optional resize
+  age_min: 20
+  age_max: 80
+
+# ───────────────────────────  MODEL  ──────────────────────────── #
+model:
+  type: "sfcn_class"                             # sfcn | resnet3d | efficientnet3d
+  in_channels: 1
+  dropout_rate: 0.1
+  use_attention: false                   
+  checkpoint: null #"/home/ajoos/brain_age_pred/output/checkpoints/sfcn_20250522_104159/sfcn_20250522_104159_epoch057.pt"
+
+#
+# ────────────────────── BRAIN GENERATOR ───────────────────────── #
+brain_generator:
+  # Prior distribution parameters
+  distribution: "uniform"  # "normal" or "uniform"
+  mean_loc: 125.0
+  mean_scale: 125.0
+  std_loc: 17.5
+  std_scale: 17.5
+  
+  # Augmentation probabilities
+  prob:
+    flip: 0.0
+    affine: 0.0
+    contrast: 0.0
+    gamma: 0.0
+    scale_int: 0.0
+    shift_int: 0.0
+    hist_shift: 0.0
+    noise: 0.0
+    rician: 0.0
+    gibbs: 0.0
+    blur: 0.0
+    bias: 0.0
+    resolution: 0.0
+  
+  # Spatial augmentation parameters
+  rotation_range: 10
+  scaling_range: 0.1
+  shear_bounds: 0.005
+  translation_bounds: false
+  
+  # Intensity augmentation parameters
+  contrast_range: [0.8, 1.2]
+  log_gamma_std: 0.1
+  shift_offset: 0.1
+  hist_control_points: 5
+  
+  # Artefacts parameters
+  noise_mean: 0.02
+  noise_std: 0.015
+  rician_std: 0.01
+  gibbs_alpha: 0.4
+  blur_sigma: 0.25
+  bias_field_rng: [0.0, 0.5]
+  
+  # Resolution parameters
+  min_res: 0.8
+  max_res_iso: 2.0
+  max_res_aniso: 2.0
+  atlas_res: 1.0
+  thickness: null
+  
+  # Toggle parameters
+  use_hemisphere_aware_flip: true
+  use_dynamic_resolution: true
+  use_intensity_clip_normalize: true
+  n_channels: 1
+  use_specific_stats_for_channel: false
+  output_shape: [182, 218, 182]
+  use_random_cropping: true
+  return_gradients: false
+# ──────────────────────────  TRAINING  ────────────────────────── #
+training:
+  batch_size: 1
+  epochs: 400
+
+  # optimiser & LR
+  learning_rate: 0.002 #0.002193
+  weight_decay:  0.0
+  optimizer: "adamw"                       # adam | adamw | sgd | rmsprop | radam | novograd
+  scheduler: "step"                      # cosine | plateau | onecycle | step | none
+  scheduler_params:
+    T_max: 100
+    eta_min: 0.00001
+    epochs: 60
+    steps_per_epoch: 534
+
+    step_size: 30
+    gamma: 0.3
+
+  # losses
+  loss: "kl_div"                        # mse | mae | huber | huber_mae | weighted_mse
+  loss_params:
+    delta: 1.0
+    mae_weight: 0.5
+
+  # misc
+  early_stopping_patience: 300
+  gradient_accumulation_steps: 1
+  use_amp: false                            # mixed precision if CUDA present
+
+# ────────────────────────────  OUTPUT  ────────────────────────── #
+output:
+  output_dir: "/mnt/c/Projects/thesis_project/brain_age_pred/output"
+  checkpoint_dir: "checkpoints"
+  log_dir: "logs"
+  experiment_name: sfcn_class_segmented_synth #"brain_age_with_tumors"                   # auto-generate if left null
+
+# ─────────────────────────────  W&B  ──────────────────────────── #
+wandb:
+  use_wandb: true                         # still requires $WANDB_API env-var
+  project: "brain_age_synth"
+
+  entity: null
+
+# ───────────────────────── MISCELLANEOUS ───────────────────────── #
+seed: 42
+device: "cuda"                              # cuda if available, else cpu

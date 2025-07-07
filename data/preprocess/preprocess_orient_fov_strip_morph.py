@@ -232,22 +232,33 @@ def main(data_root, out_root):
     log.info(f"{total} images ({done0} done); pending: {len(pending)}")
     log.info(f"CPUs: {os.cpu_count()}, GPUs: {NUM_GPUS}")
 
-    # W&B run
-    run = wandb.init(
-        project="thesis_preprocess",
-        name=f"{out_root.name}",
-        id=wandb.util.generate_id(),
-        resume="allow",
-        config={
-            "dataset": out_root.name,
-            "total": total,
-            "cpus": os.cpu_count(),
-            "gpus": NUM_GPUS
-        }
-    )
-    table = wandb.Table(columns=["#", "image", "status", "avg_sec"])
-    if done0:
-        wandb.log({"images_done": done0, "elapsed_sec": 0}, step=done0)
+    # W&B run - explicitly set to online mode only
+    try:
+        run = wandb.init(
+            project="thesis_preprocess",
+            name=f"{out_root.name}",
+            id=wandb.util.generate_id(),
+            resume="allow",
+            mode="online",  # Force online mode only
+            config={
+                "dataset": out_root.name,
+                "total": total,
+                "cpus": os.cpu_count(),
+                "gpus": NUM_GPUS
+            }
+        )
+        wandb_enabled = True
+        log.info("W&B logging enabled (online mode)")
+    except Exception as e:
+        log.warning(f"Failed to initialize W&B in online mode: {e}")
+        log.info("Continuing without W&B logging")
+        run = None
+        wandb_enabled = False
+
+    if wandb_enabled:
+        table = wandb.Table(columns=["#", "image", "status", "avg_sec"])
+        if done0:
+            wandb.log({"images_done": done0, "elapsed_sec": 0}, step=done0)
 
     start = time.time()
     done = done0
@@ -273,38 +284,41 @@ def main(data_root, out_root):
             avg = elapsed / done if done else 0
             eta = (total - done) * avg
 
-            wandb.log({
-                "images_done": done,
-                "elapsed_sec": elapsed,
-                "eta_sec": eta
-            }, step=done)
+            if wandb_enabled:
+                wandb.log({
+                    "images_done": done,
+                    "elapsed_sec": elapsed,
+                    "eta_sec": eta
+                }, step=done)
 
-            table.add_data(done, img.name, st, avg)
-            if done % 10 == 0 or done == total:
-                wandb.log({"table": table}, commit=False)
+                table.add_data(done, img.name, st, avg)
+                if done % 10 == 0 or done == total:
+                    wandb.log({"table": table}, commit=False)
 
             log.info(f"Elapsed {timedelta(seconds=int(elapsed))}, "
                      f"ETA {timedelta(seconds=int(eta))}")
 
-    run.finish()
+    if wandb_enabled:
+        run.finish()
     log.info("✅ All done.")
 
 
 if __name__ == "__main__":
-    data_root = Path("/mnt/c/Projects/thesis_project/Data/CoRR")
-    out_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed/CoRR_")
-    main(data_root, out_root)
+    # data_root = Path("/mnt/c/Projects/thesis_project/Data/CoRR")
+    # out_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed/CoRR_")
+    # main(data_root, out_root)
 
-    data_root = Path("/mnt/c/Projects/thesis_project/Data/SALD")
-    out_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed/SALD_")
-    main(data_root, out_root)
+    # data_root = Path("/mnt/c/Projects/thesis_project/Data/SALD")
+    # out_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed/SALD_")
+    # main(data_root, out_root)
+
+
+    # data_root = Path("/mnt/c/Projects/thesis_project/Data/AOMIC_ID1000")
+    # out_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed/AOMIC_ID1000_")
+    # main(data_root, out_root)
 
     data_root = Path("/mnt/c/Projects/thesis_project/Data/PanGen")
     out_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed/PanGen_")
-    main(data_root, out_root)
-
-    data_root = Path("/mnt/c/Projects/thesis_project/Data/AOMIC_ID1000")
-    out_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed/AOMIC_ID1000_")
     main(data_root, out_root)
 
 

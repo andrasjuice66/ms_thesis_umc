@@ -89,7 +89,7 @@ class BADataset(Dataset):
         img_np = self._load_volume(self.file_paths[idx])
 
         sample = {
-            "image": torch.from_numpy(img_np).unsqueeze(0),
+            "image": torch.from_numpy(img_np).unsqueeze(0).float(),
             "age":   torch.tensor(self.age_labels[idx], dtype=torch.float32),
         }
         if self.sample_wts is not None:

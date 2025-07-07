@@ -1,12 +1,12 @@
 {
   "os": "Linux-5.15.167.4-microsoft-standard-WSL2-x86_64-with-glibc2.35",
   "python": "CPython 3.10.12",
-  "startedAt": "2025-06-25T22:20:06.823524Z",
+  "startedAt": "2025-06-26T23:00:00.371624Z",
   "program": "/mnt/c/Projects/thesis_project/brain_age_pred/data/preprocess/preprocess_orient_fov_strip_morph.py",
   "codePath": "data/preprocess/preprocess_orient_fov_strip_morph.py",
   "git": {
     "remote": "https://github.com/andrasjuice66/ms_thesis_umc.git",
-    "commit": "ddfd8f1a64d25fc66f00cc2b6af33ce6773b5fee"
+    "commit": "2c99f633ba8dc28dff88fbf843851a7f8ddfdd12"
   },
   "email": "joos.andras@gmail.com",
   "root": "/mnt/c/Projects/thesis_project/brain_age_pred/data/preprocess",
@@ -20,7 +20,7 @@
   "disk": {
     "/": {
       "total": "1081101176832",
-      "used": "49032540160"
+      "used": "49095294976"
     }
   },
   "memory": {
