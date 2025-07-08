@@ -102,7 +102,7 @@ class BADataset(Dataset):
         # ---- always apply center crop ------------------------------------
         
         # ---- transform -------------------------------------------------
-        if self.transform is not None and self.mode == "train":
+        if self.transform is not None:
             sample = self.transform(sample)         
             
         sample = self.center_crop(sample)
