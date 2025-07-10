@@ -51,6 +51,7 @@ def main() -> None:
     logger.info("Initializing configuration...")
     set_seed(cfg.get("seed", 42))
     logger.info(f"Experiment: {experiment_name}\nConfig   : {cfg_file}")
+    logger.info(f"Using config: {cfg.config}")
 
     # 3. ─── W&B init ─────────────────────────────────────────── #
     logger.info("Initializing Weights & Biases...")
@@ -153,6 +154,15 @@ def main() -> None:
     test_p, test_a, test_w, test_s, test_m = read_csv(test_csv, segmented_data_dir)
 
     logger.info(f"Train={len(train_p)}  Val={len(val_p)}  Test={len(test_p)}")
+
+        # Add this right after reading CSVs
+    print("=== AGE RANGES  ===")
+    print(f"Train ages: min={min(train_a):.2f}, max={max(train_a):.2f}, mean={np.mean(train_a):.2f}, std={np.std(train_a):.2f}")
+    print(f"Val ages:   min={min(val_a):.2f}, max={max(val_a):.2f}, mean={np.mean(val_a):.2f}, std={np.std(val_a):.2f}")
+    print(f"Test ages:  min={min(test_a):.2f}, max={max(test_a):.2f}, mean={np.mean(test_a):.2f}, std={np.std(test_a):.2f}")
+    print("Sample train ages:", train_a[:50])
+    print("Sample val ages:", val_a[:50])
+    print("Sample test ages:", test_a[:50])
 
     logger.info("Initializing datasets...")
     train_ds = BADataset(
