@@ -1,14 +1,3 @@
-"""
-Domain–randomised brain-image generator (SynthSeg-style)
--------------------------------------------------------
-Creates a synthetic MRI volume from a segmentation map.
-
-Optimisations
-• Cheap in-place background masking (ZeroBackgroundd)
-• No extra float mask tensor
-• No GPU memory used inside the pipeline
-"""
-
 from __future__ import annotations
 import numpy as np
 from typing import Sequence
@@ -18,7 +7,7 @@ from monai.transforms import (
     Compose, RandFlipd, RandAffined, RandAdjustContrastd, RandBiasFieldd,
     RandGaussianSmoothd, RandGaussianNoised, RandRicianNoised, RandGibbsNoised,
     RandScaleIntensityd, RandShiftIntensityd, RandHistogramShiftd, ToTensord,
-    RandSpatialCropd, SpatialPadd, CopyItemsd, DeleteItemsd, Transform, 
+    RandSpatialCropd, SpatialPadd, CopyItemsd, DeleteItemsd, Transform,
     CenterSpatialCropd
 )
 
@@ -40,8 +29,8 @@ from brain_age_pred.brain_gen.labels import (
 # cheap in-place background mask
 # ------------------------------------------------------------------ #
 class ZeroBackgroundd(Transform):
-    """img *= (class_map != 0) — in-place, no extra image allocation."""
-    def __init__(self, img_key="image", seg_key="class_map"):
+    """img *= (seg_gt != 0) — in-place, no extra image allocation."""
+    def __init__(self, img_key="image", seg_key="seg_gt"):
         self.img_key, self.seg_key = img_key, seg_key
 
     def __call__(self, data):
@@ -97,6 +86,7 @@ class BABrainGenerator:
         output_shape: Sequence[int] | int | None = None,
         use_random_cropping: bool = False,
         return_gradients: bool = False,
+        return_segmentation: bool = False, # Add this flag
         device: torch.device | str | None = None,
     ):
         # trivial fields
@@ -143,6 +133,7 @@ class BABrainGenerator:
         self.output_shape    = tuple(output_shape) if output_shape is not None else None
         self.use_random_cropping = use_random_cropping
         self.return_gradients    = return_gradients
+        self.return_segmentation = return_segmentation
 
         # pipeline runs on CPU; send batch to GPU later in training loop
         self.device = torch.device(device) if device else torch.device("cpu")
@@ -180,11 +171,11 @@ class BABrainGenerator:
                         mode="nearest", padding_mode="constant")
         )
 
-        # keep spatially-aligned copy
-        tx.append(CopyItemsd(keys=[self.image_key], times=1, names=["class_map"]))
+        # keep spatially-aligned copy for segmentation GT and intensity generation
+        tx.append(CopyItemsd(keys=[self.image_key], times=1, names=["seg_gt"]))
 
         tx.append(
-            ConvertLabelsD(keys=["class_map"],
+            ConvertLabelsD(keys=["seg_gt"],
                            generation_labels=self.generation_labels,
                            output_labels=GENERATION_CLASSES,
                            background_label=0)
@@ -194,7 +185,7 @@ class BABrainGenerator:
         if self.use_sample:
             tx.append(
                 SampleConditionalGMMd(
-                    seg_key="class_map", out_key=self.image_key,
+                    seg_key="seg_gt", out_key=self.image_key,
                     prior_means=self.prior_means, prior_stds=self.prior_stds,
                     distribution=self.distribution)
             )
@@ -249,11 +240,21 @@ class BABrainGenerator:
             )
 
         # 6) zero background (after all augmentations)
-        tx.append(ZeroBackgroundd(img_key=self.image_key, seg_key="class_map"))
+        tx.append(ZeroBackgroundd(img_key=self.image_key, seg_key="seg_gt"))
 
         # 7) clean-up & tensor-convert
-        tx.append(DeleteItemsd(keys=["class_map"]))          # works on every MONAI
-        tx.append(ToTensord(keys=[self.image_key]))
+        keys_to_delete = []
+        if not self.return_segmentation:
+            keys_to_delete.append("seg_gt")
+        
+        if keys_to_delete:
+            tx.append(DeleteItemsd(keys=keys_to_delete))
+            
+        tensor_keys = [self.image_key]
+        if self.return_segmentation:
+            tensor_keys.append("seg_gt")
+
+        tx.append(ToTensord(keys=tensor_keys, allow_missing_keys=True))
         # tx.append(CenterSpatialCropd(keys=[self.image_key], roi_size=(160, 192, 160)))
 
         self.transform = Compose(tx)
