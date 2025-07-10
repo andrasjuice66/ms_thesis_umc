@@ -64,7 +64,7 @@ class BADataset(Dataset):
         self.mode          = mode.lower()
         
         # Center spatial crop that will be applied to all samples
-        self.center_crop = CenterSpatialCropd(keys=["image"], roi_size=(160, 192, 160))
+        self.center_crop = CenterSpatialCropd(keys=["image", "seg_gt"], roi_size=(160, 192, 160), allow_missing_keys=True)
 
         # --- local per-process cache (OrderedDict) ---------------------- #
         self.cache_size    = max(0, cache_size)
