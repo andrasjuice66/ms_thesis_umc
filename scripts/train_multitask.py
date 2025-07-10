@@ -100,43 +100,41 @@ def main() -> None:
     prior_means[:, 0] = 0.0    
     prior_stds[:, 0] = 0.0     
     
-    # ... existing code ...
     brain_generator = BABrainGenerator(
-    # Critical for multi-task
-    return_segmentation=True,
+        # Critical for multi-task
+        return_segmentation=True,
 
-    # Pass other params from config
-    prior_means=prior_means,
-    prior_stds=prior_stds,
-    distribution=bg_cfg.get("distribution", "normal"),
-    prob=bg_cfg.get("prob", {}),
+        # Pass other params from config
+        prior_means=prior_means,
+        prior_stds=prior_stds,
+        distribution=bg_cfg.get("distribution", "normal"),
+        prob=bg_cfg.get("prob", {}),
     
-    # Spatial augmentation parameters
-    rotation_range=bg_cfg.get("rotation_range", 10),
-    scaling_range=bg_cfg.get("scaling_range", 0.1),
-    shear_bounds=bg_cfg.get("shear_bounds", 0.005),
-    translation_bounds=bg_cfg.get("translation_bounds", False),
+        # Spatial augmentation parameters
+        rotation_range=bg_cfg.get("rotation_range", 10),
+        scaling_range=bg_cfg.get("scaling_range", 0.1),
+        shear_bounds=bg_cfg.get("shear_bounds", 0.005),
+        translation_bounds=bg_cfg.get("translation_bounds", False),
 
-    # Intensity augmentation parameters
-    contrast_range=tuple(bg_cfg.get("contrast_range", [0.8, 1.2])),
-    log_gamma_std=bg_cfg.get("log_gamma_std", 0.1),
-    shift_offset=bg_cfg.get("shift_offset", 0.1),
-    hist_control_points=bg_cfg.get("hist_control_points", 5),
+        # Intensity augmentation parameters
+        contrast_range=tuple(bg_cfg.get("contrast_range", [0.8, 1.2])),
+        log_gamma_std=bg_cfg.get("log_gamma_std", 0.1),
+        shift_offset=bg_cfg.get("shift_offset", 0.1),
+        hist_control_points=bg_cfg.get("hist_control_points", 5),
 
-    # ADD THESE MISSING PARAMETERS:
-    # Artifact parameters
-    noise_mean=bg_cfg.get("noise_mean", 0.5),
-    noise_std=bg_cfg.get("noise_std", 0.08),
-    rician_std=bg_cfg.get("rician_std", 0.08),
-    gibbs_alpha=bg_cfg.get("gibbs_alpha", 0.5),  # Use middle value from typical range [0.0, 1.0]
-    blur_sigma=bg_cfg.get("blur_sigma", 1.0),    # Use middle value from typical range [0.5, 2.0]
-    bias_field_rng=tuple(bg_cfg.get("bias_field_rng", [0.0, 0.8])),
+        # Artifact parameters
+        noise_mean=bg_cfg.get("noise_mean", 0.5),
+        noise_std=bg_cfg.get("noise_std", 0.08),
+        rician_std=bg_cfg.get("rician_std", 0.08),
+        gibbs_alpha=bg_cfg.get("gibbs_alpha", 0.5),
+        blur_sigma=bg_cfg.get("blur_sigma", 1.0),
+        bias_field_rng=tuple(bg_cfg.get("bias_field_rng", [0.0, 0.8])),
     
-    # Resolution parameters
-    min_res=bg_cfg.get("min_res", 1.0),
-    max_res_iso=bg_cfg.get("max_res_iso", 1.8),
+        # Resolution parameters
+        min_res=bg_cfg.get("min_res", 1.0),
+        max_res_iso=bg_cfg.get("max_res_iso", 1.8),
 
-    output_shape=tuple(bg_cfg.get("output_shape", [160, 192, 160])),
+        output_shape=tuple(bg_cfg.get("output_shape", [160, 192, 160])),
     )
     print(f"Brain Generator config: {bg_cfg}")
 
@@ -157,10 +155,33 @@ def main() -> None:
     logger.info(f"Train={len(train_p)}  Val={len(val_p)}  Test={len(test_p)}")
 
     logger.info("Initializing datasets...")
-    train_ds = BADataset(train_p, train_a, train_w, train_s, train_m, transform=brain_generator, mode="train")
-    # For multi-task, val and test also need the generator to get segmentation GT
-    val_ds = BADataset(val_p, val_a, val_w, val_s, val_m, transform=brain_generator, mode="val")
-    test_ds = BADataset(test_p, test_a, test_w, test_s, test_m, transform=brain_generator, mode="test")
+    train_ds = BADataset(
+        file_paths=train_p,
+        age_labels=train_a,
+        sample_wts=train_w,
+        sexes=train_s,
+        modalities=train_m,
+        transform=brain_generator,
+        mode="train",
+    )
+    val_ds = BADataset(
+        file_paths=val_p,
+        age_labels=val_a,
+        sample_wts=val_w,
+        sexes=val_s,
+        modalities=val_m,
+        transform=brain_generator,
+        mode="val",
+    )
+    test_ds = BADataset(
+        file_paths=test_p,
+        age_labels=test_a,
+        sample_wts=test_w,
+        sexes=test_s,
+        modalities=test_m,
+        transform=brain_generator,
+        mode="test",
+    )
 
     sampler = WeightedRandomSampler(weights=train_w, num_samples=len(train_w), replacement=True)
     dl_kwargs = dict(
@@ -182,26 +203,6 @@ def main() -> None:
     
     if use_wandb:
         wandb.watch(model, log="all", log_graph=False)
-
-    # Add this right after model creation in train_multitask.py
-    print(f"Model created with n_classes={n_classes}")
-
-    # Check if model has any parameters
-    total_params = sum(p.numel() for p in model.parameters())
-    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"Total parameters: {total_params}")
-    print(f"Trainable parameters: {trainable_params}")
-
-    # Check individual module parameters
-    for name, module in model.named_modules():
-        if hasattr(module, 'weight') and module.weight is not None:
-            print(f"Module {name}: weight shape {module.weight.shape}, requires_grad={module.weight.requires_grad}")
-        if hasattr(module, 'bias') and module.bias is not None:
-            print(f"Module {name}: bias shape {module.bias.shape}, requires_grad={module.bias.requires_grad}")
-
-    # Check if any parameters at all
-    param_list = list(model.parameters())
-    print(f"Number of parameter tensors: {len(param_list)}")
 
     # 8. ─── trainer ──────────────────────────────────────────── #
     logger.info("Initializing MultiTaskTrainer...")
