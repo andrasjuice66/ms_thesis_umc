@@ -1,8 +1,8 @@
 # ────────────────────────────  DATA  ──────────────────────────── #
 data:
   train_csv: "/home/ajoos/brain_age_pred/data/labels/train.csv"
-  val_csv:   "/home/ajoos/brain_age_pred/data/labels/val_30_40.csv"
-  test_csv:  "/home/ajoos/brain_age_pred/data/labels/test_30_40.csv"
+  val_csv:   "/home/ajoos/brain_age_pred/data/labels/val.csv"
+  test_csv:  "/home/ajoos/brain_age_pred/data/labels/test_balanced.csv"
 
   segmented_data_dir: "/scratch-shared/ajoos/brain_age_segmented_converted/"
 

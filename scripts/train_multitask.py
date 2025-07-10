@@ -183,6 +183,26 @@ def main() -> None:
     if use_wandb:
         wandb.watch(model, log="all", log_graph=False)
 
+    # Add this right after model creation in train_multitask.py
+    print(f"Model created with n_classes={n_classes}")
+
+    # Check if model has any parameters
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"Total parameters: {total_params}")
+    print(f"Trainable parameters: {trainable_params}")
+
+    # Check individual module parameters
+    for name, module in model.named_modules():
+        if hasattr(module, 'weight') and module.weight is not None:
+            print(f"Module {name}: weight shape {module.weight.shape}, requires_grad={module.weight.requires_grad}")
+        if hasattr(module, 'bias') and module.bias is not None:
+            print(f"Module {name}: bias shape {module.bias.shape}, requires_grad={module.bias.requires_grad}")
+
+    # Check if any parameters at all
+    param_list = list(model.parameters())
+    print(f"Number of parameter tensors: {len(param_list)}")
+
     # 8. ─── trainer ──────────────────────────────────────────── #
     logger.info("Initializing MultiTaskTrainer...")
     print(f"Trainer config: {cfg.get('training')}")
