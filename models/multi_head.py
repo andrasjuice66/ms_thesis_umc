@@ -7,10 +7,10 @@ class ConvBlock(nn.Module):
         super().__init__()
         self.block = nn.Sequential(
             nn.Conv3d(in_ch, out_ch, conv_size, padding='same', bias=False),
-            nn.BatchNorm3d(out_ch),
+            nn.InstanceNorm3d(out_ch),  # Changed from BatchNorm3d
             nn.ELU(inplace=True),
             nn.Conv3d(out_ch, out_ch, conv_size, padding='same', bias=False),
-            nn.BatchNorm3d(out_ch),
+            nn.InstanceNorm3d(out_ch),  # Changed from BatchNorm3d
             nn.ELU(inplace=True),
         )
     def forward(self, x): return self.block(x)

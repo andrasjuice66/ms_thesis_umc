@@ -1,11 +1,11 @@
 # ────────────────────────────  DATA  ──────────────────────────── #
 data:
-  train_csv: "/home/ajoos/brain_age_pred/data/labels/train.csv"
-  val_csv:   "/home/ajoos/brain_age_pred/data/labels/val.csv"
-  test_csv:  "/home/ajoos/brain_age_pred/data/labels/test_balanced.csv"
+  train_csv: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels/train_local.csv"
+  val_csv:   "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels/val_local.csv"
+  test_csv:  "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels/test_local.csv"
 
-  segmented_data_dir: "/scratch-shared/ajoos/brain_age_segmented_converted/"   
-  real_data_dir: "/scratch-shared/ajoos/brain_age_preprocessed_converted/"   
+  segmented_data_dir: "/mnt/c/Projects/thesis_project/Data/brain_age_segmented/"   
+  real_data_dir: "/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed/" 
   
   num_workers: 8
   pin_memory: true
@@ -28,19 +28,19 @@ brain_generator:
   
   # Probabilities for applying each augmentation
   prob:
-    flip: 0.5
-    affine: 0.8 
+    flip: 0.0
+    affine: 0.3
     contrast: 0.5
-    gamma: 0.5
-    scale_int: 0.5
-    shift_int: 0.5
-    hist_shift: 0.3
-    noise: 0.4
-    rician: 0.4
-    gibbs: 0.2
-    blur: 0.3
-    bias: 0.5
-    resolution: 0.2
+    gamma: 0.0
+    scale_int: 0.0
+    shift_int: 0.0
+    hist_shift: 0.0
+    noise: 0.0
+    rician: 0.0
+    gibbs: 0.0
+    blur: 0.0
+    bias: 0.0
+    resolution: 0.0
   
   # Spatial augmentation parameters
   rotation_range: 10
@@ -74,7 +74,7 @@ brain_generator:
 
 # ──────────────────────────  TRAINING  ────────────────────────── #
 training:
-  batch_size: 4
+  batch_size: 1
   epochs: 150
 
   # Optimiser & LR Scheduler
@@ -90,9 +90,9 @@ training:
 
   # Loss function parameters for Multi-Task learning
   loss:
-    age_loss_fn: "mse"        # Loss for the age prediction task (mae, mse, huber)
+    age_loss_fn: "mae"        # Loss for the age prediction task (mae, mse, huber)
     age_loss_weight: 1.0      # Weight for the age prediction loss
-    seg_loss_weight: 0.5      # Weight for the segmentation loss (DiceCE)
+    seg_loss_weight: 5.0    # Weight for the segmentation loss (DiceCE)
 
   # Misc training settings
   early_stopping_patience: 30

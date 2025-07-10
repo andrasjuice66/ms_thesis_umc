@@ -85,7 +85,7 @@ class MultiTaskTrainer:
 
         with autocast(device_type=self.device.type, enabled=self.use_amp):
             seg_logits, age_preds = self.model(imgs)
-            age_loss = self.age_criterion(age_preds.squeeze(), age_gts)
+            age_loss = self.age_criterion(age_preds, age_gts)
             seg_loss = self.seg_criterion(seg_logits, seg_gts)
             total_loss = self.age_loss_weight * age_loss + self.seg_loss_weight * seg_loss
 
@@ -143,6 +143,12 @@ class MultiTaskTrainer:
 
         age_preds_all = np.concatenate(age_preds_all).squeeze()
         age_targets_all = np.concatenate(age_targets_all)
+        
+        # Add statistics logging
+        stage = "TRAIN" if train else "VAL"
+        self.logger.info(f"{stage} SUMMARY - Pred: min={age_preds_all.min():.2f}, max={age_preds_all.max():.2f}, mean={age_preds_all.mean():.2f}, std={age_preds_all.std():.2f}")
+        self.logger.info(f"{stage} SUMMARY - True: min={age_targets_all.min():.2f}, max={age_targets_all.max():.2f}, mean={age_targets_all.mean():.2f}, std={age_targets_all.std():.2f}")
+        
         mae = np.mean(np.abs(age_preds_all - age_targets_all))
         
         metrics = {**epoch_losses, "mae": mae, "dice": dice_score}

@@ -145,13 +145,14 @@ def main() -> None:
     val_csv   = Path(cfg.get("data.val_csv"))
     test_csv  = Path(cfg.get("data.test_csv"))
     segmented_data_dir = Path(cfg.get("data.segmented_data_dir"))
+    real_data_dir  = Path(cfg.get("data.real_data_dir"))
 
     logger.info(f"Reading train CSV from {train_csv}")
     train_p, train_a, train_w, train_s, train_m = read_csv(train_csv, segmented_data_dir)
     logger.info(f"Reading val CSV from {val_csv}")
-    val_p, val_a, val_w, val_s, val_m = read_csv(val_csv, segmented_data_dir)
+    val_p, val_a, val_w, val_s, val_m = read_csv(val_csv, real_data_dir)
     logger.info(f"Reading test CSV from {test_csv}")
-    test_p, test_a, test_w, test_s, test_m = read_csv(test_csv, segmented_data_dir)
+    test_p, test_a, test_w, test_s, test_m = read_csv(test_csv, real_data_dir)
 
     logger.info(f"Train={len(train_p)}  Val={len(val_p)}  Test={len(test_p)}")
 
@@ -180,7 +181,7 @@ def main() -> None:
         sample_wts=val_w,
         sexes=val_s,
         modalities=val_m,
-        transform=brain_generator,
+        transform=None,
         mode="val",
     )
     test_ds = BADataset(
@@ -189,7 +190,7 @@ def main() -> None:
         sample_wts=test_w,
         sexes=test_s,
         modalities=test_m,
-        transform=brain_generator,
+        transform=None,
         mode="test",
     )
 
