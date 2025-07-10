@@ -33,7 +33,7 @@ def read_csv(
     weight_key: str = "sample_weight",
     sex_key: str = "sex",
     modalities_key: str = "modality",
-) -> Tuple[List[str], List[float], List[float]]:
+) -> Tuple[List[str], List[float], List[float], List[str], List[str]]:
     df = pd.read_csv(csv_path)
     paths, ages, weights, sexes, modalities = [], [], [], [], []
     data_root = Path(data_root)  # Essure data_root is a Path object
@@ -44,9 +44,9 @@ def read_csv(
         if fpath.exists():
             paths.append(str(fpath))
             ages.append(float(row[age_key]))
-            weights.append(float(row[weight_key]))
-            sexes.append(row[sex_key])
-            modalities.append(row[modalities_key])
+            weights.append(float(row.get(weight_key, 1.0)))
+            sexes.append(str(row.get(sex_key, 'N/A')))
+            modalities.append(str(row.get(modalities_key, 'N/A')))
     return paths, ages, weights, sexes, modalities
 
 def load_checkpoint(model, checkpoint_path, device, logger):
