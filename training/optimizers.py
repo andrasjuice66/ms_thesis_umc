@@ -101,53 +101,56 @@ def get_optimizer(
     Returns:
         Optimizer
     """
-    optimizers = {
-        "adam": optim.Adam(
+    optimizer_type = optimizer_type.lower()
+    
+    if optimizer_type == "adam":
+        return optim.Adam(
             params,
             lr=lr,
             weight_decay=weight_decay,
             betas=kwargs.get("betas", (0.9, 0.999))
-        ),
-        "adamw": optim.AdamW(
+        )
+    elif optimizer_type == "adamw":
+        return optim.AdamW(
             params,
             lr=lr,
             weight_decay=weight_decay,
             betas=kwargs.get("betas", (0.9, 0.999))
-        ),
-        "sgd": optim.SGD(
+        )
+    elif optimizer_type == "sgd":
+        return optim.SGD(
             params,
             lr=lr,
             momentum=kwargs.get("momentum", 0.9),
             weight_decay=weight_decay,
             nesterov=kwargs.get("nesterov", True)
-        ),
-        "rmsprop": optim.RMSprop(
+        )
+    elif optimizer_type == "rmsprop":
+        return optim.RMSprop(
             params,
             lr=lr,
             weight_decay=weight_decay,
             momentum=kwargs.get("momentum", 0.0),
             alpha=kwargs.get("alpha", 0.99)
-        ),
-        "radam": optim.RAdam(
-            params,
-            lr=lr,
-            weight_decay=weight_decay,
-            betas=kwargs.get("betas", (0.9, 0.999)),
-            eps=kwargs.get("eps", 1e-8)
-        ),
-        "novograd": NovoGrad(
+        )
+    elif optimizer_type == "radam":
+        return optim.RAdam(
             params,
             lr=lr,
             weight_decay=weight_decay,
             betas=kwargs.get("betas", (0.9, 0.999)),
             eps=kwargs.get("eps", 1e-8)
         )
-    }
-    
-    if optimizer_type not in optimizers:
+    elif optimizer_type == "novograd":
+        return NovoGrad(
+            params,
+            lr=lr,
+            weight_decay=weight_decay,
+            betas=kwargs.get("betas", (0.9, 0.999)),
+            eps=kwargs.get("eps", 1e-8)
+        )
+    else:
         raise ValueError(f"Unknown optimizer: {optimizer_type}")
-    
-    return optimizers[optimizer_type]
 
 
 def get_scheduler(
@@ -168,38 +171,30 @@ def get_scheduler(
     """
     if scheduler_type == "none":
         return None
+    
+    scheduler_type = scheduler_type.lower()
     print("THIS IS THE SCHEDULER: ", scheduler_type)
-    schedulers = {
-        "cosine": CosineAnnealingLR(
+    
+    if scheduler_type == "cosine":
+        return CosineAnnealingLR(
             optimizer,
             T_max=kwargs.get("T_max", 10),
             eta_min=kwargs.get("eta_min", 1e-6)
-        ),
-        "plateau": ReduceLROnPlateau(
+        )
+    elif scheduler_type == "plateau":
+        return ReduceLROnPlateau(
             optimizer,
             mode=kwargs.get("mode", "min"),
             factor=kwargs.get("factor", 0.1),
             patience=kwargs.get("patience", 5),
             min_lr=kwargs.get("min_lr", 1e-6)
-        ),
-        # "onecycle": OneCycleLR(
-        #     optimizer,
-        #     max_lr=kwargs.get("max_lr", 1e-3),
-        #     total_steps=kwargs.get("total_steps", None),
-        #     epochs=kwargs.get("epochs", None),
-        #     steps_per_epoch=kwargs.get("steps_per_epoch", None),
-        #     pct_start=kwargs.get("pct_start", 0.3),
-        #     div_factor=kwargs.get("div_factor", 25.0),
-        #     final_div_factor=kwargs.get("final_div_factor", 1e4)
-        # ),
-        "step": StepLR(
+        )
+    # "onecycle" is commented out.
+    elif scheduler_type == "step":
+        return StepLR(
             optimizer,
             step_size=kwargs.get("step_size", 10),
             gamma=kwargs.get("gamma", 0.1)
         )
-    }
-    
-    if scheduler_type not in schedulers:
+    else:
         raise ValueError(f"Unknown scheduler: {scheduler_type}")
-    
-    return schedulers[scheduler_type]
