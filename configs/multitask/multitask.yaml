@@ -3,7 +3,7 @@ data:
   train_csv: "/home/ajoos/brain_age_pred/data/labels/train.csv"
   val_csv:   "/home/ajoos/brain_age_pred/data/labels/val_30_40.csv"
   test_csv:  "/home/ajoos/brain_age_pred/data/labels/test_30_40.csv"
-  
+
   segmented_data_dir: "/scratch-shared/ajoos/brain_age_segmented_converted/"
 
   num_workers: 8
@@ -28,7 +28,7 @@ brain_generator:
   # Probabilities for applying each augmentation
   prob:
     flip: 0.5
-    affine: 0.8
+    affine: 0.8 
     contrast: 0.5
     gamma: 0.5
     scale_int: 0.5
@@ -73,7 +73,7 @@ brain_generator:
 
 # ──────────────────────────  TRAINING  ────────────────────────── #
 training:
-  batch_size: 4
+  batch_size: 2
   epochs: 150
 
   # Optimiser & LR Scheduler
@@ -89,7 +89,7 @@ training:
 
   # Loss function parameters for Multi-Task learning
   loss:
-    age_loss_fn: "mae"        # Loss for the age prediction task (mae, mse, huber)
+    age_loss_fn: "mse"        # Loss for the age prediction task (mae, mse, huber)
     age_loss_weight: 1.0      # Weight for the age prediction loss
     seg_loss_weight: 0.5      # Weight for the segmentation loss (DiceCE)
 

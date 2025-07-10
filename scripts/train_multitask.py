@@ -100,29 +100,43 @@ def main() -> None:
     prior_means[:, 0] = 0.0    
     prior_stds[:, 0] = 0.0     
     
+    # ... existing code ...
     brain_generator = BABrainGenerator(
-        # Critical for multi-task
-        return_segmentation=True,
+    # Critical for multi-task
+    return_segmentation=True,
 
-        # Pass other params from config
-        prior_means=prior_means,
-        prior_stds=prior_stds,
-        distribution=bg_cfg.get("distribution", "normal"),
-        prob=bg_cfg.get("prob", {}),
-        
-        # Spatial augmentation parameters
-        rotation_range=bg_cfg.get("rotation_range", 10),
-        scaling_range=bg_cfg.get("scaling_range", 0.1),
-        shear_bounds=bg_cfg.get("shear_bounds", 0.005),
-        translation_bounds=bg_cfg.get("translation_bounds", False),
+    # Pass other params from config
+    prior_means=prior_means,
+    prior_stds=prior_stds,
+    distribution=bg_cfg.get("distribution", "normal"),
+    prob=bg_cfg.get("prob", {}),
+    
+    # Spatial augmentation parameters
+    rotation_range=bg_cfg.get("rotation_range", 10),
+    scaling_range=bg_cfg.get("scaling_range", 0.1),
+    shear_bounds=bg_cfg.get("shear_bounds", 0.005),
+    translation_bounds=bg_cfg.get("translation_bounds", False),
 
-        # Intensity augmentation parameters
-        contrast_range=tuple(bg_cfg.get("contrast_range", [0.8, 1.2])),
-        log_gamma_std=bg_cfg.get("log_gamma_std", 0.1),
-        shift_offset=bg_cfg.get("shift_offset", 0.1),
-        hist_control_points=bg_cfg.get("hist_control_points", 5),
+    # Intensity augmentation parameters
+    contrast_range=tuple(bg_cfg.get("contrast_range", [0.8, 1.2])),
+    log_gamma_std=bg_cfg.get("log_gamma_std", 0.1),
+    shift_offset=bg_cfg.get("shift_offset", 0.1),
+    hist_control_points=bg_cfg.get("hist_control_points", 5),
 
-        output_shape=tuple(bg_cfg.get("output_shape", [160, 192, 160])),
+    # ADD THESE MISSING PARAMETERS:
+    # Artifact parameters
+    noise_mean=bg_cfg.get("noise_mean", 0.5),
+    noise_std=bg_cfg.get("noise_std", 0.08),
+    rician_std=bg_cfg.get("rician_std", 0.08),
+    gibbs_alpha=bg_cfg.get("gibbs_alpha", 0.5),  # Use middle value from typical range [0.0, 1.0]
+    blur_sigma=bg_cfg.get("blur_sigma", 1.0),    # Use middle value from typical range [0.5, 2.0]
+    bias_field_rng=tuple(bg_cfg.get("bias_field_rng", [0.0, 0.8])),
+    
+    # Resolution parameters
+    min_res=bg_cfg.get("min_res", 1.0),
+    max_res_iso=bg_cfg.get("max_res_iso", 1.8),
+
+    output_shape=tuple(bg_cfg.get("output_shape", [160, 192, 160])),
     )
     print(f"Brain Generator config: {bg_cfg}")
 
