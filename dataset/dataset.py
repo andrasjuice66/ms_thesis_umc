@@ -91,6 +91,7 @@ class BADataset(Dataset):
         sample = {
             "image": torch.from_numpy(img_np).unsqueeze(0).float(),
             "age":   torch.tensor(self.age_labels[idx], dtype=torch.float32),
+            "__image_path__": self.file_paths[idx],  # Add this line
         }
         if self.sample_wts is not None:
             sample["weight"] = torch.tensor(self.sample_wts[idx], dtype=torch.float32)

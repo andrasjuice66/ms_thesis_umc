@@ -27,6 +27,7 @@ from brain_age_pred.utils.logger import setup_logger
 from brain_age_pred.utils.utils import set_seed, read_csv, load_checkpoint
 from torch.utils.data import WeightedRandomSampler, DataLoader
 from brain_age_pred.brain_gen.brain_generator import BABrainGenerator
+from brain_age_pred.brain_gen.validation_generator import ValidationGenerator
 from brain_age_pred.brain_gen.labels import GENERATION_CLASSES, GENERATION_LABELS, N_NEUTRAL_LABELS
 
 
@@ -137,6 +138,12 @@ def main() -> None:
 
         output_shape=tuple(bg_cfg.get("output_shape", [160, 192, 160])),
     )
+    validation_generator = ValidationGenerator(
+        segmented_data_dir=segmented_data_dir,
+        return_segmentation=True,
+        use_intensity_clip_normalize=True,
+    )
+
     print(f"Brain Generator config: {bg_cfg}")
 
     # 6. ─── CSV → dataset / sampler ─────────────────────────── #
@@ -181,16 +188,17 @@ def main() -> None:
         sample_wts=val_w,
         sexes=val_s,
         modalities=val_m,
-        transform=None,
+        transform=validation_generator,  
         mode="val",
     )
+
     test_ds = BADataset(
         file_paths=test_p,
         age_labels=test_a,
         sample_wts=test_w,
         sexes=test_s,
         modalities=test_m,
-        transform=None,
+        transform=validation_generator,  
         mode="test",
     )
 
