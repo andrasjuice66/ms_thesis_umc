@@ -54,11 +54,14 @@ class MultiTaskTrainer:
         self.age_loss_name = loss_cfg.get("age_loss_fn", "mae")
         self.age_criterion = get_loss_function(self.age_loss_name)
         self.seg_criterion = DiceCELoss(to_onehot_y=True, softmax=True)
-        self.age_loss_weight = loss_cfg.get("age_loss_weight", 1.0)
-        self.seg_loss_weight = loss_cfg.get("seg_loss_weight", 1.0)
+
+        # Uncertainty-based loss balancing
+        self.log_var_age = nn.Parameter(torch.zeros(1, device=self.device))
+        self.log_var_seg = nn.Parameter(torch.zeros(1, device=self.device))
         
         # Optimizer and Scheduler
-        self.optimizer = get_optimizer(model.parameters(), **self.cfg.get("optimizer", {}))
+        params_to_optimize = list(model.parameters()) + [self.log_var_age, self.log_var_seg]
+        self.optimizer = get_optimizer(params_to_optimize, **self.cfg.get("optimizer", {}))
         self.scheduler = get_scheduler(self.optimizer, **self.cfg.get("scheduler", {}))
 
         # Training settings
@@ -85,9 +88,15 @@ class MultiTaskTrainer:
 
         with autocast(device_type=self.device.type, enabled=self.use_amp):
             seg_logits, age_preds = self.model(imgs)
+            
+            # Individual losses
             age_loss = self.age_criterion(age_preds, age_gts)
             seg_loss = self.seg_criterion(seg_logits, seg_gts)
-            total_loss = self.age_loss_weight * age_loss + self.seg_loss_weight * seg_loss
+
+            # Uncertainty-weighted total loss
+            loss_age_weighted = torch.exp(-self.log_var_age) * age_loss + 0.5 * self.log_var_age
+            loss_seg_weighted = torch.exp(-self.log_var_seg) * seg_loss + 0.5 * self.log_var_seg
+            total_loss = loss_age_weighted.squeeze() + loss_seg_weighted.squeeze()
 
         if train:
             loss_acc = total_loss / self.grad_accum_steps
