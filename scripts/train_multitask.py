@@ -75,7 +75,35 @@ def main() -> None:
     device = torch.device(cfg.get("device") or ("cuda" if torch.cuda.is_available() else "cpu"))
     logger.info(f"Using device: {device}")
 
-    # 5. ─── Brain Generator ──────────────────────────────────── #
+
+    # 6. ─── CSV → dataset / sampler ─────────────────────────── #
+    logger.info("Reading CSV files...")
+    train_csv = Path(cfg.get("data.train_csv"))
+    val_csv   = Path(cfg.get("data.val_csv"))
+    test_csv  = Path(cfg.get("data.test_csv"))
+    segmented_data_dir = Path(cfg.get("data.segmented_data_dir"))
+    real_data_dir  = Path(cfg.get("data.real_data_dir"))
+
+    logger.info(f"Reading train CSV from {train_csv}")
+    train_p, train_a, train_w, train_s, train_m = read_csv(train_csv, segmented_data_dir)
+    logger.info(f"Reading val CSV from {val_csv}")
+    val_p, val_a, val_w, val_s, val_m = read_csv(val_csv, real_data_dir)
+    logger.info(f"Reading test CSV from {test_csv}")
+    test_p, test_a, test_w, test_s, test_m = read_csv(test_csv, real_data_dir)
+
+    logger.info(f"Train={len(train_p)}  Val={len(val_p)}  Test={len(test_p)}")
+
+        # Add this right after reading CSVs
+    print("=== AGE RANGES  ===")
+    print(f"Train ages: min={min(train_a):.2f}, max={max(train_a):.2f}, mean={np.mean(train_a):.2f}, std={np.std(train_a):.2f}")
+    print(f"Val ages:   min={min(val_a):.2f}, max={max(val_a):.2f}, mean={np.mean(val_a):.2f}, std={np.std(val_a):.2f}")
+    print(f"Test ages:  min={min(test_a):.2f}, max={max(test_a):.2f}, mean={np.mean(test_a):.2f}, std={np.std(test_a):.2f}")
+    print("Sample train ages:", train_a[:50])
+    print("Sample val ages:", val_a[:50])
+    print("Sample test ages:", test_a[:50])
+
+
+        # 5. ─── Brain Generator ──────────────────────────────────── #
     logger.info("Initializing Brain Generator...")
     bg_cfg = cfg.get("brain_generator", {})
     
@@ -138,39 +166,13 @@ def main() -> None:
 
         output_shape=tuple(bg_cfg.get("output_shape", [160, 192, 160])),
     )
+    print(f"Brain Generator config: {bg_cfg}")
+    
     validation_generator = ValidationGenerator(
         segmented_data_dir=segmented_data_dir,
         return_segmentation=True,
         use_intensity_clip_normalize=True,
     )
-
-    print(f"Brain Generator config: {bg_cfg}")
-
-    # 6. ─── CSV → dataset / sampler ─────────────────────────── #
-    logger.info("Reading CSV files...")
-    train_csv = Path(cfg.get("data.train_csv"))
-    val_csv   = Path(cfg.get("data.val_csv"))
-    test_csv  = Path(cfg.get("data.test_csv"))
-    segmented_data_dir = Path(cfg.get("data.segmented_data_dir"))
-    real_data_dir  = Path(cfg.get("data.real_data_dir"))
-
-    logger.info(f"Reading train CSV from {train_csv}")
-    train_p, train_a, train_w, train_s, train_m = read_csv(train_csv, segmented_data_dir)
-    logger.info(f"Reading val CSV from {val_csv}")
-    val_p, val_a, val_w, val_s, val_m = read_csv(val_csv, real_data_dir)
-    logger.info(f"Reading test CSV from {test_csv}")
-    test_p, test_a, test_w, test_s, test_m = read_csv(test_csv, real_data_dir)
-
-    logger.info(f"Train={len(train_p)}  Val={len(val_p)}  Test={len(test_p)}")
-
-        # Add this right after reading CSVs
-    print("=== AGE RANGES  ===")
-    print(f"Train ages: min={min(train_a):.2f}, max={max(train_a):.2f}, mean={np.mean(train_a):.2f}, std={np.std(train_a):.2f}")
-    print(f"Val ages:   min={min(val_a):.2f}, max={max(val_a):.2f}, mean={np.mean(val_a):.2f}, std={np.std(val_a):.2f}")
-    print(f"Test ages:  min={min(test_a):.2f}, max={max(test_a):.2f}, mean={np.mean(test_a):.2f}, std={np.std(test_a):.2f}")
-    print("Sample train ages:", train_a[:50])
-    print("Sample val ages:", val_a[:50])
-    print("Sample test ages:", test_a[:50])
 
     logger.info("Initializing datasets...")
     train_ds = BADataset(
