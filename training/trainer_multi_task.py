@@ -150,13 +150,13 @@ class MultiTaskTrainer:
         dice_score = self.dice_metric.aggregate().item()
         self.dice_metric.reset()
 
-        age_preds_all = np.concatenate(age_preds_all).squeeze()
-        age_targets_all = np.concatenate(age_targets_all)
+        age_preds_all = np.concatenate(age_preds_all).squeeze().astype(np.float64)
+        age_targets_all = np.concatenate(age_targets_all).astype(np.float64)
         
-        # Add statistics logging
-        stage = "TRAIN" if train else "VAL"
-        self.logger.info(f"{stage} SUMMARY - Pred: min={age_preds_all.min():.2f}, max={age_preds_all.max():.2f}, mean={age_preds_all.mean():.2f}, std={age_preds_all.std():.2f}")
-        self.logger.info(f"{stage} SUMMARY - True: min={age_targets_all.min():.2f}, max={age_targets_all.max():.2f}, mean={age_targets_all.mean():.2f}, std={age_targets_all.std():.2f}")
+        # # Add statistics logging
+        # stage = "TRAIN" if train else "VAL"
+        # self.logger.info(f"{stage} SUMMARY - Pred: min={age_preds_all.min():.2f}, max={age_preds_all.max():.2f}, mean={age_preds_all.mean():.2f}, std={age_preds_all.std():.2f}")
+        # self.logger.info(f"{stage} SUMMARY - True: min={age_targets_all.min():.2f}, max={age_targets_all.max():.2f}, mean={age_targets_all.mean():.2f}, std={age_targets_all.std():.2f}")
         
         mae = np.mean(np.abs(age_preds_all - age_targets_all))
         

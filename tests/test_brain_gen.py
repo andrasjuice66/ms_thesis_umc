@@ -65,17 +65,19 @@ prior_stds[:, 0] = 0.0
 prob = dict(
     flip        = 0.5,
     affine      = 0.9,
-    contrast    = 0.4,
-    gamma       = 0.4,
-    scale_int   = 0.4,
-    shift_int   = 0.4,
-    hist_shift  = 0.4,
-    noise       = 0.4,
-    rician      = 0.4,
-    gibbs       = 0.4,
-    blur        = 0.4,
-    bias        = 0.0,
-    resolution  = 0.4,
+
+    contrast    = 0.5,
+    gamma       = 0.5,
+    scale_int   = 0.5,
+    shift_int   = 0.5,
+    hist_shift  = 0.5,
+    noise       = 0.5,
+    rician      = 0.5,
+    gibbs       = 0.5,
+    blur        = 0.5,
+    bias        = 0.5,
+    resolution  = 0.5,
+    tumor       = 0.0,  # 100% chance of generating tumors
 )
 
 brain_gen = BABrainGenerator(
@@ -126,6 +128,12 @@ brain_gen = BABrainGenerator(
     output_shape = (182, 218, 182),  # Should match the spatial dims (D, H, W)
     use_random_cropping          = True,   # Disable for debugging
     return_gradients             = False, # Default was False
+    
+    # tumor generation parameters (using same priors as brain tissues)
+    tumor_perlin_res           = [2, 2, 2],         # Perlin noise resolution for tumor shape
+    tumor_percentile_range     = (90.0, 99.6),      # Percentile range for tumor size
+    tumor_size_factor_range    = (0.5, 2.0),        # Size scaling factor range
+    tumor_use_fluid_dynamics   = True,              # Enable fluid dynamics for realistic shapes
 )
 
 # ------------------------------------------------------------------

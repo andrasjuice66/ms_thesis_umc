@@ -21,6 +21,7 @@ from brain_age_pred.dataset.custom_transformations import (
 from brain_age_pred.brain_gen.gen_image_from_labels import (
     SampleConditionalGMMd, MultiChannelSampleConditionalGMMd,
 )
+from brain_age_pred.brain_gen.tumor_generator import RandTumorSampleConditionalGMMd
 from brain_age_pred.brain_gen.labels import (
     GENERATION_LABELS, GENERATION_CLASSES, N_NEUTRAL_LABELS,
 )
@@ -76,6 +77,11 @@ class BABrainGenerator:
         generation_labels: np.ndarray | None = None,
         n_neutral_labels:  int | None = None,
         output_labels:     np.ndarray | None = None,
+        # tumor generation
+        tumor_perlin_res: list[int] = [4, 4, 4],
+        tumor_percentile_range: tuple[float, float] = (90.0, 99.6),
+        tumor_size_factor_range: tuple[float, float] = (0.5, 2.0),
+        tumor_use_fluid_dynamics: bool = True,
         # toggles
         use_sample: bool = True,
         use_hemisphere_aware_flip: bool = True,
@@ -86,7 +92,7 @@ class BABrainGenerator:
         output_shape: Sequence[int] | int | None = None,
         use_random_cropping: bool = False,
         return_gradients: bool = False,
-        return_segmentation: bool = False, # Add this flag
+        return_segmentation: bool = False,
         device: torch.device | str | None = None,
     ):
         # trivial fields
@@ -135,6 +141,12 @@ class BABrainGenerator:
         self.return_gradients    = return_gradients
         self.return_segmentation = return_segmentation
 
+        # tumor generation parameters (using same priors as brain tissues)
+        self.tumor_perlin_res = tumor_perlin_res
+        self.tumor_percentile_range = tumor_percentile_range
+        self.tumor_size_factor_range = tumor_size_factor_range
+        self.tumor_use_fluid_dynamics = tumor_use_fluid_dynamics
+        
         # pipeline runs on CPU; send batch to GPU later in training loop
         self.device = torch.device(device) if device else torch.device("cpu")
         self._build_pipeline()
@@ -188,6 +200,25 @@ class BABrainGenerator:
                     seg_key="seg_gt", out_key=self.image_key,
                     prior_means=self.prior_means, prior_stds=self.prior_stds,
                     distribution=self.distribution)
+            )
+        
+        # 2b) tumor generation (after brain tissue generation)
+        if self.prob.get("tumor", 0.0) > 0.0:
+            tx.append(
+                RandTumorSampleConditionalGMMd(
+                    seg_key="seg_gt", 
+                    image_key=self.image_key,
+                    prior_means=self.prior_means,  # Use same priors as brain tissues
+                    prior_stds=self.prior_stds,    # Use same priors as brain tissues
+                    distribution=self.distribution,
+                    prob=self.prob["tumor"],
+                    perlin_res=self.tumor_perlin_res,
+                    mask_percentile_min=self.tumor_percentile_range[0],
+                    mask_percentile_max=self.tumor_percentile_range[1],
+                    tumor_size_factor_range=self.tumor_size_factor_range,
+                    use_fluid_dynamics=self.tumor_use_fluid_dynamics,
+                    device=self.device,
+                )
             )
 
 
