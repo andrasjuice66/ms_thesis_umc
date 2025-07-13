@@ -82,7 +82,7 @@ brain_generator:
   tumor_use_fluid_dynamics: True,        
 # ──────────────────────────  TRAINING  ────────────────────────── #
 training:
-  batch_size: 4
+  batch_size: 8
   epochs: 150
 
   # Optimiser & LR Scheduler
