@@ -12,7 +12,7 @@ data:
 
 
 model:
-  checkpoint: null # Optional path to a checkpoint to resume training
+  checkpoint: output/multitask/checkpoints/multitask_synth_v1/multitask_synth_v1_best_mae.pt # Optional path to a checkpoint to resume training
 
 # ────────────────────── BRAIN GENERATOR ───────────────────────── #
 # These settings control the on-the-fly generation of synthetic MRIs
@@ -82,7 +82,7 @@ brain_generator:
   tumor_use_fluid_dynamics: True,        
 # ──────────────────────────  TRAINING  ────────────────────────── #
 training:
-  batch_size: 8
+  batch_size: 4
   epochs: 150
 
   # Optimiser & LR Scheduler
