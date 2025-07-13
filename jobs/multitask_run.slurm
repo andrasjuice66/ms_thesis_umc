@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=multitask
-#SBATCH --partition=gpu_a=100            
+#SBATCH --partition=gpu_a100            
 #SBATCH --gres=gpu:a100:1
 #SBATCH --cpus-per-task=18
 #SBATCH --mem=120G
