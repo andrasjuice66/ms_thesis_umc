@@ -1,18 +1,11 @@
 # ────────────────────────────  DATA  ──────────────────────────── #
 data:
-  # train_csv: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels/train_local.csv"
-  # val_csv:   "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels/val_local.csv"
-  # test_csv:  "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels/test_local.csv"
+  train_csv: "/home/ajoos/brain_age_pred/data/labels/train.csv"
+  val_csv:   "/home/ajoos/brain_age_pred/data/labels/val.csv"
+  test_csv:  "/home/ajoos/brain_age_pred/data/labels/test_balanced.csv"
 
-  # segmented_data_dir: "/mnt/c/Projects/thesis_project/Data/brain_age_segmented/"   
-  # real_data_dir: "/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed/" 
-
-  train_csv: "C:\\Projects\\thesis_project\\brain_age_pred\\data\\labels\\train_local.csv"
-  val_csv:   "C:\\Projects\\thesis_project\\brain_age_pred\\data\\labels\\val_local.csv"
-  test_csv:  "C:\\Projects\\thesis_project\\brain_age_pred\\data\\labels\\test_local.csv"
-
-  segmented_data_dir: "C:\\Projects\\thesis_project\\Data\\brain_age_segmented\\"   
-  real_data_dir: "C:\\Projects\\thesis_project\\Data\\brain_age_preprocessed\\"
+  segmented_data_dir: "/scratch-shared/ajoos/brain_age_segmented_converted/"   
+  real_data_dir: "/scratch-shared/ajoos/brain_age_preprocessed_converted/"   
 
 
   num_workers: 8
@@ -92,7 +85,7 @@ brain_generator:
   tumor_use_fluid_dynamics: True,        
 # ──────────────────────────  TRAINING  ────────────────────────── #
 training:
-  batch_size: 1
+  batch_size: 4
   epochs: 150
   
   # Two-step training configuration
@@ -130,13 +123,13 @@ training:
 
 # ────────────────────────────  OUTPUT  ────────────────────────── #
 output:
-  output_dir: ".\\output\\two_step"
+  output_dir: "./output/two_step"
   experiment_name: "two_step_synth"
 
 # ─────────────────────────────  W&B  ──────────────────────────── #
 wandb:
   use_wandb: true
-  project: "brain-age-two-step"
+  project: "brain-age-multitask"
   entity: null # Your W&B entity/username, or set as environment variable
 
 # ───────────────────────── MISCELLANEOUS ───────────────────────── #
