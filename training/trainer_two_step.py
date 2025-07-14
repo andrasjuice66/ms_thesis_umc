@@ -188,7 +188,7 @@ class TwoStepTrainer:
         for epoch in range(seg_pretrain_epochs):
             train_metrics = self._run_epoch(epoch, self.train_loader, train=True, stage_name="Seg-Only")
             val_metrics = self._run_epoch(epoch, self.val_loader, train=False, stage_name="Seg-Only")
-            self.logger.info(f"Epoch {epoch+1}/{seg_pretrain_epochs} [Seg-Only]: Train Dice={train_metrics['dice']:.3f} | Val Dice={val_metrics['dice']:.3f}")
+            self.logger.info(f"Epoch {epoch+1}/{seg_pretrain_epochs} [Seg-Only]: Train MAE={train_metrics['mae']:.3f}, Dice={train_metrics['dice']:.3f} | Val MAE={val_metrics['mae']:.3f}, Dice={val_metrics['dice']:.3f}")
 
         self.logger.info(f"--- Finished Segmentation Pre-training ---")
 
