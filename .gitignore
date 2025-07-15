@@ -6,7 +6,8 @@ HD_BET/
 .DS_Store
 # OtherRepos/
 # DataExp/
-*.pth
+# *.pth
+una.pth
 *.pt
 __pycache__/
 *.log
