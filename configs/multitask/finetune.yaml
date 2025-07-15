@@ -7,8 +7,8 @@ data:
   segmented_data_dir: "/mnt/c/Projects/thesis_project/Data/brain_age_segmented/"   
   real_data_dir: "/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed/" 
   
-  num_workers: 8
-  pin_memory: true
+  num_workers: 4
+  pin_memory: false
 
 synthseg:
   checkpoint_path: "/mnt/c/Projects/thesis_project/brain_age_pred/models/synthseg.pth"  # Updated to use .pth file
@@ -35,7 +35,7 @@ brain_generator:
   prob:
     flip: 0.5
     affine: 0.9
-    tumor: 0.5
+    tumor: 0.0
     contrast: 0.5
     gamma: 0.4
     scale_int: 0.4
@@ -117,7 +117,7 @@ training:
 # ────────────────────────────  OUTPUT  ────────────────────────── #
 output:
   output_dir: "./output/multitask"
-  experiment_name: "multitask_synth_v1"
+  experiment_name: "finetune_synthseg"
 
 # ─────────────────────────────  W&B  ──────────────────────────── #
 wandb:

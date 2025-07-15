@@ -53,16 +53,15 @@ class ValidationGenerator:
     def _build_pipeline(self):
         tx = []
         
-        # Only convert labels if output_labels != generation_labels
-        if not np.array_equal(self.generation_labels, self.output_labels):
-            tx.append(
-                ConvertLabelsD(
-                    keys=["seg_gt"],
-                    generation_labels=self.generation_labels,
-                    output_labels=self.output_labels,
-                    background_label=0
-                )
+        # Always convert labels to ensure consistency
+        tx.append(
+            ConvertLabelsD(
+                keys=["seg_gt"],
+                generation_labels=self.generation_labels,
+                output_labels=self.output_labels,
+                background_label=0
             )
+        )
         
         # Optional intensity normalization for the real image
         if self.use_intensity_clip_normalize:

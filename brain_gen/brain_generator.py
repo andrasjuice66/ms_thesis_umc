@@ -188,9 +188,9 @@ class BABrainGenerator:
 
         tx.append(
             ConvertLabelsD(keys=["seg_gt"],
-                           generation_labels=self.generation_labels,
-                           output_labels=GENERATION_CLASSES,
-                           background_label=0)
+                   generation_labels=self.generation_labels,
+                   output_labels=GENERATION_CLASSES,  # Use self.output_labels instead of GENERATION_CLASSES
+                   background_label=0)
         )
 
         # 2) label → intensities
@@ -201,6 +201,13 @@ class BABrainGenerator:
                     prior_means=self.prior_means, prior_stds=self.prior_stds,
                     distribution=self.distribution)
             )
+
+        tx.append(
+         ConvertLabelsD(keys=["seg_gt"], 
+           generation_labels=GENERATION_CLASSES,        # From 0-14
+           output_labels=self.generation_labels,        # Back to GENERATION_LABELS  
+           background_label=0)
+)
         
         # 2b) tumor generation (after brain tissue generation)
         if self.prob.get("tumor", 0.0) > 0.0:

@@ -148,10 +148,18 @@ out_dir.mkdir(exist_ok=True)
 for k in range(50):
     out_dict = brain_gen({"image": seg_data})     # forward pass
     vol = out_dict["image"].squeeze(0).cpu().numpy()    # Move to CPU for saving
+    seg_gt = out_dict["seg_gt"].squeeze(0).cpu().numpy()    # Move to CPU for saving
     
+    # Save synthetic image
     nifti = nib.Nifti1Image(vol, affine=seg_img.affine, header=seg_img.header)
     fname = out_dir / f"synthetic_{k:02d}.nii.gz"
     nib.save(nifti, fname)
     print(f"saved → {fname}")
+    
+    # Save segmentation
+    seg_nifti = nib.Nifti1Image(seg_gt, affine=seg_img.affine, header=seg_img.header)
+    seg_fname = out_dir / f"synthetic_{k:02d}_seg.nii.gz"
+    nib.save(seg_nifti, seg_fname)
+    print(f"saved → {seg_fname}")
 
 print("Done.  Fifty volumes are in:", out_dir.resolve())

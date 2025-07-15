@@ -34,7 +34,7 @@ from brain_age_pred.brain_gen.labels import GENERATION_CLASSES, GENERATION_LABEL
 
 def load_synthseg_weights(model: torch.nn.Module, 
                          synthseg_path: str, 
-                         freeze_encoder: bool = False,
+                         freeze_encoder: bool = False, 
                          freeze_decoder: bool = False,
                          logger=None) -> dict:
     """
@@ -206,15 +206,20 @@ def main() -> None:
     std_loc = bg_cfg.get("std_loc", 17.5)
     std_scale = bg_cfg.get("std_scale", 17.5)
     
+    # Prior distribution parameters - using GENERATION_CLASSES (15 classes, not 33!)
+    n_intensity_classes = len(np.unique(GENERATION_CLASSES))  # = 15
+    n_output_classes = len(GENERATION_LABELS)                 # = 33
+
     prior_means = np.vstack([
-        np.full(n_classes, mean_loc, dtype=float),
-        np.full(n_classes, mean_scale, dtype=float),
+        np.full(n_intensity_classes, mean_loc, dtype=float),    # 15 classes for intensity
+        np.full(n_intensity_classes, mean_scale, dtype=float),
     ])
 
     prior_stds = np.vstack([
-        np.full(n_classes, std_loc, dtype=float),
-        np.full(n_classes, std_scale, dtype=float),
+        np.full(n_intensity_classes, std_loc, dtype=float),     # 15 classes for intensity  
+        np.full(n_intensity_classes, std_scale, dtype=float),
     ])
+
 
     # Set background class (label 0) to zero
     prior_means[:, 0] = 0.0    
@@ -245,7 +250,7 @@ def main() -> None:
         output_shape=tuple(bg_cfg.get("output_shape", [160, 192, 160])),
         # IMPORTANT: Keep original labels for loss computation!
         generation_labels=GENERATION_LABELS,
-        output_labels=GENERATION_LABELS,  # Don't convert - keep original labels!
+        output_labels=GENERATION_CLASSES,  # Don't convert - keep original labels!
     )
     
     validation_generator = ValidationGenerator(
@@ -304,7 +309,7 @@ def main() -> None:
 
     # 8. ─── model ─────────────────────────────────────────────── #
     logger.info("Initializing MultiTaskBrainAge model...")
-    model = MultiTaskBrainAge(n_classes=n_classes).to(device)
+    model = MultiTaskBrainAge(n_classes=n_output_classes).to(device)
     logger.info(f"Model initialized with {n_classes} segmentation classes")
     print(f"Model hyperparameters: {cfg.get('model')}")
 
