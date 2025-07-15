@@ -53,15 +53,16 @@ class ValidationGenerator:
     def _build_pipeline(self):
         tx = []
         
-        # Convert segmentation labels to generation classes format
-        tx.append(
-            ConvertLabelsD(
-                keys=["seg_gt"],
-                generation_labels=self.generation_labels,
-                output_labels=GENERATION_CLASSES,
-                background_label=0
+        # Only convert labels if output_labels != generation_labels
+        if not np.array_equal(self.generation_labels, self.output_labels):
+            tx.append(
+                ConvertLabelsD(
+                    keys=["seg_gt"],
+                    generation_labels=self.generation_labels,
+                    output_labels=self.output_labels,
+                    background_label=0
+                )
             )
-        )
         
         # Optional intensity normalization for the real image
         if self.use_intensity_clip_normalize:

@@ -216,9 +216,9 @@ if __name__ == "__main__":
     from brain_age_pred.models.multi_head import MultiTaskBrainAge
     
     # Configuration
-    synthseg_h5_path = "/Users/andrasjoos/Documents/AI_masters/Thesis/thesis_project/OtherRepos/SynthSeg/models/synthseg_1.0.h5"
+    synthseg_h5_path = "/Users/andrasjoos/Documents/AI_masters/Thesis/thesis_project/OtherRepos/SynthSeg/models/synthseg_2.0.h5"
     output_model_path = "/Users/andrasjoos/Documents/AI_masters/Thesis/thesis_project/brain_age_pred/models/synthseg.pth"
-    n_classes = 32  # Change from 33 to 32
+    n_classes = 33  # Change from 33 to 32
     
     print("=" * 60)
     print("SynthSeg to PyTorch Weight Transfer")

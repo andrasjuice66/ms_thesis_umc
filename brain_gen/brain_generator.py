@@ -186,12 +186,14 @@ class BABrainGenerator:
         # keep spatially-aligned copy for segmentation GT and intensity generation
         tx.append(CopyItemsd(keys=[self.image_key], times=1, names=["seg_gt"]))
 
-        tx.append(
-            ConvertLabelsD(keys=["seg_gt"],
-                           generation_labels=self.generation_labels,
-                           output_labels=GENERATION_CLASSES,
-                           background_label=0)
-        )
+        # Only convert labels if output_labels != generation_labels  
+        if not np.array_equal(self.generation_labels, self.output_labels):
+            tx.append(
+                ConvertLabelsD(keys=["seg_gt"],
+                               generation_labels=self.generation_labels,
+                               output_labels=self.output_labels,
+                               background_label=0)
+            )
 
         # 2) label → intensities
         if self.use_sample:
