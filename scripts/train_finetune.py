@@ -42,7 +42,7 @@ def load_synthseg_weights(model: torch.nn.Module,
     
     Args:
         model: PyTorch model to load weights into
-        synthseg_path: Path to SynthSeg .h5 file
+        synthseg_path: Path to SynthSeg .h5 file OR .pth file
         freeze_encoder: Whether to freeze encoder weights
         freeze_decoder: Whether to freeze decoder weights
         logger: Logger instance
@@ -50,20 +50,77 @@ def load_synthseg_weights(model: torch.nn.Module,
     Returns:
         Dictionary with transfer summary
     """
-    if not Path(synthseg_path).exists():
+    synthseg_path = Path(synthseg_path)
+    if not synthseg_path.exists():
         raise FileNotFoundError(f"SynthSeg model not found: {synthseg_path}")
     
     if logger:
         logger.info(f"Loading SynthSeg weights from: {synthseg_path}")
     
-    # Transfer weights
-    transfer_summary = transfer_synthseg_weights(
-        h5_path=synthseg_path,
-        torch_model=model,
-        transfer_encoder=True,
-        transfer_decoder=True,
-        freeze_seg_layers=False  # We'll handle freezing separately
-    )
+    # Check file extension to determine loading method
+    if synthseg_path.suffix == '.pth':
+        # Load PyTorch checkpoint
+        if logger:
+            logger.info("Detected .pth file - loading as PyTorch checkpoint")
+        
+        checkpoint = torch.load(synthseg_path, map_location='cpu')
+        
+        # Handle different checkpoint formats
+        if 'model_state_dict' in checkpoint:
+            state_dict = checkpoint['model_state_dict']
+            transfer_summary = checkpoint.get('transfer_summary', {})
+            model_config = checkpoint.get('model_config', {})
+        else:
+            # Assume the checkpoint is the state dict itself
+            state_dict = checkpoint
+            transfer_summary = {'transferred': {}, 'skipped': {}, 'transfer_stats': {'total_attempted': 0, 'successfully_transferred': 0, 'skipped_count': 0}}
+        
+        # Load the state dict
+        model_dict = model.state_dict()
+        transferred = {}
+        skipped = {}
+        
+        for name, param in state_dict.items():
+            if name in model_dict:
+                if model_dict[name].shape == param.shape:
+                    model_dict[name] = param
+                    transferred[name] = param.shape
+                else:
+                    skipped[name] = f"Shape mismatch: expected {model_dict[name].shape}, got {param.shape}"
+            else:
+                skipped[name] = "Layer not found in target model"
+        
+        model.load_state_dict(model_dict, strict=False)
+        
+        # Update transfer summary
+        if not transfer_summary.get('transfer_stats'):
+            transfer_summary = {
+                'transferred': transferred,
+                'skipped': skipped,
+                'transfer_stats': {
+                    'total_attempted': len(state_dict),
+                    'successfully_transferred': len(transferred),
+                    'skipped_count': len(skipped)
+                }
+            }
+        
+        if logger:
+            logger.info(f"Loaded PyTorch checkpoint: {len(transferred)} layers transferred, {len(skipped)} skipped")
+            
+    elif synthseg_path.suffix == '.h5':
+        # Use H5 transfer method
+        if logger:
+            logger.info("Detected .h5 file - using H5 weight transfer")
+        
+        transfer_summary = transfer_synthseg_weights(
+            h5_path=str(synthseg_path),
+            torch_model=model,
+            transfer_encoder=True,
+            transfer_decoder=True,
+            freeze_seg_layers=False  # We'll handle freezing separately
+        )
+    else:
+        raise ValueError(f"Unsupported file format: {synthseg_path.suffix}. Expected .pth or .h5")
     
     # Apply freezing strategy
     frozen_layers = []

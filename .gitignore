@@ -12,3 +12,4 @@ una.pth
 __pycache__/
 *.log
 brain_gen_images/
+una-001.pth
