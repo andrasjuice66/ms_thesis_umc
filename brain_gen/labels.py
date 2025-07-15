@@ -65,3 +65,6 @@ GENERATION_CLASSES = np.array([
      11, 12,               # hippocampus / amygdala
      13, 14                # accumbens / ventral DC
 ], dtype=np.int16)
+
+
+# print("Size: ", len(GENERATION_CLASSES), len(GENERATION_LABELS))
