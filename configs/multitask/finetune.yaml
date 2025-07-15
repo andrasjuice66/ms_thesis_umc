@@ -11,7 +11,7 @@ data:
   pin_memory: true
 
 synthseg:
-  model_path: "/mnt/c/Projects/thesis_project/brain_age_pred/models/synthseg.pth"
+  checkpoint_path: "/mnt/c/Projects/thesis_project/brain_age_pred/models/synthseg.pth"  # Updated to use .pth file
   freeze_encoder: false      # Set to true if you want to freeze encoder weights
   freeze_decoder: false   
 
