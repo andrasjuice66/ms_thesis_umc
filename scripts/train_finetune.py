@@ -25,98 +25,102 @@ from brain_age_pred.models.multi_head import MultiTaskBrainAge
 from brain_age_pred.training.trainer_multi_task import MultiTaskTrainer
 from brain_age_pred.utils.logger import setup_logger
 from brain_age_pred.utils.utils import set_seed, read_csv, load_checkpoint
+from brain_age_pred.utils.weight_transfer import transfer_synthseg_weights
 from torch.utils.data import WeightedRandomSampler, DataLoader
 from brain_age_pred.brain_gen.brain_generator import BABrainGenerator
 from brain_age_pred.brain_gen.validation_generator import ValidationGenerator
 from brain_age_pred.brain_gen.labels import GENERATION_CLASSES, GENERATION_LABELS, N_NEUTRAL_LABELS
 
 
-def load_synthseg_checkpoint(model: torch.nn.Module, 
-                           checkpoint_path: str, 
-                           freeze_encoder: bool = False,
-                           freeze_decoder: bool = False,
-                           logger=None) -> dict:
+def load_synthseg_weights(model: torch.nn.Module, 
+                         synthseg_path: str, 
+                         freeze_encoder: bool = False,
+                         freeze_decoder: bool = False,
+                         logger=None) -> dict:
     """
-    Load pre-transferred SynthSeg weights from PyTorch checkpoint.
+    Load SynthSeg weights into the model.
+    
+    Args:
+        model: PyTorch model to load weights into
+        synthseg_path: Path to SynthSeg .h5 file OR .pth file
+        freeze_encoder: Whether to freeze encoder weights
+        freeze_decoder: Whether to freeze decoder weights
+        logger: Logger instance
+    
+    Returns:
+        Dictionary with transfer summary
     """
-    checkpoint_path = Path(checkpoint_path)
-    
-    # Enhanced file checking
-    if not checkpoint_path.exists():
-        raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
-    
-    file_size = checkpoint_path.stat().st_size
-    if file_size == 0:
-        raise ValueError(f"Checkpoint file is empty: {checkpoint_path}")
+    synthseg_path = Path(synthseg_path)
+    if not synthseg_path.exists():
+        raise FileNotFoundError(f"SynthSeg model not found: {synthseg_path}")
     
     if logger:
-        logger.info(f"Loading SynthSeg weights from checkpoint: {checkpoint_path}")
-        logger.info(f"File size: {file_size / (1024**2):.2f} MB")
+        logger.info(f"Loading SynthSeg weights from: {synthseg_path}")
     
-    # Load the checkpoint with better error handling
-    device = next(model.parameters()).device
-    
-    try:
-        # Try loading with different map_location strategies
-        checkpoint = torch.load(checkpoint_path, map_location=device)
-    except Exception as e:
+    # Check file extension to determine loading method
+    if synthseg_path.suffix == '.pth':
+        # Load PyTorch checkpoint
         if logger:
-            logger.warning(f"Failed to load with device {device}, trying CPU: {e}")
-        try:
-            checkpoint = torch.load(checkpoint_path, map_location='cpu')
-        except Exception as e2:
-            raise RuntimeError(f"Failed to load checkpoint: {e2}")
-    
-    if logger:
-        logger.info(f"Checkpoint loaded successfully. Type: {type(checkpoint)}")
-        if isinstance(checkpoint, dict):
-            logger.info(f"Checkpoint keys: {list(checkpoint.keys())}")
-    
-    # Extract model state dict
-    if isinstance(checkpoint, dict):
+            logger.info("Detected .pth file - loading as PyTorch checkpoint")
+        
+        checkpoint = torch.load(synthseg_path, map_location='cpu')
+        
+        # Handle different checkpoint formats
         if 'model_state_dict' in checkpoint:
             state_dict = checkpoint['model_state_dict']
-            extra_info = {k: v for k, v in checkpoint.items() if k != 'model_state_dict'}
-        elif 'state_dict' in checkpoint:
-            state_dict = checkpoint['state_dict']
-            extra_info = {k: v for k, v in checkpoint.items() if k != 'state_dict'}
+            transfer_summary = checkpoint.get('transfer_summary', {})
+            model_config = checkpoint.get('model_config', {})
         else:
-            # Assume the entire checkpoint is the state dict
+            # Assume the checkpoint is the state dict itself
             state_dict = checkpoint
-            extra_info = {}
-    else:
-        # If checkpoint is not a dict, assume it's a state dict directly
-        state_dict = checkpoint
-        extra_info = {}
-    
-    if logger:
-        logger.info(f"State dict has {len(state_dict)} parameters")
-        logger.info(f"First few keys: {list(state_dict.keys())[:5]}")
-    
-    # Load weights with strict=False to allow for missing/extra keys
-    missing_keys, unexpected_keys = model.load_state_dict(state_dict, strict=False)
-    
-    # Count successful transfers
-    model_keys = set(model.state_dict().keys())
-    checkpoint_keys = set(state_dict.keys())
-    successfully_loaded = len(model_keys.intersection(checkpoint_keys))
-    total_model_params = len(model_keys)
-    
-    if logger:
-        logger.info(f"✅ Successfully loaded {successfully_loaded}/{total_model_params} parameters")
-        if missing_keys:
-            logger.info(f"⚠️  Missing keys (will use random init): {len(missing_keys)}")
-            for key in missing_keys[:5]:  # Show first 5
-                logger.info(f"   - {key}")
-            if len(missing_keys) > 5:
-                logger.info(f"   ... and {len(missing_keys) - 5} more")
+            transfer_summary = {'transferred': {}, 'skipped': {}, 'transfer_stats': {'total_attempted': 0, 'successfully_transferred': 0, 'skipped_count': 0}}
         
-        if unexpected_keys:
-            logger.info(f"⚠️  Unexpected keys (ignored): {len(unexpected_keys)}")
-            for key in unexpected_keys[:5]:  # Show first 5
-                logger.info(f"   - {key}")
-            if len(unexpected_keys) > 5:
-                logger.info(f"   ... and {len(unexpected_keys) - 5} more")
+        # Load the state dict
+        model_dict = model.state_dict()
+        transferred = {}
+        skipped = {}
+        
+        for name, param in state_dict.items():
+            if name in model_dict:
+                if model_dict[name].shape == param.shape:
+                    model_dict[name] = param
+                    transferred[name] = param.shape
+                else:
+                    skipped[name] = f"Shape mismatch: expected {model_dict[name].shape}, got {param.shape}"
+            else:
+                skipped[name] = "Layer not found in target model"
+        
+        model.load_state_dict(model_dict, strict=False)
+        
+        # Update transfer summary
+        if not transfer_summary.get('transfer_stats'):
+            transfer_summary = {
+                'transferred': transferred,
+                'skipped': skipped,
+                'transfer_stats': {
+                    'total_attempted': len(state_dict),
+                    'successfully_transferred': len(transferred),
+                    'skipped_count': len(skipped)
+                }
+            }
+        
+        if logger:
+            logger.info(f"Loaded PyTorch checkpoint: {len(transferred)} layers transferred, {len(skipped)} skipped")
+            
+    elif synthseg_path.suffix == '.h5':
+        # Use H5 transfer method
+        if logger:
+            logger.info("Detected .h5 file - using H5 weight transfer")
+        
+        transfer_summary = transfer_synthseg_weights(
+            h5_path=str(synthseg_path),
+            torch_model=model,
+            transfer_encoder=True,
+            transfer_decoder=True,
+            freeze_seg_layers=False  # We'll handle freezing separately
+        )
+    else:
+        raise ValueError(f"Unsupported file format: {synthseg_path.suffix}. Expected .pth or .h5")
     
     # Apply freezing strategy
     frozen_layers = []
@@ -133,26 +137,10 @@ def load_synthseg_checkpoint(model: torch.nn.Module,
             frozen_layers.append(name)
     
     if frozen_layers and logger:
-        logger.info(f"🔒 Frozen {len(frozen_layers)} layers based on freezing strategy")
+        logger.info(f"Frozen {len(frozen_layers)} layers based on freezing strategy")
         logger.info(f"Freeze encoder: {freeze_encoder}, Freeze decoder: {freeze_decoder}")
     
-    # Prepare summary
-    summary = {
-        'transfer_stats': {
-            'successfully_transferred': successfully_loaded,
-            'total_attempted': total_model_params,
-            'transfer_rate': successfully_loaded / total_model_params if total_model_params > 0 else 0.0,
-            'missing_keys': len(missing_keys),
-            'unexpected_keys': len(unexpected_keys),
-            'frozen_layers': len(frozen_layers)
-        },
-        'checkpoint_info': extra_info,
-        'missing_keys': missing_keys,
-        'unexpected_keys': unexpected_keys,
-        'frozen_layers': frozen_layers
-    }
-    
-    return summary
+    return transfer_summary
 
 
 def main() -> None:
@@ -320,22 +308,22 @@ def main() -> None:
     logger.info(f"Model initialized with {n_classes} segmentation classes")
     print(f"Model hyperparameters: {cfg.get('model')}")
 
-    # 9. ─── Load SynthSeg checkpoint ─────────────────────────── #
+    # 9. ─── Load SynthSeg weights ────────────────────────────── #
     synthseg_cfg = cfg.get("synthseg", {})
-    synthseg_checkpoint_path = synthseg_cfg.get("checkpoint_path")
+    synthseg_path = synthseg_cfg.get("model_path")
     
-    if synthseg_checkpoint_path and Path(synthseg_checkpoint_path).exists():
+    if synthseg_path and Path(synthseg_path).exists():
         logger.info("=" * 60)
-        logger.info("LOADING SYNTHSEG CHECKPOINT")
+        logger.info("LOADING SYNTHSEG WEIGHTS")
         logger.info("=" * 60)
         
         freeze_encoder = synthseg_cfg.get("freeze_encoder", False)
         freeze_decoder = synthseg_cfg.get("freeze_decoder", False)
         
         try:
-            transfer_summary = load_synthseg_checkpoint(
+            transfer_summary = load_synthseg_weights(
                 model=model,
-                checkpoint_path=synthseg_checkpoint_path,
+                synthseg_path=synthseg_path,
                 freeze_encoder=freeze_encoder,
                 freeze_decoder=freeze_decoder,
                 logger=logger
@@ -344,26 +332,24 @@ def main() -> None:
             # Log transfer results to wandb
             if use_wandb:
                 wandb.log({
-                    "synthseg_transfer_rate": transfer_summary['transfer_stats']['transfer_rate'],
+                    "synthseg_transfer_rate": transfer_summary['transfer_stats']['successfully_transferred'] / transfer_summary['transfer_stats']['total_attempted'],
                     "synthseg_transferred_layers": transfer_summary['transfer_stats']['successfully_transferred'],
-                    "synthseg_total_layers": transfer_summary['transfer_stats']['total_attempted'],
-                    "synthseg_missing_keys": transfer_summary['transfer_stats']['missing_keys'],
-                    "synthseg_frozen_layers": transfer_summary['transfer_stats']['frozen_layers']
+                    "synthseg_total_layers": transfer_summary['transfer_stats']['total_attempted']
                 })
             
-            logger.info("SynthSeg checkpoint loaded successfully!")
+            logger.info("SynthSeg weights loaded successfully!")
             
         except Exception as e:
-            logger.error(f"Failed to load SynthSeg checkpoint: {e}")
+            logger.error(f"Failed to load SynthSeg weights: {e}")
             logger.info("Continuing with random initialization...")
     else:
-        logger.warning(f"SynthSeg checkpoint path not found or not specified: {synthseg_checkpoint_path}")
+        logger.warning(f"SynthSeg model path not found or not specified: {synthseg_path}")
         logger.info("Training with random initialization...")
 
-    # Check for additional checkpoint loading (for resuming training)
-    resume_checkpoint_path = cfg.get("model.checkpoint")
-    if resume_checkpoint_path:
-        load_checkpoint(model, resume_checkpoint_path, device, logger)
+    # Check for additional checkpoint loading
+    checkpoint_path = cfg.get("model.checkpoint")
+    if checkpoint_path:
+        load_checkpoint(model, checkpoint_path, device, logger)
     
     if use_wandb:
         wandb.watch(model, log="all", log_graph=False)
