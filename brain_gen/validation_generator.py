@@ -34,7 +34,6 @@ class ValidationGenerator:
         output_labels: np.ndarray | None = None,
         use_intensity_clip_normalize: bool = True,
         return_segmentation: bool = True,
-        output_shape: tuple[int, int, int] = (160, 192, 160),
     ):
         self.segmented_data_dir = Path(segmented_data_dir)
         self.image_key = "image"
@@ -46,7 +45,6 @@ class ValidationGenerator:
         # Settings
         self.use_intensity_clip_normalize = use_intensity_clip_normalize
         self.return_segmentation = return_segmentation
-        self.output_shape = output_shape
         
         self._build_pipeline()
     

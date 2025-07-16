@@ -184,36 +184,32 @@ class BABrainGenerator:
         )
 
         # keep spatially-aligned copy for segmentation GT and intensity generation
-        tx.append(CopyItemsd(keys=[self.image_key], times=1, names=["seg_gt"]))
+        tx.append(CopyItemsd(keys=[self.image_key], times=2, names=["seg_gt", "seg_for_intensity"]))
 
+        # Convert seg_for_intensity to generation classes for intensity generation
         tx.append(
-            ConvertLabelsD(keys=["seg_gt"],
+            ConvertLabelsD(keys=["seg_for_intensity"],
                    generation_labels=self.generation_labels,
-                   output_labels=GENERATION_CLASSES,  # Use self.output_labels instead of GENERATION_CLASSES
+                   output_labels=GENERATION_CLASSES,
                    background_label=0)
         )
 
-        # 2) label → intensities
+        # 2) label → intensities (use seg_for_intensity with generation classes)
         if self.use_sample:
             tx.append(
                 SampleConditionalGMMd(
-                    seg_key="seg_gt", out_key=self.image_key,
+                    seg_key="seg_for_intensity", out_key=self.image_key,
                     prior_means=self.prior_means, prior_stds=self.prior_stds,
                     distribution=self.distribution)
             )
 
-        tx.append(
-         ConvertLabelsD(keys=["seg_gt"], 
-           generation_labels=GENERATION_CLASSES,        # From 0-14
-           output_labels=self.generation_labels,        # Back to GENERATION_LABELS  
-           background_label=0)
-)
         
         # 2b) tumor generation (after brain tissue generation)
+        # Use seg_gt (detailed labels) for tumor generation, not generation classes
         if self.prob.get("tumor", 0.0) > 0.0:
             tx.append(
                 RandTumorSampleConditionalGMMd(
-                    seg_key="seg_gt", 
+                    seg_key="seg_for_intensity", 
                     image_key=self.image_key,
                     prior_means=self.prior_means,  # Use same priors as brain tissues
                     prior_stds=self.prior_stds,    # Use same priors as brain tissues
@@ -281,7 +277,7 @@ class BABrainGenerator:
         tx.append(ZeroBackgroundd(img_key=self.image_key, seg_key="seg_gt"))
 
         # 7) clean-up & tensor-convert
-        keys_to_delete = []
+        keys_to_delete = ["seg_for_intensity"]  # Always remove the temporary intensity segmentation
         if not self.return_segmentation:
             keys_to_delete.append("seg_gt")
         

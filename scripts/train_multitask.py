@@ -177,7 +177,7 @@ def main() -> None:
     logger.info("Initializing datasets...")
     train_ds = BADataset(
         file_paths=train_p,
-        age_labels=train_a,
+        age_labels=train_a, 
         sample_wts=train_w,
         sexes=train_s,
         modalities=train_m,

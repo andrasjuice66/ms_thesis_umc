@@ -12,6 +12,7 @@ from pathlib import Path
 from brain_age_pred.brain_gen.brain_generator import BABrainGenerator
 from brain_age_pred.brain_gen.labels import GENERATION_CLASSES, GENERATION_LABELS, N_NEUTRAL_LABELS
 import torch
+from monai.transforms import CenterSpatialCropd
 
 # ------------------------------------------------------------------
 # 1) INPUT SEGMENTATION (integer labels in SynthSeg space)
@@ -19,6 +20,8 @@ import torch
 SEG_PATH = "/Users/andrasjoos/Documents/AI_masters/Thesis/thesis_project/brain_age_pred/tests/segmentation.nii.gz"              # <-- change to an existing file
 seg_img  = nib.load(SEG_PATH)
 seg_data = seg_img.get_fdata().astype(np.int16)          # numpy array [D,H,W]
+
+center_crop = CenterSpatialCropd(keys=["image", "seg_gt"], roi_size=(160, 192, 160), allow_missing_keys=True)
 
 # Add debug prints
 print(f"Original seg_data shape: {seg_data.shape}")
@@ -117,7 +120,7 @@ brain_gen = BABrainGenerator(
     # SynthSeg label config parameters
     generation_labels = GENERATION_LABELS,   # Default was None (uses GENERATION_LABELS)
     n_neutral_labels  = N_NEUTRAL_LABELS,   # Default was None (uses N_NEUTRAL_LABELS)
-    output_labels     = None,   # Default was None (no remapping)
+    output_labels     = GENERATION_CLASSES,   # Default was None (no remapping)
 
     # Toggle parameters
     use_hemisphere_aware_flip     = True,  # Default was True
@@ -128,6 +131,7 @@ brain_gen = BABrainGenerator(
     output_shape = (182, 218, 182),  # Should match the spatial dims (D, H, W)
     use_random_cropping          = True,   # Disable for debugging
     return_gradients             = False, # Default was False
+    return_segmentation          = True,  # Enable segmentation output
     
     # tumor generation parameters (using same priors as brain tissues)
     tumor_perlin_res           = [2, 2, 2],         # Perlin noise resolution for tumor shape
@@ -147,11 +151,13 @@ out_dir.mkdir(exist_ok=True)
 # ------------------------------------------------------------------
 for k in range(50):
     out_dict = brain_gen({"image": seg_data})     # forward pass
+    out_dict = center_crop(out_dict)
     vol = out_dict["image"].squeeze(0).cpu().numpy()    # Move to CPU for saving
     seg_gt = out_dict["seg_gt"].squeeze(0).cpu().numpy()    # Move to CPU for saving
     
     # Save synthetic image
     nifti = nib.Nifti1Image(vol, affine=seg_img.affine, header=seg_img.header)
+    out_dict = center_crop(out_dict)
     fname = out_dir / f"synthetic_{k:02d}.nii.gz"
     nib.save(nifti, fname)
     print(f"saved → {fname}")
@@ -161,5 +167,7 @@ for k in range(50):
     seg_fname = out_dir / f"synthetic_{k:02d}_seg.nii.gz"
     nib.save(seg_nifti, seg_fname)
     print(f"saved → {seg_fname}")
+
+   
 
 print("Done.  Fifty volumes are in:", out_dir.resolve())
