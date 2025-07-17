@@ -52,7 +52,7 @@ class SegDecoder(nn.Module):
             x = up(x)
             x = torch.cat([x, enc_f], dim=1)
             x = conv(x)
-        return self.out(x)   # logits
+        return self.out(x), x   # logits and final decoder features
         
 
 class AgeHead(nn.Module):
@@ -73,10 +73,21 @@ class MultiTaskBrainAge(nn.Module):
         # in_ch for heads = last encoder channels (e.g. 384)
         decoder_chs = tuple(reversed(encoder_chs))
         self.seg_head = SegDecoder(n_classes, chs=decoder_chs)
-        self.age_head = AgeHead(in_ch=encoder_chs[-1])
+        
+        # New input channels for AgeHead will be from encoder bottleneck and decoder final layer
+        age_head_in_ch = encoder_chs[-1] + decoder_chs[-1]
+        self.age_head = AgeHead(in_ch=age_head_in_ch)
 
     def forward(self, x):
         deepest, skips = self.encoder(x)
-        seg_logits = self.seg_head(deepest, skips)
-        age_pred   = self.age_head(deepest)
+        seg_logits, decoder_final_feat = self.seg_head(deepest, skips)
+
+        # Downsample decoder features to match bottleneck's spatial dimensions
+        downsampler = nn.AdaptiveAvgPool3d(deepest.shape[2:])
+        downsampled_decoder_feat = downsampler(decoder_final_feat)
+        
+        # Concatenate features along the channel dimension
+        combined_features = torch.cat([deepest, downsampled_decoder_feat], dim=1)
+
+        age_pred   = self.age_head(combined_features)
         return seg_logits, age_pred

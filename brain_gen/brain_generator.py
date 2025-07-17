@@ -194,6 +194,15 @@ class BABrainGenerator:
                    background_label=0)
         )
 
+        # Convert seg_gt to contiguous indices for the segmentation task
+        output_seg_labels = np.arange(len(self.generation_labels), dtype=np.int16)
+        tx.append(
+            ConvertLabelsD(keys=["seg_gt"],
+                   generation_labels=self.generation_labels,
+                   output_labels=output_seg_labels,
+                   background_label=0)
+        )
+
         # 2) label → intensities (use seg_for_intensity with generation classes)
         if self.use_sample:
             tx.append(

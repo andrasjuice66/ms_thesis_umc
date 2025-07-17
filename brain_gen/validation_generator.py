@@ -51,12 +51,13 @@ class ValidationGenerator:
     def _build_pipeline(self):
         tx = []
         
-        # Always convert labels to ensure consistency
+        # Convert labels to contiguous indices for the segmentation task
+        output_seg_labels = np.arange(len(self.generation_labels), dtype=np.int16)
         tx.append(
             ConvertLabelsD(
                 keys=["seg_gt"],
                 generation_labels=self.generation_labels,
-                output_labels=self.output_labels,
+                output_labels=output_seg_labels,
                 background_label=0
             )
         )

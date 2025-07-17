@@ -113,7 +113,7 @@ def main() -> None:
     std_loc = bg_cfg.get("std_loc", 17.5)
     std_scale = bg_cfg.get("std_scale", 17.5)
     
-    n_classes = GENERATION_CLASSES.max() + 1
+    n_classes = len(GENERATION_LABELS)
 
     # "loc" = mid-point,  "scale" = half-range
     prior_means = np.vstack([
