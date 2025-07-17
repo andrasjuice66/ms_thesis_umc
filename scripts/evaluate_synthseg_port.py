@@ -160,7 +160,7 @@ def create_segmentation_report(all_metrics: list,
 def main():
     # 1. Configuration and Setup
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    cfg_file = sys.argv[1] if len(sys.argv) > 1 else "configs/multitask/finetune.yaml"
+    cfg_file = sys.argv[1] if len(sys.argv) > 1 else "brain_age_pred/configs/multitask/finetune.yaml"
     cfg = Config(cfg_file)
     
     output_dir = Path("output/synthseg_port_evaluation") / f"eval_{timestamp}"
