@@ -7,7 +7,7 @@ data:
   segmented_data_dir: "/mnt/c/Projects/thesis_project/Data/brain_age_segmented/"   
   real_data_dir: "/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed/" 
   
-  num_workers: 8
+  num_workers: 4
   pin_memory: true
 
 # ───────────────────────────  MODEL  ──────────────────────────── #
@@ -30,7 +30,7 @@ brain_generator:
   prob:
     flip: 0.5
     affine: 0.9
-    tumor: 0.5
+    tumor: 0.0
     contrast: 0.5
     gamma: 0.4
     scale_int: 0.4

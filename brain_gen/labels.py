@@ -67,4 +67,4 @@ GENERATION_CLASSES = np.array([
 ], dtype=np.int16)
 
 
-print("Size: ", len(GENERATION_CLASSES), len(GENERATION_LABELS))
+# print("Size: ", len(GENERATION_CLASSES), len(GENERATION_LABELS))
