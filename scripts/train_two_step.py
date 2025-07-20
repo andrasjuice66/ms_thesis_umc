@@ -73,7 +73,17 @@ def main() -> None:
 
     # 4. ─── device ───────────────────────────────────────────── #
     logger.info("Setting up device...")
-    device = torch.device(cfg.get("device") or ("cuda" if torch.cuda.is_available() else "cpu"))
+    
+    # Updated device selection logic for cross-platform compatibility
+    if cfg.get("device"):
+        device = torch.device(cfg.get("device"))
+    elif torch.cuda.is_available():
+        device = torch.device("cuda")
+    elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        device = torch.device("mps")
+    else:
+        device = torch.device("cpu")
+
     logger.info(f"Using device: {device}")
 
 
