@@ -10,16 +10,12 @@ data:
   num_workers: 12
   pin_memory: true
 
-synthseg:
-  checkpoint_path: "/home/ajoos/brain_age_pred/models/synthseg_2.0.h5"  # Updated to use .pth file
-  freeze_encoder: false      # Set to true if you want to freeze encoder weights
-  freeze_decoder: false   
-
 # ───────────────────────────  MODEL  ──────────────────────────── #
 # Model is hard-coded to MultiTaskBrainAge in train_multitask.py
 # The architecture is based on SynthSeg's U-Net.
 model:
   checkpoint: null # Optional path to a checkpoint to resume training
+  synthseg_weights_path: "/home/ajoos/brain_age_pred/models/synthseg_2.0.h5"
 
 # ────────────────────── BRAIN GENERATOR ───────────────────────── #
 # These settings control the on-the-fly generation of synthetic MRIs
