@@ -16,6 +16,7 @@ set -o pipefail
 # 1) activate your env
 source ~/.bashrc
 conda activate thesis
+pip install -r brain_age_pred/requirements.txt
 
 # 2) (optional) copy large data to fast local SSD on the node
 # SCRATCH=/scratch/$USER/$SLURM_JOB_ID
