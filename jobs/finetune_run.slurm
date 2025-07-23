@@ -16,7 +16,6 @@ set -o pipefail
 # 1) activate your env
 source ~/.bashrc
 conda activate thesis
-pip install -r requirements.txt
 
 # 2) (optional) copy large data to fast local SSD on the node
 # SCRATCH=/scratch/$USER/$SLURM_JOB_ID
@@ -24,6 +23,8 @@ pip install -r requirements.txt
 
 # 3) launch training exactly as on your laptop
 cd $HOME/
+pip install -r brain_age_pred/requirements.txt
+
 
 python -m brain_age_pred.scripts.train_synthseg brain_age_pred/configs/multitask/finetune.yaml
 
