@@ -1,17 +1,17 @@
 # ────────────────────────────  DATA  ──────────────────────────── #
 data:
-  train_csv: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels/train_local.csv"
-  val_csv:   "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels/val_local.csv"
-  test_csv:  "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels/test_local.csv"
+  train_csv: "/home/ajoos/brain_age_pred/data/labels/train.csv"
+  val_csv:   "/home/ajoos/brain_age_pred/data/labels/val.csv"
+  test_csv:  "/home/ajoos/brain_age_pred/data/labels/test_balanced.csv"
 
-  segmented_data_dir: "/mnt/c/Projects/thesis_project/Data/brain_age_segmented/"   
-  real_data_dir: "/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed/" 
+  segmented_data_dir: "/scratch-shared/ajoos/brain_age_segmented_converted/"   
+  real_data_dir: "/scratch-shared/ajoos/brain_age_preprocessed_converted/" 
   
-  num_workers: 4
-  pin_memory: false
+  num_workers: 12
+  pin_memory: true
 
 synthseg:
-  checkpoint_path: "/mnt/c/Projects/thesis_project/brain_age_pred/models/synthseg.pth"  # Updated to use .pth file
+  checkpoint_path: "/home/ajoos/brain_age_pred/models/synthseg_2.0.h5"  # Updated to use .pth file
   freeze_encoder: false      # Set to true if you want to freeze encoder weights
   freeze_decoder: false   
 
@@ -89,7 +89,7 @@ brain_generator:
   tumor_use_fluid_dynamics: True,        
 # ──────────────────────────  TRAINING  ────────────────────────── #
 training:
-  batch_size: 1
+  batch_size: 4
   epochs: 150
 
   # Optimiser & LR Scheduler

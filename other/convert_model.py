@@ -1,586 +1,753 @@
-#!/usr/bin/env python3
-"""
-SynthSeg TensorFlow to PyTorch Conversion Script
+# brain_age_pred/utils/synthseg_transfer.py
 
-This script converts SynthSeg TensorFlow models to PyTorch, ensuring identical outputs.
-Based on the article approach using ONNX as an intermediate format, but with custom
-implementations for SynthSeg-specific layers and preprocessing/postprocessing.
-
-Usage:
-    python convert_synthseg_tf_to_pytorch.py --tf_model_path model.h5 --output_path model.pth
-"""
-
-import os
-import sys
-import argparse
-import numpy as np
-import h5py
-from typing import Dict, List, Tuple, Optional, Any
-import warnings
-
-# PyTorch imports
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from torch import Tensor
+import h5py
+import numpy as np
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+import warnings
+from collections import defaultdict
+import textwrap
 
-# TensorFlow imports (for loading original model)
-try:
-    import tensorflow as tf
-    from tensorflow import keras
-    import keras.backend as K
-    TF_AVAILABLE = True
-except ImportError:
-    print("Warning: TensorFlow not available. You'll need TF to load the original model.")
-    TF_AVAILABLE = False
-
-# ONNX imports for conversion path
-try:
-    import onnx
-    import tf2onnx
-    from onnx2pytorch import ConvertModel
-    ONNX_AVAILABLE = True
-except ImportError:
-    print("Warning: ONNX conversion tools not available. Install with: pip install tf2onnx onnx2pytorch")
-    ONNX_AVAILABLE = False
-
-
-class GaussianBlurPyTorch(nn.Module):
+class ArchitectureVisualizer:
     """
-    PyTorch implementation of SynthSeg's GaussianBlur layer.
+    Visualize and compare SynthSeg and PyTorch model architectures
     """
-    def __init__(self, sigma: float, n_dims: int = 3):
-        super().__init__()
-        self.sigma = sigma
-        self.n_dims = n_dims
-        
-        # Create Gaussian kernel
-        if sigma > 0:
-            kernel_size = int(2 * np.ceil(2 * sigma) + 1)
-            if kernel_size % 2 == 0:
-                kernel_size += 1
-            
-            # Create 1D Gaussian kernel
-            ax = np.arange(-kernel_size // 2 + 1., kernel_size // 2 + 1.)
-            kernel_1d = np.exp(-0.5 * (ax / sigma) ** 2)
-            kernel_1d = kernel_1d / kernel_1d.sum()
-            
-            # Convert to tensor and register as buffer
-            self.register_buffer('kernel_1d', torch.FloatTensor(kernel_1d))
-            self.kernel_size = kernel_size
-        else:
-            self.kernel_1d = None
-            self.kernel_size = 1
     
-    def forward(self, x: Tensor) -> Tensor:
-        if self.sigma <= 0 or self.kernel_1d is None:
-            return x
-        
-        # Apply separable Gaussian blur
-        B, C, D, H, W = x.shape
-        
-        # Blur in each dimension separately (separable)
-        # Dimension 0 (depth)
-        x = x.view(B * C, 1, D, H * W)
-        kernel = self.kernel_1d.view(1, 1, -1, 1)
-        x = F.conv2d(x, kernel, padding=(self.kernel_size // 2, 0))
-        x = x.view(B, C, D, H, W)
-        
-        # Dimension 1 (height)
-        x = x.permute(0, 1, 3, 2, 4).contiguous().view(B * C, 1, H, D * W)
-        x = F.conv2d(x, kernel, padding=(self.kernel_size // 2, 0))
-        x = x.view(B, C, H, D, W).permute(0, 1, 3, 2, 4).contiguous()
-        
-        # Dimension 2 (width)
-        x = x.permute(0, 1, 4, 2, 3).contiguous().view(B * C, 1, W, D * H)
-        x = F.conv2d(x, kernel, padding=(self.kernel_size // 2, 0))
-        x = x.view(B, C, W, D, H).permute(0, 1, 3, 4, 2).contiguous()
-        
-        return x
-
-
-class RandomFlipPyTorch(nn.Module):
-    """
-    PyTorch implementation of SynthSeg's RandomFlip layer for test-time augmentation.
-    """
-    def __init__(self, axis: int = 0, prob: float = 1.0):
-        super().__init__()
-        self.axis = axis
-        self.prob = prob
+    def __init__(self, synthseg_weights: Dict, pytorch_model: nn.Module):
+        self.synthseg_weights = synthseg_weights
+        self.pytorch_model = pytorch_model
+        self.pytorch_state_dict = pytorch_model.state_dict()
     
-    def forward(self, x: Tensor) -> Tensor:
-        if self.training or np.random.random() > self.prob:
-            return x
+    def print_architecture_comparison(self):
+        """Print side-by-side comparison of both architectures"""
+        print("\n" + "="*120)
+        print("🏗️  ARCHITECTURE COMPARISON: SYNTHSEG ↔️ PYTORCH")
+        print("="*120)
         
-        # Flip along specified axis (axis 0 corresponds to dim 2 in BCDHW format)
-        flip_dim = self.axis + 2  # Adjust for batch and channel dimensions
-        return torch.flip(x, dims=[flip_dim])
-
-
-class ConvertLabelsPyTorch(nn.Module):
-    """
-    PyTorch implementation of SynthSeg's ConvertLabels layer.
-    """
-    def __init__(self, source_values: np.ndarray, dest_values: np.ndarray):
-        super().__init__()
-        
-        # Create lookup table
-        max_val = max(source_values.max(), dest_values.max())
-        lut = torch.arange(max_val + 1, dtype=torch.long)
-        
-        for src, dst in zip(source_values, dest_values):
-            lut[src] = dst
-        
-        self.register_buffer('lut', lut)
+        self._print_side_by_side_comparison()
+        self._print_detailed_layer_mapping()
+        self._print_parameter_statistics()
     
-    def forward(self, x: Tensor) -> Tensor:
-        return self.lut[x.long()]
-
-
-class ConvBlock(nn.Module):
-    """
-    Convolutional block matching SynthSeg's implementation.
-    """
-    def __init__(self, in_channels: int, out_channels: int, n_convs: int = 2, 
-                 conv_size: int = 3, activation: str = 'elu'):
-        super().__init__()
+    def _print_side_by_side_comparison(self):
+        """Print side-by-side architecture overview"""
+        print(f"\n{'SYNTHSEG (Keras/TensorFlow)':^58} │ {'PYTORCH (MultiTaskBrainAge)':^58}")
+        print("─" * 58 + "┼" + "─" * 58)
         
+        # Parse SynthSeg layers
+        synthseg_layers = self._parse_synthseg_layers()
+        pytorch_layers = self._parse_pytorch_layers()
+        
+        max_lines = max(len(synthseg_layers), len(pytorch_layers))
+        
+        for i in range(max_lines):
+            left = synthseg_layers[i] if i < len(synthseg_layers) else ""
+            right = pytorch_layers[i] if i < len(pytorch_layers) else ""
+            print(f"{left:58} │ {right:58}")
+    
+    def _parse_synthseg_layers(self) -> List[str]:
+        """Parse SynthSeg architecture from weights"""
         layers = []
-        for i in range(n_convs):
-            in_ch = in_channels if i == 0 else out_channels
-            layers.append(nn.Conv3d(in_ch, out_channels, kernel_size=conv_size, 
-                                  padding='same', bias=True))
-            if activation == 'elu':
-                layers.append(nn.ELU(inplace=True))
-            elif activation == 'relu':
-                layers.append(nn.ReLU(inplace=True))
+        
+        # Input
+        layers.append("🔵 INPUT: [B, H, W, D, 1]")
+        layers.append("")
+        
+        # Encoder
+        layers.append("🔽 ENCODER (Downsampling Path):")
+        encoder_channels = [24, 48, 96, 192, 384]
+        
+        for level, ch in enumerate(encoder_channels):
+            layers.append(f"  Level {level} (→{ch} channels):")
+            
+            # Check if conv layers exist
+            conv0_key = f"unet_conv_downarm_{level}_0/unet_conv_downarm_{level}_0/kernel:0"
+            conv1_key = f"unet_conv_downarm_{level}_1/unet_conv_downarm_{level}_1/kernel:0"
+            
+            if conv0_key in self.synthseg_weights:
+                shape = self.synthseg_weights[conv0_key].shape
+                in_ch = shape[3]
+                layers.append(f"    Conv3D: {in_ch}→{ch}, kernel=3x3x3")
+            
+            layers.append(f"    BatchNorm3D({ch})")
+            layers.append(f"    ELU()")
+            
+            if conv1_key in self.synthseg_weights:
+                layers.append(f"    Conv3D: {ch}→{ch}, kernel=3x3x3")
+            
+            layers.append(f"    BatchNorm3D({ch})")
+            layers.append(f"    ELU()")
+            
+            if level < len(encoder_channels) - 1:
+                layers.append(f"    MaxPool3D(2)")
+            layers.append("")
+        
+        # Decoder
+        layers.append("🔼 DECODER (Upsampling Path):")
+        decoder_levels = [(5, 192), (6, 96), (7, 48), (8, 24)]
+        
+        for synthseg_level, ch in decoder_levels:
+            layers.append(f"  Level {synthseg_level} (→{ch} channels):")
+            layers.append(f"    UpSampling3D(2)")
+            layers.append(f"    Concatenate with skip connection")
+            
+            conv0_key = f"unet_conv_uparm_{synthseg_level}_0/unet_conv_uparm_{synthseg_level}_0/kernel:0"
+            if conv0_key in self.synthseg_weights:
+                shape = self.synthseg_weights[conv0_key].shape
+                in_ch = shape[3]
+                layers.append(f"    Conv3D: {in_ch}→{ch}, kernel=3x3x3")
+            
+            layers.append(f"    BatchNorm3D({ch})")
+            layers.append(f"    ELU()")
+            layers.append(f"    Conv3D: {ch}→{ch}, kernel=3x3x3")
+            layers.append(f"    BatchNorm3D({ch})")
+            layers.append(f"    ELU()")
+            layers.append("")
+        
+        # Final layer
+        layers.append("🎯 OUTPUT:")
+        final_key = "unet_likelihood/unet_likelihood/kernel:0"
+        if final_key in self.synthseg_weights:
+            shape = self.synthseg_weights[final_key].shape
+            n_classes = shape[4]
+            layers.append(f"  Conv3D: 24→{n_classes}, kernel=1x1x1")
+            layers.append(f"  Softmax(dim=-1)")
+            layers.append(f"  OUTPUT: [B, H, W, D, {n_classes}]")
+        
+        return layers
+    
+    def _parse_pytorch_layers(self) -> List[str]:
+        """Parse PyTorch architecture from model"""
+        layers = []
+        
+        # Input
+        layers.append("🔵 INPUT: [B, 1, D, H, W]")
+        layers.append("")
+        
+        # Encoder
+        layers.append("🔽 ENCODER (encoder.downs):")
+        encoder_channels = [24, 48, 96, 192, 384]
+        
+        for level, ch in enumerate(encoder_channels):
+            layers.append(f"  downs[{level}] (→{ch} channels):")
+            
+            # Determine input channels
+            in_ch = 1 if level == 0 else encoder_channels[level-1]
+            
+            layers.append(f"    Conv3d: {in_ch}→{ch}, kernel=3, bias=False")
+            layers.append(f"    InstanceNorm3d({ch})")
+            layers.append(f"    ELU(inplace=True)")
+            layers.append(f"    Conv3d: {ch}→{ch}, kernel=3, bias=False")
+            layers.append(f"    InstanceNorm3d({ch})")
+            layers.append(f"    ELU(inplace=True)")
+            
+            if level < len(encoder_channels) - 1:
+                layers.append(f"    MaxPool3d(2)")
+            layers.append("")
+        
+        # Decoder
+        layers.append("🔼 DECODER (seg_head):")
+        decoder_channels = [384, 192, 96, 48, 24]
+        
+        for level in range(len(decoder_channels)-1):
+            in_ch = decoder_channels[level]
+            out_ch = decoder_channels[level+1]
+            layers.append(f"  ups[{level}] + convs[{level}] (→{out_ch} channels):")
+            layers.append(f"    ConvTranspose3d: {in_ch}→{out_ch}, kernel=2, stride=2")
+            layers.append(f"    Concatenate with skip (→{out_ch*2} channels)")
+            layers.append(f"    Conv3d: {out_ch*2}→{out_ch}, kernel=3, bias=False")
+            layers.append(f"    InstanceNorm3d({out_ch})")
+            layers.append(f"    ELU(inplace=True)")
+            layers.append(f"    Conv3d: {out_ch}→{out_ch}, kernel=3, bias=False")
+            layers.append(f"    InstanceNorm3d({out_ch})")
+            layers.append(f"    ELU(inplace=True)")
+            layers.append("")
+        
+        # Get actual n_classes from model
+        final_weight_key = "seg_head.out.weight"
+        if final_weight_key in self.pytorch_state_dict:
+            n_classes = self.pytorch_state_dict[final_weight_key].shape[0]
+        else:
+            n_classes = "N"
+        
+        layers.append("🎯 SEGMENTATION OUTPUT:")
+        layers.append(f"  Conv3d: 24→{n_classes}, kernel=1")
+        layers.append(f"  OUTPUT: [B, {n_classes}, D, H, W]")
+        layers.append("")
+        
+        layers.append("🧠 AGE PREDICTION HEAD:")
+        layers.append("  AdaptiveAvgPool3d(1)")
+        layers.append("  Flatten()")
+        layers.append("  Linear(encoder_ch + decoder_ch, 256)")
+        layers.append("  ReLU(inplace=True)")
+        layers.append("  Linear(256, 1)")
+        layers.append("  OUTPUT: [B, 1] (age prediction)")
+        
+        return layers
+    
+    def _print_detailed_layer_mapping(self):
+        """Print detailed layer-by-layer mapping"""
+        print("\n" + "="*120)
+        print("🔗 DETAILED LAYER MAPPING")
+        print("="*120)
+        
+        # Encoder mapping
+        print("\n🔵 ENCODER MAPPING:")
+        print("─" * 80)
+        
+        for level in range(5):
+            print(f"\n📁 Level {level}:")
+            for conv_idx in range(2):
+                synthseg_conv = f"unet_conv_downarm_{level}_{conv_idx}/unet_conv_downarm_{level}_{conv_idx}/kernel:0"
+                pytorch_conv = f"encoder.downs.{level}.block.{conv_idx*3}.weight"
+                
+                status = "✅" if synthseg_conv in self.synthseg_weights else "❌"
+                
+                print(f"  {status} Conv {conv_idx}: {synthseg_conv}")
+                print(f"     → {pytorch_conv}")
+                
+                if conv_idx == 1:  # Normalization after second conv
+                    synthseg_norm = f"unet_bn_down_{level}/unet_bn_down_{level}/gamma:0"
+                    pytorch_norm = f"encoder.downs.{level}.block.{conv_idx*3+1}.weight"
+                    
+                    status = "✅" if synthseg_norm in self.synthseg_weights else "❌"
+                    print(f"  {status} Norm: {synthseg_norm}")
+                    print(f"     → {pytorch_norm}")
+        
+        # Decoder mapping
+        print("\n🔴 DECODER MAPPING:")
+        print("─" * 80)
+        
+        decoder_mapping = [(5, 0), (6, 1), (7, 2), (8, 3)]
+        for synthseg_level, pytorch_level in decoder_mapping:
+            print(f"\n📁 Level {synthseg_level} → PyTorch Level {pytorch_level}:")
+            
+            for conv_idx in range(2):
+                synthseg_conv = f"unet_conv_uparm_{synthseg_level}_{conv_idx}/unet_conv_uparm_{synthseg_level}_{conv_idx}/kernel:0"
+                pytorch_conv = f"seg_head.convs.{pytorch_level}.block.{conv_idx*3}.weight"
+                
+                status = "✅" if synthseg_conv in self.synthseg_weights else "❌"
+                
+                print(f"  {status} Conv {conv_idx}: {synthseg_conv}")
+                print(f"     → {pytorch_conv}")
+                
+                if conv_idx == 1:
+                    synthseg_norm = f"unet_bn_up_{pytorch_level}/unet_bn_up_{pytorch_level}/gamma:0"
+                    pytorch_norm = f"seg_head.convs.{pytorch_level}.block.{conv_idx*3+1}.weight"
+                    
+                    status = "✅" if synthseg_norm in self.synthseg_weights else "❌"
+                    print(f"  {status} Norm: {synthseg_norm}")
+                    print(f"     → {pytorch_norm}")
+        
+        # Final layer mapping
+        print("\n🎯 FINAL LAYER MAPPING:")
+        print("─" * 80)
+        
+        synthseg_final = "unet_likelihood/unet_likelihood/kernel:0"
+        pytorch_final = "seg_head.out.weight"
+        
+        status = "✅" if synthseg_final in self.synthseg_weights else "❌"
+        print(f"{status} Final conv: {synthseg_final}")
+        print(f"   → {pytorch_final}")
+        
+        if synthseg_final in self.synthseg_weights:
+            synthseg_shape = self.synthseg_weights[synthseg_final].shape
+            pytorch_shape = self.pytorch_state_dict[pytorch_final].shape if pytorch_final in self.pytorch_state_dict else "Unknown"
+            print(f"   SynthSeg shape: {synthseg_shape} (Keras format)")
+            print(f"   PyTorch shape:  {pytorch_shape} (PyTorch format)")
+            
+            if synthseg_shape[4] != pytorch_shape[0]:
+                print(f"   ⚠️  Class mismatch: SynthSeg={synthseg_shape[4]}, PyTorch={pytorch_shape[0]}")
+    
+    def _print_parameter_statistics(self):
+        """Print parameter count statistics"""
+        print("\n" + "="*120)
+        print("📊 PARAMETER STATISTICS")
+        print("="*120)
+        
+        # Count SynthSeg parameters
+        synthseg_params = self._count_synthseg_parameters()
+        
+        # Count PyTorch parameters
+        pytorch_params = self._count_pytorch_parameters()
+        
+        print(f"\n{'Component':<20} {'SynthSeg':<15} {'PyTorch':<15} {'Status'}")
+        print("─" * 70)
+        
+        for component in ['Encoder', 'Decoder', 'Final', 'Age Head', 'Total']:
+            s_count = synthseg_params.get(component, 0)
+            p_count = pytorch_params.get(component, 0)
+            
+            if component == 'Age Head':
+                status = "PyTorch only"
+            elif s_count == 0:
+                status = "Not available"
+            elif abs(s_count - p_count) < 1000:
+                status = "✅ Similar"
             else:
-                raise ValueError(f"Activation function {activation} is not supported.")
-        
-        self.block = nn.Sequential(*layers)
-
-    def forward(self, x: Tensor) -> Tensor:
-        return self.block(x)
-
-
-class UNetEncoder(nn.Module):
-    """
-    U-Net encoder matching SynthSeg's architecture.
-    """
-    def __init__(self, in_channels: int = 1, chs: Tuple[int, ...] = (24, 48, 96, 192, 384), 
-                 n_convs: int = 2, activation: str = 'elu'):
-        super().__init__()
-        self.downs = nn.ModuleList()
-        self.pools = nn.ModuleList()
-        
-        prev_ch = in_channels
-        for i, ch in enumerate(chs):
-            self.downs.append(ConvBlock(prev_ch, ch, n_convs=n_convs, activation=activation))
-            if i < len(chs) - 1:
-                self.pools.append(nn.MaxPool3d(2))
-            prev_ch = ch
-
-    def forward(self, x: Tensor) -> Tuple[Tensor, List[Tensor]]:
-        feats = []
-        for i, down in enumerate(self.downs):
-            x = down(x)
-            if i < len(self.downs) - 1:
-                feats.append(x)
-                x = self.pools[i](x)
-        return x, feats
-
-
-class UNetDecoder(nn.Module):
-    """
-    U-Net decoder matching SynthSeg's architecture.
-    """
-    def __init__(self, n_classes: int, chs: Tuple[int, ...] = (384, 192, 96, 48, 24), 
-                 n_convs: int = 2, activation: str = 'elu'):
-        super().__init__()
-        self.ups = nn.ModuleList()
-        self.convs = nn.ModuleList()
-        
-        for i in range(len(chs) - 1):
-            self.ups.append(nn.ConvTranspose3d(chs[i], chs[i+1], kernel_size=2, stride=2))
-            self.convs.append(ConvBlock(chs[i+1] * 2, chs[i+1], n_convs=n_convs, activation=activation))
-        
-        self.out = nn.Conv3d(chs[-1], n_classes, kernel_size=1)
-
-    def forward(self, x: Tensor, encoder_feats: List[Tensor]) -> Tensor:
-        for i in range(len(self.convs)):
-            x = self.ups[i](x)
-            enc_f = encoder_feats[-(i + 1)]
-            x = torch.cat([x, enc_f], dim=1)
-            x = self.convs[i](x)
-        
-        x = self.out(x)
-        return x
-
-
-class SynthSegPyTorch(nn.Module):
-    """
-    Complete PyTorch implementation of SynthSeg with all components.
-    """
-    def __init__(self, n_classes: int, n_levels: int = 5, n_convs: int = 2, 
-                 init_feat: int = 24, feat_mult: int = 2, activation: str = 'elu',
-                 sigma_smoothing: float = 0.5, flip_indices: Optional[np.ndarray] = None):
-        super().__init__()
-        
-        # Calculate encoder/decoder channel sizes
-        encoder_chs = [init_feat]
-        for _ in range(n_levels - 1):
-            encoder_chs.append(int(encoder_chs[-1] * feat_mult))
-        
-        encoder_chs = tuple(encoder_chs)
-        decoder_chs = tuple(reversed(encoder_chs))
-        
-        # Build U-Net
-        self.encoder = UNetEncoder(1, encoder_chs, n_convs, activation)
-        self.decoder = UNetDecoder(n_classes, decoder_chs, n_convs, activation)
-        
-        # Optional Gaussian smoothing
-        self.gaussian_blur = None
-        if sigma_smoothing > 0:
-            self.gaussian_blur = GaussianBlurPyTorch(sigma_smoothing)
-        
-        # Optional test-time flipping
-        self.flip_indices = flip_indices
-        if flip_indices is not None:
-            self.random_flip = RandomFlipPyTorch(axis=0, prob=1.0)
-        
-        self.n_classes = n_classes
-    
-    def forward(self, x: Tensor) -> Tensor:
-        # Main forward pass
-        deepest_features, skip_connections = self.encoder(x)
-        logits = self.decoder(deepest_features, skip_connections)
-        
-        # Apply Gaussian smoothing if specified
-        if self.gaussian_blur is not None:
-            logits = self.gaussian_blur(logits)
-        
-        # Test-time flipping augmentation
-        if self.flip_indices is not None and not self.training:
-            # Segment flipped image
-            x_flipped = self.random_flip(x)
-            deepest_flipped, skip_flipped = self.encoder(x_flipped)
-            logits_flipped = self.decoder(deepest_flipped, skip_flipped)
+                status = "⚠️  Different"
             
-            if self.gaussian_blur is not None:
-                logits_flipped = self.gaussian_blur(logits_flipped)
-            
-            # Flip back and reorder channels
-            logits_flipped = torch.flip(logits_flipped, dims=[2])  # Flip back
-            
-            # Reorder channels according to flip_indices
-            reordered_channels = []
-            for i in range(self.n_classes):
-                reordered_channels.append(logits_flipped[:, [self.flip_indices[i]], :, :, :])
-            logits_flipped = torch.cat(reordered_channels, dim=1)
-            
-            # Average the two predictions
-            logits = 0.5 * (logits + logits_flipped)
+            print(f"{component:<20} {s_count:>10,}     {p_count:>10,}     {status}")
+    
+    def _count_synthseg_parameters(self) -> Dict[str, int]:
+        """Count parameters in SynthSeg model"""
+        counts = defaultdict(int)
         
-        # Apply softmax to get probabilities
-        return F.softmax(logits, dim=1)
+        for name, weight in self.synthseg_weights.items():
+            param_count = np.prod(weight.shape)
+            
+            if 'downarm' in name:
+                counts['Encoder'] += param_count
+            elif 'uparm' in name or 'bn_up' in name:
+                counts['Decoder'] += param_count
+            elif 'bn_down' in name:
+                counts['Encoder'] += param_count
+            elif 'likelihood' in name:
+                counts['Final'] += param_count
+            
+            counts['Total'] += param_count
+        
+        return counts
+    
+    def _count_pytorch_parameters(self) -> Dict[str, int]:
+        """Count parameters in PyTorch model"""
+        counts = defaultdict(int)
+        
+        for name, param in self.pytorch_state_dict.items():
+            param_count = param.numel()
+            
+            if 'encoder' in name:
+                counts['Encoder'] += param_count
+            elif 'seg_head' in name and 'out' not in name:
+                counts['Decoder'] += param_count
+            elif 'seg_head.out' in name:
+                counts['Final'] += param_count
+            elif 'age_head' in name:
+                counts['Age Head'] += param_count
+            
+            counts['Total'] += param_count
+        
+        return counts
 
 
-class SynthSegConverter:
+class SynthSegWeightTransfer:
     """
-    Main converter class for TensorFlow to PyTorch SynthSeg models.
+    Precise weight transfer from SynthSeg to PyTorch based on inspection results.
     """
     
-    def __init__(self):
-        self.tf_model = None
-        self.pytorch_model = None
+    def __init__(self, h5_path: str, verbose: bool = True):
+        self.h5_path = Path(h5_path)
+        self.verbose = verbose
+        self.keras_weights = {}
+        self.load_keras_weights()
+        
+    def load_keras_weights(self):
+        """Load all weights from the .h5 file"""
+        if not self.h5_path.exists():
+            raise FileNotFoundError(f"SynthSeg model not found: {self.h5_path}")
+            
+        with h5py.File(self.h5_path, 'r') as f:
+            def extract_weights(name, obj):
+                if isinstance(obj, h5py.Dataset):
+                    self.keras_weights[name] = np.array(obj)
+            f.visititems(extract_weights)
+            
+        if self.verbose:
+            print(f"✅ Loaded {len(self.keras_weights)} weight tensors from {self.h5_path.name}")
     
-    def load_tensorflow_model(self, model_path: str) -> Any:
-        """Load the TensorFlow SynthSeg model."""
-        if not TF_AVAILABLE:
-            raise ImportError("TensorFlow is required to load the original model")
-        
-        self.tf_model = tf.keras.models.load_model(model_path, compile=False)
-        print(f"Loaded TensorFlow model from {model_path}")
-        return self.tf_model
+    def show_architecture_comparison(self, pytorch_model: nn.Module):
+        """Show detailed architecture comparison"""
+        visualizer = ArchitectureVisualizer(self.keras_weights, pytorch_model)
+        visualizer.print_architecture_comparison()
     
-    def extract_model_info(self) -> Dict[str, Any]:
-        """Extract key information from the TensorFlow model."""
-        if self.tf_model is None:
-            raise ValueError("TensorFlow model not loaded")
-        
-        # Get output shape to determine number of classes
-        output_shape = self.tf_model.output.shape
-        n_classes = output_shape[-1]
-        
-        # Get input shape
-        input_shape = self.tf_model.input.shape
-        
-        # Extract layer information
-        layer_info = {}
-        for layer in self.tf_model.layers:
-            layer_info[layer.name] = {
-                'type': type(layer).__name__,
-                'config': layer.get_config() if hasattr(layer, 'get_config') else None
-            }
-        
-        return {
-            'n_classes': n_classes,
-            'input_shape': input_shape,
-            'output_shape': output_shape,
-            'layer_info': layer_info
-        }
+    @staticmethod
+    def convert_conv3d_weight(keras_weight: np.ndarray) -> torch.Tensor:
+        """Convert Conv3D weights: Keras (D,H,W,Cin,Cout) -> PyTorch (Cout,Cin,D,H,W)"""
+        if len(keras_weight.shape) != 5:
+            raise ValueError(f"Expected 5D conv weight, got {keras_weight.shape}")
+        return torch.from_numpy(np.transpose(keras_weight, (4, 3, 0, 1, 2))).float()
     
-    def create_pytorch_model(self, model_info: Dict[str, Any], 
-                           sigma_smoothing: float = 0.5,
-                           flip_indices: Optional[np.ndarray] = None) -> SynthSegPyTorch:
-        """Create the equivalent PyTorch model."""
-        self.pytorch_model = SynthSegPyTorch(
-            n_classes=model_info['n_classes'],
-            sigma_smoothing=sigma_smoothing,
-            flip_indices=flip_indices
-        )
-        return self.pytorch_model
+    @staticmethod
+    def convert_norm_weight(keras_weight: np.ndarray) -> torch.Tensor:
+        """Convert normalization weights (1D tensors)"""
+        return torch.from_numpy(keras_weight).float()
     
-    def transfer_weights_direct(self, weight_mapping: Optional[Dict[str, str]] = None):
-        """
-        Transfer weights directly from TensorFlow to PyTorch.
-        This is the most accurate method but requires manual mapping.
-        """
-        if self.tf_model is None or self.pytorch_model is None:
-            raise ValueError("Both TensorFlow and PyTorch models must be loaded")
+    def transfer_to_pytorch_model(self, pytorch_model: nn.Module) -> Dict[str, bool]:
+        """Transfer weights to PyTorch model with exact mapping"""
+        transfer_log = {}
+        pytorch_state_dict = pytorch_model.state_dict()
+        new_state_dict = pytorch_state_dict.copy()
         
-        print("Transferring weights from TensorFlow to PyTorch...")
-        
-        # Default weight mapping for SynthSeg U-Net
-        if weight_mapping is None:
-            weight_mapping = self._create_default_weight_mapping()
-        
-        # Transfer weights
-        tf_weights = {}
-        for layer in self.tf_model.layers:
-            if layer.weights:
-                tf_weights[layer.name] = [w.numpy() for w in layer.weights]
-        
-        with torch.no_grad():
-            self._transfer_conv_weights(tf_weights)
-        
-        print("Weight transfer completed!")
-    
-    def _create_default_weight_mapping(self) -> Dict[str, str]:
-        """Create default weight mapping between TF and PyTorch layers."""
-        # This would need to be customized based on the specific model architecture
-        mapping = {}
-        
-        # Encoder mappings
-        for i in range(5):  # 5 levels
-            for j in range(2):  # 2 convs per level
-                tf_name = f"unet_conv{i}_{j}"
-                pt_name = f"encoder.downs.{i}.block.{j*2}"  # *2 because of activation layers
-                mapping[tf_name] = pt_name
-        
-        # Decoder mappings
-        for i in range(4):  # 4 decoder levels
-            for j in range(2):  # 2 convs per level
-                tf_name = f"unet_upconv{i}_{j}"
-                pt_name = f"decoder.convs.{i}.block.{j*2}"
-                mapping[tf_name] = pt_name
-        
-        # Final output layer
-        mapping["unet_prediction"] = "decoder.out"
-        
-        return mapping
-    
-    def _transfer_conv_weights(self, tf_weights: Dict[str, List[np.ndarray]]):
-        """Transfer convolutional layer weights."""
-        # This is a simplified version - would need to be expanded for full compatibility
-        pytorch_state_dict = self.pytorch_model.state_dict()
+        if self.verbose:
+            print("\n" + "="*80)
+            print("🔄 STARTING WEIGHT TRANSFER")
+            print("="*80)
         
         # Transfer encoder weights
-        encoder_layer_idx = 0
-        for level in range(5):
-            for conv in range(2):
-                # Find corresponding TF layer
-                tf_layer_name = None
-                for name in tf_weights.keys():
-                    if f"conv{level}_{conv}" in name and "unet" in name:
-                        tf_layer_name = name
-                        break
+        self._transfer_encoder_weights(new_state_dict, transfer_log)
+        
+        # Transfer decoder weights  
+        self._transfer_decoder_weights(new_state_dict, transfer_log)
+        
+        # Transfer final layer
+        self._transfer_final_layer(new_state_dict, transfer_log)
+        
+        # Load the new state dict
+        try:
+            pytorch_model.load_state_dict(new_state_dict, strict=False)
+            successful = sum(transfer_log.values())
+            total = len(transfer_log)
+            if self.verbose:
+                print(f"\n✅ Weight transfer complete: {successful}/{total} layers transferred")
+                self._print_transfer_summary(transfer_log)
+        except Exception as e:
+            print(f"❌ Error loading state dict: {e}")
+            raise
+        
+        return transfer_log
+    
+    def _transfer_encoder_weights(self, state_dict: Dict, transfer_log: Dict):
+        """Transfer encoder weights with exact SynthSeg mapping"""
+        if self.verbose:
+            print("\n🔵 Transferring ENCODER weights...")
+        
+        for level in range(5):  # levels 0-4
+            for conv_idx in range(2):  # 2 convs per level
                 
-                if tf_layer_name and tf_weights[tf_layer_name]:
-                    tf_kernel, tf_bias = tf_weights[tf_layer_name]
+                # === CONVOLUTION WEIGHTS ===
+                synthseg_conv_key = f"unet_conv_downarm_{level}_{conv_idx}/unet_conv_downarm_{level}_{conv_idx}/kernel:0"
+                pytorch_conv_key = f"encoder.downs.{level}.block.{conv_idx*3}.weight"
+                
+                if synthseg_conv_key in self.keras_weights and pytorch_conv_key in state_dict:
+                    try:
+                        keras_weight = self.keras_weights[synthseg_conv_key]
+                        pytorch_weight = self.convert_conv3d_weight(keras_weight)
+                        
+                        expected_shape = state_dict[pytorch_conv_key].shape
+                        if pytorch_weight.shape == expected_shape:
+                            state_dict[pytorch_conv_key] = pytorch_weight
+                            transfer_log[pytorch_conv_key] = True
+                            if self.verbose:
+                                print(f"  ✅ Enc Conv {level}-{conv_idx}: {keras_weight.shape} → {pytorch_weight.shape}")
+                        else:
+                            transfer_log[pytorch_conv_key] = False
+                            if self.verbose:
+                                print(f"  ❌ Enc Conv {level}-{conv_idx}: Shape mismatch {pytorch_weight.shape} vs {expected_shape}")
+                    except Exception as e:
+                        transfer_log[pytorch_conv_key] = False
+                        if self.verbose:
+                            print(f"  ❌ Enc Conv {level}-{conv_idx}: Error {e}")
+                else:
+                    transfer_log[pytorch_conv_key] = False
+                    if self.verbose:
+                        print(f"  ❌ Enc Conv {level}-{conv_idx}: Key not found")
+                
+                # === NORMALIZATION WEIGHTS ===
+                if conv_idx == 1:  # Transfer norm after second conv
+                    synthseg_gamma_key = f"unet_bn_down_{level}/unet_bn_down_{level}/gamma:0"
+                    synthseg_beta_key = f"unet_bn_down_{level}/unet_bn_down_{level}/beta:0"
                     
-                    # Convert TF weights (DHWIO) to PyTorch format (OIDHW)
-                    pt_kernel = np.transpose(tf_kernel, (4, 3, 0, 1, 2))
+                    pytorch_norm_weight_key = f"encoder.downs.{level}.block.{conv_idx*3+1}.weight"
+                    pytorch_norm_bias_key = f"encoder.downs.{level}.block.{conv_idx*3+1}.bias"
                     
-                    # Get PyTorch layer names
-                    pt_weight_name = f"encoder.downs.{level}.block.{conv*2}.weight"
-                    pt_bias_name = f"encoder.downs.{level}.block.{conv*2}.bias"
+                    # Transfer gamma → InstanceNorm weight
+                    if synthseg_gamma_key in self.keras_weights and pytorch_norm_weight_key in state_dict:
+                        try:
+                            gamma_weight = self.convert_norm_weight(self.keras_weights[synthseg_gamma_key])
+                            state_dict[pytorch_norm_weight_key] = gamma_weight
+                            transfer_log[pytorch_norm_weight_key] = True
+                            if self.verbose:
+                                print(f"  ✅ Enc Norm {level} γ→weight: {gamma_weight.shape}")
+                        except Exception as e:
+                            transfer_log[pytorch_norm_weight_key] = False
+                            if self.verbose:
+                                print(f"  ❌ Enc Norm {level} γ: {e}")
+                    else:
+                        transfer_log[pytorch_norm_weight_key] = False
                     
-                    if pt_weight_name in pytorch_state_dict:
-                        pytorch_state_dict[pt_weight_name].copy_(torch.from_numpy(pt_kernel))
-                    if pt_bias_name in pytorch_state_dict:
-                        pytorch_state_dict[pt_bias_name].copy_(torch.from_numpy(tf_bias))
-        
-        # Similar process for decoder weights would go here...
+                    # Transfer beta → InstanceNorm bias
+                    if synthseg_beta_key in self.keras_weights and pytorch_norm_bias_key in state_dict:
+                        try:
+                            beta_weight = self.convert_norm_weight(self.keras_weights[synthseg_beta_key])
+                            state_dict[pytorch_norm_bias_key] = beta_weight
+                            transfer_log[pytorch_norm_bias_key] = True
+                            if self.verbose:
+                                print(f"  ✅ Enc Norm {level} β→bias: {beta_weight.shape}")
+                        except Exception as e:
+                            transfer_log[pytorch_norm_bias_key] = False
+                            if self.verbose:
+                                print(f"  ❌ Enc Norm {level} β: {e}")
+                    else:
+                        transfer_log[pytorch_norm_bias_key] = False
     
-    def convert_via_onnx(self, onnx_path: str = "temp_model.onnx") -> SynthSegPyTorch:
-        """
-        Convert model via ONNX intermediate format.
-        This is less accurate but more automated.
-        """
-        if not ONNX_AVAILABLE:
-            raise ImportError("ONNX conversion tools are required")
+    def _transfer_decoder_weights(self, state_dict: Dict, transfer_log: Dict):
+        """Transfer decoder weights with exact SynthSeg mapping"""
+        if self.verbose:
+            print("\n🔴 Transferring DECODER weights...")
         
-        if self.tf_model is None:
-            raise ValueError("TensorFlow model not loaded")
+        # SynthSeg uparm levels 5-8 map to PyTorch levels 0-3
+        decoder_mapping = [(5, 0), (6, 1), (7, 2), (8, 3)]
         
-        print("Converting via ONNX...")
+        for synthseg_level, pytorch_level in decoder_mapping:
+            for conv_idx in range(2):
+                
+                # === DECODER CONVOLUTION WEIGHTS ===
+                synthseg_conv_key = f"unet_conv_uparm_{synthseg_level}_{conv_idx}/unet_conv_uparm_{synthseg_level}_{conv_idx}/kernel:0"
+                pytorch_conv_key = f"seg_head.convs.{pytorch_level}.block.{conv_idx*3}.weight"
+                
+                if synthseg_conv_key in self.keras_weights and pytorch_conv_key in state_dict:
+                    try:
+                        keras_weight = self.keras_weights[synthseg_conv_key]
+                        pytorch_weight = self.convert_conv3d_weight(keras_weight)
+                        
+                        expected_shape = state_dict[pytorch_conv_key].shape
+                        if pytorch_weight.shape == expected_shape:
+                            state_dict[pytorch_conv_key] = pytorch_weight
+                            transfer_log[pytorch_conv_key] = True
+                            if self.verbose:
+                                print(f"  ✅ Dec Conv {synthseg_level}-{conv_idx}: {keras_weight.shape} → {pytorch_weight.shape}")
+                        else:
+                            transfer_log[pytorch_conv_key] = False
+                            if self.verbose:
+                                print(f"  ❌ Dec Conv {synthseg_level}-{conv_idx}: Shape mismatch {pytorch_weight.shape} vs {expected_shape}")
+                    except Exception as e:
+                        transfer_log[pytorch_conv_key] = False
+                        if self.verbose:
+                            print(f"  ❌ Dec Conv {synthseg_level}-{conv_idx}: Error {e}")
+                else:
+                    transfer_log[pytorch_conv_key] = False
+                    if self.verbose:
+                        print(f"  ❌ Dec Conv {synthseg_level}-{conv_idx}: Key not found")
+                
+                # === DECODER NORMALIZATION WEIGHTS ===
+                if conv_idx == 1:  # Transfer norm after second conv
+                    bn_level = pytorch_level  # bn_up levels 0-3 map to pytorch levels 0-3
+                    
+                    synthseg_gamma_key = f"unet_bn_up_{bn_level}/unet_bn_up_{bn_level}/gamma:0"
+                    synthseg_beta_key = f"unet_bn_up_{bn_level}/unet_bn_up_{bn_level}/beta:0"
+                    
+                    pytorch_norm_weight_key = f"seg_head.convs.{pytorch_level}.block.{conv_idx*3+1}.weight"
+                    pytorch_norm_bias_key = f"seg_head.convs.{pytorch_level}.block.{conv_idx*3+1}.bias"
+                    
+                    # Transfer gamma → InstanceNorm weight
+                    if synthseg_gamma_key in self.keras_weights and pytorch_norm_weight_key in state_dict:
+                        try:
+                            gamma_weight = self.convert_norm_weight(self.keras_weights[synthseg_gamma_key])
+                            state_dict[pytorch_norm_weight_key] = gamma_weight
+                            transfer_log[pytorch_norm_weight_key] = True
+                            if self.verbose:
+                                print(f"  ✅ Dec Norm {bn_level} γ→weight: {gamma_weight.shape}")
+                        except Exception as e:
+                            transfer_log[pytorch_norm_weight_key] = False
+                            if self.verbose:
+                                print(f"  ❌ Dec Norm {bn_level} γ: {e}")
+                    else:
+                        transfer_log[pytorch_norm_weight_key] = False
+                    
+                    # Transfer beta → InstanceNorm bias
+                    if synthseg_beta_key in self.keras_weights and pytorch_norm_bias_key in state_dict:
+                        try:
+                            beta_weight = self.convert_norm_weight(self.keras_weights[synthseg_beta_key])
+                            state_dict[pytorch_norm_bias_key] = beta_weight
+                            transfer_log[pytorch_norm_bias_key] = True
+                            if self.verbose:
+                                print(f"  ✅ Dec Norm {bn_level} β→bias: {beta_weight.shape}")
+                        except Exception as e:
+                            transfer_log[pytorch_norm_bias_key] = False
+                            if self.verbose:
+                                print(f"  ❌ Dec Norm {bn_level} β: {e}")
+                    else:
+                        transfer_log[pytorch_norm_bias_key] = False
         
-        # Convert TF model to ONNX
-        onnx_model, _ = tf2onnx.convert.from_keras(self.tf_model)
-        
-        # Save ONNX model temporarily
-        onnx.save(onnx_model, onnx_path)
-        
-        # Convert ONNX to PyTorch
-        onnx_model_loaded = onnx.load(onnx_path)
-        pytorch_model_onnx = ConvertModel(onnx_model_loaded)
-        
-        # Clean up temporary file
-        if os.path.exists(onnx_path):
-            os.remove(onnx_path)
-        
-        print("ONNX conversion completed!")
-        return pytorch_model_onnx
+        # Skip upsampling layers (different architecture)
+        for level in range(4):
+            ups_key = f"seg_head.ups.{level}.weight"
+            if ups_key in self.pytorch_model.state_dict():
+                transfer_log[ups_key] = False
+                if self.verbose and level == 0:
+                    print(f"  ⚠️  Upsampling layers use random init (architecture difference)")
     
-    def validate_conversion(self, test_input: np.ndarray, tolerance: float = 1e-5) -> bool:
-        """
-        Validate that the converted model produces the same outputs as the original.
-        """
-        if self.tf_model is None or self.pytorch_model is None:
-            raise ValueError("Both models must be loaded for validation")
+    def _transfer_final_layer(self, state_dict: Dict, transfer_log: Dict):
+        """Transfer final segmentation layer"""
+        if self.verbose:
+            print("\n🟡 Transferring FINAL LAYER...")
         
-        print("Validating conversion...")
+        synthseg_final_kernel = "unet_likelihood/unet_likelihood/kernel:0"
+        synthseg_final_bias = "unet_likelihood/unet_likelihood/bias:0"
         
-        # TensorFlow prediction
-        tf_output = self.tf_model.predict(test_input)
+        pytorch_final_weight = "seg_head.out.weight"
+        pytorch_final_bias = "seg_head.out.bias"
         
-        # PyTorch prediction
-        self.pytorch_model.eval()
-        with torch.no_grad():
-            torch_input = torch.from_numpy(test_input).float()
-            torch_output = self.pytorch_model(torch_input).numpy()
-        
-        # Compare outputs
-        diff = np.abs(tf_output - torch_output)
-        max_diff = np.max(diff)
-        mean_diff = np.mean(diff)
-        
-        print(f"Max difference: {max_diff}")
-        print(f"Mean difference: {mean_diff}")
-        
-        success = max_diff < tolerance
-        if success:
-            print("✅ Validation successful! Outputs match within tolerance.")
+        # Transfer final conv weight
+        if synthseg_final_kernel in self.keras_weights and pytorch_final_weight in state_dict:
+            try:
+                keras_weight = self.keras_weights[synthseg_final_kernel]
+                pytorch_weight = self.convert_conv3d_weight(keras_weight)
+                
+                expected_shape = state_dict[pytorch_final_weight].shape
+                if pytorch_weight.shape == expected_shape:
+                    state_dict[pytorch_final_weight] = pytorch_weight
+                    transfer_log[pytorch_final_weight] = True
+                    if self.verbose:
+                        print(f"  ✅ Final conv weight: {keras_weight.shape} → {pytorch_weight.shape}")
+                else:
+                    transfer_log[pytorch_final_weight] = False
+                    if self.verbose:
+                        print(f"  ⚠️  Final conv: Shape mismatch {pytorch_weight.shape} vs {expected_shape}")
+                        print(f"      SynthSeg: {keras_weight.shape[-1]} classes, PyTorch: {expected_shape[0]} classes")
+                        print(f"      Using random initialization for final layer")
+            except Exception as e:
+                transfer_log[pytorch_final_weight] = False
+                if self.verbose:
+                    print(f"  ❌ Final conv weight: {e}")
         else:
-            print("❌ Validation failed! Outputs differ significantly.")
+            transfer_log[pytorch_final_weight] = False
         
-        return success
+        # Transfer final conv bias
+        if synthseg_final_bias in self.keras_weights and pytorch_final_bias in state_dict:
+            try:
+                keras_bias = self.keras_weights[synthseg_final_bias]
+                pytorch_bias = self.convert_norm_weight(keras_bias)
+                
+                expected_shape = state_dict[pytorch_final_bias].shape
+                if pytorch_bias.shape == expected_shape:
+                    state_dict[pytorch_final_bias] = pytorch_bias
+                    transfer_log[pytorch_final_bias] = True
+                    if self.verbose:
+                        print(f"  ✅ Final conv bias: {keras_bias.shape} → {pytorch_bias.shape}")
+                else:
+                    transfer_log[pytorch_final_bias] = False
+                    if self.verbose:
+                        print(f"  ⚠️  Final conv bias: Shape mismatch")
+            except Exception as e:
+                transfer_log[pytorch_final_bias] = False
+                if self.verbose:
+                    print(f"  ❌ Final conv bias: {e}")
+        else:
+            transfer_log[pytorch_final_bias] = False
     
-    def save_pytorch_model(self, output_path: str):
-        """Save the converted PyTorch model."""
-        if self.pytorch_model is None:
-            raise ValueError("PyTorch model not created")
+    def _print_transfer_summary(self, transfer_log: Dict):
+        """Print detailed transfer summary"""
+        successful = [k for k, v in transfer_log.items() if v]
+        failed = [k for k, v in transfer_log.items() if not v]
         
-        torch.save({
-            'model_state_dict': self.pytorch_model.state_dict(),
-            'model_config': {
-                'n_classes': self.pytorch_model.n_classes,
-                'n_levels': 5,
-                'n_convs': 2,
-                'init_feat': 24,
-                'feat_mult': 2,
-                'activation': 'elu'
-            }
-        }, output_path)
+        print(f"\n📊 TRANSFER SUMMARY:")
+        print(f"✅ Successfully transferred: {len(successful)}")
+        print(f"❌ Failed/Skipped: {len(failed)}")
         
-        print(f"PyTorch model saved to {output_path}")
+        # Component breakdown
+        encoder_success = [k for k in successful if 'encoder' in k]
+        decoder_success = [k for k in successful if 'seg_head' in k and 'out' not in k]
+        final_success = [k for k in successful if 'seg_head.out' in k]
+        ups_failed = [k for k in failed if 'ups' in k]
+        age_head = [k for k in transfer_log.keys() if 'age_head' in k]
+        
+        print(f"\n📈 Component breakdown:")
+        print(f"  🔵 Encoder: {len(encoder_success)} layers transferred")
+        print(f"  🔴 Decoder: {len(decoder_success)} layers transferred")
+        print(f"  🟡 Final layer: {len(final_success)} layers transferred")
+        print(f"  ⚪ Upsampling: {len(ups_failed)} layers using random init (expected)")
+        print(f"  🧠 Age head: {len(age_head)} layers using random init (expected)")
+        
+        if self.verbose:
+            failed_other = [k for k in failed if 'ups' not in k and 'age_head' not in k]
+            if failed_other:
+                print(f"\n⚠️  Unexpected failures:")
+                for layer in sorted(failed_other):
+                    print(f"   • {layer}")
 
 
-def preprocess_image_tf_style(image: np.ndarray) -> np.ndarray:
+def load_synthseg_pretrained_weights(model: nn.Module, synthseg_path: str, 
+                                   show_architecture: bool = True,
+                                   verbose: bool = True) -> nn.Module:
     """
-    Preprocess image to match SynthSeg's TensorFlow preprocessing exactly.
+    Load SynthSeg weights into PyTorch model with architecture visualization
+    
+    Args:
+        model: PyTorch MultiTaskBrainAge model
+        synthseg_path: Path to SynthSeg .h5 file
+        show_architecture: Whether to show detailed architecture comparison
+        verbose: Print detailed transfer info
+    
+    Returns:
+        Model with transferred weights
     """
-    # Normalize to [0, 1] using SynthSeg's percentile method
-    min_val = np.percentile(image, 0.5)
-    max_val = np.percentile(image, 99.5)
-    image = np.clip(image, min_val, max_val)
-    image = (image - min_val) / (max_val - min_val + 1e-15)
-    
-    return image
-
-
-def postprocess_output_tf_style(output: np.ndarray, labels_segmentation: np.ndarray) -> np.ndarray:
-    """
-    Postprocess output to match SynthSeg's TensorFlow postprocessing.
-    """
-    # Get hard segmentation
-    seg = labels_segmentation[output.argmax(-1).astype('int32')].astype('int32')
-    
-    return seg
-
-
-def main():
-    parser = argparse.ArgumentParser(description="Convert SynthSeg TensorFlow model to PyTorch")
-    parser.add_argument("--tf_model_path", required=True, help="Path to TensorFlow model (.h5)")
-    parser.add_argument("--output_path", required=True, help="Output path for PyTorch model (.pth)")
-    parser.add_argument("--method", choices=["direct", "onnx"], default="direct", 
-                       help="Conversion method")
-    parser.add_argument("--sigma_smoothing", type=float, default=0.5, 
-                       help="Gaussian smoothing sigma")
-    parser.add_argument("--validate", action="store_true", 
-                       help="Validate conversion with test input")
-    parser.add_argument("--test_shape", nargs=3, type=int, default=[64, 64, 64],
-                       help="Test input shape for validation")
-    
-    args = parser.parse_args()
-    
-    # Create converter
-    converter = SynthSegConverter()
+    if not Path(synthseg_path).exists():
+        print(f"⚠️  SynthSeg weights not found at {synthseg_path}")
+        print("   Using random initialization for all layers")
+        return model
     
     try:
-        # Load TensorFlow model
-        converter.load_tensorflow_model(args.tf_model_path)
+        print(f"\n🚀 Loading SynthSeg pretrained weights from {Path(synthseg_path).name}")
         
-        # Extract model information
-        model_info = converter.extract_model_info()
-        print(f"Model info: {model_info['n_classes']} classes")
+        transfer = SynthSegWeightTransfer(synthseg_path, verbose=verbose)
         
-        # Create PyTorch model
-        converter.create_pytorch_model(model_info, sigma_smoothing=args.sigma_smoothing)
+        if show_architecture:
+            transfer.show_architecture_comparison(model)
         
-        # Convert weights
-        if args.method == "direct":
-            converter.transfer_weights_direct()
-        elif args.method == "onnx":
-            converter.pytorch_model = converter.convert_via_onnx()
+        transfer_log = transfer.transfer_to_pytorch_model(model)
         
-        # Validate if requested
-        if args.validate:
-            test_input = np.random.randn(1, 1, *args.test_shape).astype(np.float32)
-            test_input = preprocess_image_tf_style(test_input)
-            converter.validate_conversion(test_input)
+        # Calculate success rates
+        total = len(transfer_log)
+        successful = sum(transfer_log.values())
+        success_rate = successful / total if total > 0 else 0
         
-        # Save PyTorch model
-        converter.save_pytorch_model(args.output_path)
+        # Component success rates
+        encoder_layers = [k for k in transfer_log.keys() if 'encoder' in k]
+        encoder_success = sum(transfer_log[k] for k in encoder_layers)
+        encoder_rate = encoder_success / len(encoder_layers) if encoder_layers else 0
         
-        print(f"✅ Conversion completed successfully!")
-        print(f"PyTorch model saved to: {args.output_path}")
+        decoder_layers = [k for k in transfer_log.keys() if 'seg_head' in k and 'out' not in k and 'ups' not in k]
+        decoder_success = sum(transfer_log[k] for k in decoder_layers)
+        decoder_rate = decoder_success / len(decoder_layers) if decoder_layers else 0
+        
+        print(f"\n🎯 FINAL RESULTS:")
+        print(f"   Overall: {success_rate:.1%} ({successful}/{total} layers)")
+        print(f"   Encoder: {encoder_rate:.1%} ({encoder_success}/{len(encoder_layers)} layers)")
+        print(f"   Decoder: {decoder_rate:.1%} ({decoder_success}/{len(decoder_layers)} layers)")
+        print(f"   ✨ Model ready for training with SynthSeg features!")
+        
+        return model
         
     except Exception as e:
-        print(f"❌ Conversion failed: {str(e)}")
-        sys.exit(1)
+        print(f"❌ Failed to transfer SynthSeg weights: {e}")
+        print("   Continuing with random initialization...")
+        import traceback
+        if verbose:
+            traceback.print_exc()
+        return model
+
+
+# Utility functions for standalone usage
+def inspect_synthseg_model(h5_path: str):
+    """Standalone function to inspect SynthSeg model structure"""
+    print(f"Inspecting SynthSeg model: {h5_path}")
+    print("="*80)
+    
+    transfer = SynthSegWeightTransfer(h5_path, verbose=True)
+    
+    # Create a dummy PyTorch model for comparison
+    try:
+        from brain_age_pred.models.multi_head import MultiTaskBrainAge
+        dummy_model = MultiTaskBrainAge(n_classes=33)  # SynthSeg has 33 classes
+        transfer.show_architecture_comparison(dummy_model)
+    except ImportError:
+        print("Could not import MultiTaskBrainAge model for comparison")
+        print("Available SynthSeg weights:")
+        for name, weight in transfer.keras_weights.items():
+            if 'kernel' in name or 'gamma' in name or 'beta' in name:
+                print(f"  {name}: {weight.shape}")
 
 
 if __name__ == "__main__":
-    main()
+    # Example usage
+    synthseg_path = "/Users/andrasjoos/Documents/AI_masters/Thesis/thesis_project/OtherRepos/SynthSeg/models/synthseg_2.0.h5"
+    
+    # Option 1: Just inspect the model
+    inspect_synthseg_model(synthseg_path)
+    
+    # Option 2: Transfer weights (uncomment to use)
+    # from brain_age_pred.models.multi_head import MultiTaskBrainAge
+    # model = MultiTaskBrainAge(n_classes=33)
+    # model = load_synthseg_pretrained_weights(model, synthseg_path, show_architecture=True)
