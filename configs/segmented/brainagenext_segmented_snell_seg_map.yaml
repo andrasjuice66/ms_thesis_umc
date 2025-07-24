@@ -1,0 +1,82 @@
+# ────────────────────────────  DATA  ──────────────────────────── #
+data:
+  train_csv: "/home/ajoos/brain_age_pred/data/labels/train.csv"
+  val_csv:   "/home/ajoos/brain_age_pred/data/labels/val.csv"
+  test_csv:  "/home/ajoos/brain_age_pred/data/labels/test_balanced.csv"
+  segmented_data_dir: "/scratch-shared/ajoos/brain_age_segmented_converted/"   
+  real_data_dir: "/scratch-shared/ajoos/brain_age_segmented_converted/"   
+
+  image_key:  "image_path"
+  age_key:    "age"
+  weight_key: "sample_weight"             
+
+  # loading / caching
+  cache_dir: "data/cache"
+  cache_mode: "memory"   
+  cache_size: 0            
+  shared_cache: 0
+  preload: true
+  num_workers: 8
+  pin_memory: false
+  pin_memory_device: ""
+  persistent_workers: false
+  prefetch_factor: 4
+  target_shape: [160, 192, 160]            # (D,H,W) after optional resize
+  age_min: 20
+  age_max: 80
+
+# ───────────────────────────  MODEL  ──────────────────────────── #
+model:
+  type: "brainagenext"                             # sfcn | resnet3d | efficientnet3d
+  in_channels: 15
+  dropout_rate: 0.5
+  use_attention: false                   
+  checkpoint: null #"/home/ajoos/brain_age_pred/output/checkpoints/sfcn_20250522_104159/sfcn_20250522_104159_epoch057.pt"
+
+# ──────────────────────────  TRAINING  ────────────────────────── #
+training:
+  batch_size: 4
+  epochs: 150
+
+  # optimiser & LR
+  learning_rate: 0.001 #0.002193
+  weight_decay:  0.0
+  optimizer: "adamw"                       # adam | adamw | sgd | rmsprop | radam | novograd
+  scheduler: "step"                      # cosine | plateau | onecycle | step | none
+  scheduler_params:
+    T_max: 100
+    eta_min: 0.00001
+    epochs: 60
+    steps_per_epoch: 534
+
+    step_size: 30
+    gamma: 0.3
+
+  # losses
+  loss: "mse"                        # mse | mae | huber | huber_mae | weighted_mse
+  loss_params:
+    delta: 1.0
+    mae_weight: 0.5
+
+  # misc
+  early_stopping_patience: 30
+  gradient_accumulation_steps: 1
+  use_amp: true                            # mixed precision if CUDA present
+
+# ────────────────────────────  OUTPUT  ────────────────────────── #
+output:
+  output_dir: "C:/Projects/thesis_project/brain_age_pred/output"
+  checkpoint_dir: "checkpoints"
+  log_dir: "logs"
+  experiment_name: brainagenext_seg_map #"brain_age_with_tumors"                   # auto-generate if left null
+
+# ─────────────────────────────  W&B  ──────────────────────────── #
+wandb:
+  use_wandb: true                         # still requires $WANDB_API env-var
+  project: "brain_age_synth"
+
+  entity: null
+
+# ───────────────────────── MISCELLANEOUS ───────────────────────── #
+seed: 42
+device: "cuda"                              # cuda if available, else cpu
