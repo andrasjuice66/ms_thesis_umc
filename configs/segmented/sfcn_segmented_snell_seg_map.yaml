@@ -3,6 +3,7 @@ data:
   train_csv: "/home/ajoos/brain_age_pred/data/labels/train.csv"
   val_csv:   "/home/ajoos/brain_age_pred/data/labels/val.csv"
   test_csv:  "/home/ajoos/brain_age_pred/data/labels/test_balanced.csv"
+
   segmented_data_dir: "/scratch-shared/ajoos/brain_age_segmented_converted/"   
   real_data_dir: "/scratch-shared/ajoos/brain_age_segmented_converted/"   
 
@@ -39,7 +40,7 @@ training:
   epochs: 150
 
   # optimiser & LR
-  learning_rate: 0.002 #0.002193
+  learning_rate: 0.0002 #0.002193
   weight_decay:  0.0
   optimizer: "adamw"                       # adam | adamw | sgd | rmsprop | radam | novograd
   scheduler: "step"                      # cosine | plateau | onecycle | step | none
@@ -65,7 +66,7 @@ training:
 
 # ────────────────────────────  OUTPUT  ────────────────────────── #
 output:
-  output_dir: "C:/Projects/thesis_project/brain_age_pred/output"
+  output_dir: "/home/ajoos/brain_age_pred/output"
   checkpoint_dir: "checkpoints"
   log_dir: "logs"
   experiment_name: sfcn_class_seg_map #"brain_age_with_tumors"                   # auto-generate if left null

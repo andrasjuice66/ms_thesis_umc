@@ -22,5 +22,6 @@ cd $HOME/brain_age_pred/data/preprocess
 
 # 3) execute the conversion script
 python convert_nifti_to_npy.py --input /scratch-shared/ajoos/brain_age_segmented/IXI --output /scratch-shared/ajoos/brain_age_segmented_converted/IXI 
+python convert_nifti_to_npy.py --input /scratch-shared/ajoos/brain_age_preprocessed/IXI --output /scratch-shared/ajoos/brain_age_preprocessed_converted/IXI 
 
 #python check_normalistation.py /scratch-shared/ajoos/brain_age_preprocessed_converted -r
