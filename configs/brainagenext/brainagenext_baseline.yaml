@@ -28,7 +28,7 @@ data:
 model:
   type: "brainagenext"                             # sfcn | resnet3d | efficientnet3d
   in_channels: 1
-  dropout_rate: 0.2
+  dropout_rate: 0.2 
   use_attention: false                   
   checkpoint: null #"/home/ajoos/brain_age_pred/output/checkpoints/sfcn_20250522_104159/sfcn_20250522_104159_epoch057.pt"
 
@@ -39,7 +39,7 @@ model:
 # accepted by the new DomainRandomizer class.
 # -------------------------------------------------------------------------
 domain_randomization:
-  use_domain_randomization: true
+  use_domain_randomization: false
   use_tumor_simulation: false
 
   # Progressive randomization parameters
@@ -123,43 +123,6 @@ domain_randomization:
   spike_intensity: [0.1, 0.6]  # Intensity of spikes
   ghost_num: [2, 10]  # Number of ghosts
   
-  # Tumor simulation configuration
-  tumor_config:
-
-    # Age-based segmentation
-    use_age_based_segmentation: true
-    segmentation_paths:
-      young: "brain_age_pred/data/segmentations/seg_18_40.nii.npy"
-      middle: "brain_age_pred/data/segmentations/seg_40_60.nii.npy"
-      old: "brain_age_pred/data/segmentations/seg_60_85.nii.npy"
-    age_ranges:
-      young: [18, 40]
-      middle: [40, 60]
-      old: [60, 85]
-    
-    # Tumor generation parameters
-    perlin_res: [2, 2, 2]  # Perlin noise resolution
-    mask_percentile_min: 90.0
-    mask_percentile_max: 99.6
-    tumor_size_factor_range: [0.5, 2.0]  # Random size scaling
-    pathol_thres: 0.2
-    min_tumor_size: 100
-    
-    # Fluid dynamics (makes tumors more realistic)
-    use_fluid_dynamics: true
-    V_multiplier: 500.0
-    dt: 0.1
-    min_nt: 10
-    max_nt: 20
-    integ_method: 'dopri5'
-    bc: 'neumann'
-    
-    # Intensity parameters
-    modality: 'T1'  # Default modality if not in data
-    intensity_variation: 0.3
-    
-    # Brain mask parameters (fallback when segmentation fails)
-    brain_threshold: 0.1
 
 # ──────────────────────────  TRAINING  ────────────────────────── #
 training:
@@ -168,7 +131,6 @@ training:
 
   # optimiser & LR
   learning_rate: 0.001 #0.002193
-  weight_decay:  0.001
   optimizer: "adamw"                       # adam | adamw | sgd | rmsprop | radam | novograd
   scheduler: "step"                      # cosine | plateau | onecycle | step | none
   scheduler_params:

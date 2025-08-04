@@ -17,7 +17,7 @@ model:
 # ────────────────────── BRAIN GENERATOR ───────────────────────── #
 # These settings control the on-the-fly generation of synthetic MRIs
 brain_generator:
-  # Prior distribution for GMM sampling (intensities)
+  # Prior   istribution for GMM sampling (intensities)
   distribution: "uniform"  # "normal" or "uniform"
   mean_loc: 125.0          # Mid-point of distribution for means
   mean_scale: 125.0        # Half-range of distribution for means
