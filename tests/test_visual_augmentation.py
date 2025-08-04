@@ -42,7 +42,7 @@ from monai.transforms import (
 # ====================================================================
 
 # Path to your test image (supports .nii.gz, .nii, or .npy files)
-HARDCODED_IMAGE_PATH = "/scratch-shared/ajoos/OpenNeuro/BoldVariability/sub-085_FLAIR.nii.npy"
+HARDCODED_IMAGE_PATH = "/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed/CoRR/sub-0003002_ses-1_run-1_T1w.nii.gz"
 
 # Alternative examples (uncomment the one you want to use):
 # HARDCODED_IMAGE_PATH = "C:/Projects/thesis_project/Data/brain_age_preprocessed/CamCAN/sub-CC110033_T1w.nii.gz"
