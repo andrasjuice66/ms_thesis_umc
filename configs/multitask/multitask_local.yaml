@@ -14,7 +14,7 @@ data:
 # Model is hard-coded to MultiTaskBrainAge in train_multitask.py
 # The architecture is based on SynthSeg's U-Net.
 model:
-  checkpoint: null # Optional path to a checkpoint to resume training
+  checkpoint: "/mnt/c/Projects/thesis_project/output/multitask/checkpoints/multitask_synth_v1/multitask_synth_v1_best_mae.pt" # Optional path to a checkpoint to resume training
 
 # ────────────────────── BRAIN GENERATOR ───────────────────────── #
 # These settings control the on-the-fly generation of synthetic MRIs
@@ -84,8 +84,10 @@ brain_generator:
   tumor_use_fluid_dynamics: True,        
 # ──────────────────────────  TRAINING  ────────────────────────── #
 training:
-  batch_size: 1
-  epochs: 150
+  age_only_mode: true
+  freeze_encoder: true  # Set to true for age-head-only fine-tuning
+  batch_size: 1  # Can often use larger batches since fewer params to update
+  epochs: 50      # Might need fewer epochs
 
   # Optimiser & LR Scheduler
   optimizer:
@@ -112,7 +114,7 @@ training:
 # ────────────────────────────  OUTPUT  ────────────────────────── #
 output:
   output_dir: "./output/multitask"
-  experiment_name: "multitask_synth_v1"
+  experiment_name: "multitask_synth_head_only"
 
 # ─────────────────────────────  W&B  ──────────────────────────── #
 wandb:

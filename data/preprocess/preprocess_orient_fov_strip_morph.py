@@ -317,8 +317,8 @@ if __name__ == "__main__":
     # out_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed/AOMIC_ID1000_")
     # main(data_root, out_root)
 
-    data_root = Path("/mnt/c/Projects/thesis_project/Data/PanGen")
-    out_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed/PanGen_")
+    data_root = Path("/mnt/c/Projects/thesis_project/Data/MovementRelated")
+    out_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed/MovementRelated")
     main(data_root, out_root)
 
 

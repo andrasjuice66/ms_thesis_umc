@@ -81,6 +81,64 @@ class MultiTaskTrainer:
         self.model.to(self.device)
         self.logger.info(f"Trainer initialized for experiment: {self.exp_name}")
 
+    def switch_to_age_only_mode(self, freeze_encoder=False):
+        """Switch from multitask training to age-only fine-tuning.
+        
+        Args:
+            freeze_encoder: If True, freeze encoder too (only age head trainable)
+                           If False, keep encoder trainable (encoder + age head trainable)
+        """
+        self.logger.info("Switching to age-only training mode...")
+        
+        # Always freeze segmentation head parameters
+        for param in self.model.seg_head.parameters():
+            param.requires_grad = False
+        
+        params_to_optimize = []
+        
+        if freeze_encoder:
+            # Freeze encoder too - only age head trainable
+            for param in self.model.encoder.parameters():
+                param.requires_grad = False
+            self.logger.info("Encoder frozen - only age head will be fine-tuned")
+        else:
+            # Keep encoder trainable
+            params_to_optimize.extend(self.model.encoder.parameters())
+            self.logger.info("Encoder trainable - encoder + age head will be fine-tuned")
+        
+        # Always add age head parameters (this is what we want to fine-tune)
+        params_to_optimize.extend(self.model.age_head.parameters())
+        
+        # Only keep age uncertainty parameter (remove seg uncertainty)
+        params_to_optimize.append(self.log_var_age)
+        
+        # Recreate optimizer and scheduler with only trainable parameters
+        self.optimizer = get_optimizer(params_to_optimize, **self.cfg.get("optimizer", {}))
+        self.scheduler = get_scheduler(self.optimizer, **self.cfg.get("scheduler", {}))
+        
+        # Set flag for age-only mode
+        self.age_only_mode = True
+        
+        self.logger.info(f"Age-only mode activated. Optimizing {len(params_to_optimize)} parameters")
+        
+        # Log detailed parameter breakdown
+        total_params = sum(p.numel() for p in self.model.parameters())
+        trainable_params = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
+        frozen_params = total_params - trainable_params
+        
+        # Break down by component
+        encoder_params = sum(p.numel() for p in self.model.encoder.parameters())
+        seg_head_params = sum(p.numel() for p in self.model.seg_head.parameters())
+        age_head_params = sum(p.numel() for p in self.model.age_head.parameters())
+        
+        self.logger.info(f"Parameter breakdown:")
+        self.logger.info(f"  Total: {total_params:,}")
+        self.logger.info(f"  Encoder: {encoder_params:,} ({'frozen' if freeze_encoder else 'trainable'})")
+        self.logger.info(f"  Seg Head: {seg_head_params:,} (frozen)")
+        self.logger.info(f"  Age Head: {age_head_params:,} (trainable)")
+        self.logger.info(f"  Trainable: {trainable_params:,} ({100*trainable_params/total_params:.1f}%)")
+        self.logger.info(f"  Frozen: {frozen_params:,} ({100*frozen_params/total_params:.1f}%)")
+
     def _step(self, batch: Dict[str, torch.Tensor], train: bool = True):
         imgs = batch["image"].to(self.device)
         age_gts = batch["age"].float().to(self.device)
@@ -89,14 +147,20 @@ class MultiTaskTrainer:
         with autocast(device_type=self.device.type, enabled=self.use_amp):
             seg_logits, age_preds = self.model(imgs)
             
-            # Individual losses
+            # Always compute age loss
             age_loss = self.age_criterion(age_preds, age_gts)
-            seg_loss = self.seg_criterion(seg_logits, seg_gts)
-
-            # Uncertainty-weighted total loss
-            loss_age_weighted = torch.exp(-self.log_var_age) * age_loss + 0.5 * self.log_var_age
-            loss_seg_weighted = torch.exp(-self.log_var_seg) * seg_loss + 0.5 * self.log_var_seg
-            total_loss = loss_age_weighted.squeeze() + loss_seg_weighted.squeeze()
+            
+            # Check if we're in age-only mode
+            if hasattr(self, 'age_only_mode') and self.age_only_mode:
+                # Age-only training: just use age loss directly
+                total_loss = age_loss
+                seg_loss = torch.tensor(0.0, device=self.device)  # For logging only
+            else:
+                # Normal multitask training with uncertainty weighting
+                seg_loss = self.seg_criterion(seg_logits, seg_gts)
+                loss_age_weighted = torch.exp(-self.log_var_age) * age_loss + 0.5 * self.log_var_age
+                loss_seg_weighted = torch.exp(-self.log_var_seg) * seg_loss + 0.5 * self.log_var_seg
+                total_loss = loss_age_weighted.squeeze() + loss_seg_weighted.squeeze()
 
         if train:
             loss_acc = total_loss / self.grad_accum_steps
@@ -105,13 +169,16 @@ class MultiTaskTrainer:
             else:
                 loss_acc.backward()
         
+        # Still compute segmentation metrics for monitoring (even in age-only mode)
         seg_preds_for_metric = torch.argmax(seg_logits, dim=1, keepdim=True)
-        seg_gts_one_hot = torch.nn.functional.one_hot(seg_gts.squeeze(1).long(), num_classes=seg_logits.shape[1]).permute(0, 4, 1, 2, 3)
-        self.dice_metric(y_pred=seg_preds_for_metric, y=seg_gts_one_hot)
+        self.dice_metric(y_pred=seg_preds_for_metric, y=seg_gts)
 
         return {
-            "loss": total_loss.detach(), "age_loss": age_loss.detach(), "seg_loss": seg_loss.detach(),
-            "age_pred": age_preds.detach(), "age_gt": age_gts.detach(),
+            "loss": total_loss.detach(), 
+            "age_loss": age_loss.detach(), 
+            "seg_loss": seg_loss.detach(),
+            "age_pred": age_preds.detach(), 
+            "age_gt": age_gts.detach(),
         }
 
     def _optim_step(self):

@@ -245,6 +245,18 @@ def main() -> None:
     )
     logger.info("Trainer initialized")
 
+    # Check if we should switch to age-only mode
+    age_only_mode = cfg.get("training.age_only_mode", False)
+    freeze_encoder = cfg.get("training.freeze_encoder", False)
+
+    if age_only_mode:
+        if freeze_encoder:
+            logger.info("Switching to age-head-only fine-tuning (encoder + seg head frozen)")
+        else:
+            logger.info("Switching to age-only fine-tuning (encoder trainable, seg head frozen)")
+        
+        trainer.switch_to_age_only_mode(freeze_encoder=freeze_encoder)
+
     # 9. ─── train ────────────────────────────────────────────── #
     logger.info("Starting multi-task training...")
     try:
