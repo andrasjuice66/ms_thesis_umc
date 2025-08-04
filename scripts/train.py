@@ -130,25 +130,26 @@ def main() -> None:
     train_csv = Path(cfg.get("data.train_csv"))
     val_csv   = Path(cfg.get("data.val_csv"))
     test_csv  = Path(cfg.get("data.test_csv"))
-    data_dir  = Path(cfg.get("data.data_dir"))
+    real_data_dir = Path(cfg.get("data.real_data_dir"))
     
+
 
     logger.info(f"Reading train CSV from {train_csv}")
     train_p, train_a, train_w, train_s, train_m = read_csv(
         train_csv,
-        data_dir,
+        real_data_dir,
     )
     logger.info(f"Reading val CSV from {val_csv}")
 
     val_p, val_a, val_w, val_s, val_m = read_csv(
         val_csv,
-        data_dir,
+        real_data_dir,
     )
     logger.info(f"Reading test CSV from {test_csv}")
 
     test_p, test_a, test_w, test_s, test_m = read_csv(
         test_csv,
-        data_dir,
+        real_data_dir,
     )
     
     logger.info(f"Train={len(train_p)}  Val={len(val_p)}  Test={len(test_p)}")

@@ -1,9 +1,10 @@
 # ────────────────────────────  DATA  ──────────────────────────── #
 data:
-  data_dir: "/scratch-shared/ajoos/"               # root that contains all images
   train_csv: "/home/ajoos/brain_age_pred/data/labels/train.csv"
   val_csv:   "/home/ajoos/brain_age_pred/data/labels/val.csv"
   test_csv:  "/home/ajoos/brain_age_pred/data/labels/test_balanced.csv"
+
+  real_data_dir: "/scratch-shared/ajoos/brain_age_preprocessed_converted/"   
 
   image_key:  "image_path"
   age_key:    "age"
@@ -28,7 +29,7 @@ data:
 model:
   type: "brainagenext"                             # sfcn | resnet3d | efficientnet3d
   in_channels: 1
-  dropout_rate: 0.0
+  dropout_rate: 0.2
   use_attention: false                   
   checkpoint: null #"/home/ajoos/brain_age_pred/output/checkpoints/sfcn_20250522_104159/sfcn_20250522_104159_epoch057.pt"
 
@@ -40,21 +41,17 @@ model:
 # -------------------------------------------------------------------------
 domain_randomization:
   use_domain_randomization: true
-  use_tumor_simulation: false
 
   # Progressive randomization parameters
-  progressive_epochs: 50  # Number of epochs for progressive randomization
+  progressive_epochs: 0  # Number of epochs for progressive randomization
   progressive_start: 0.2  # Initial probability scaling factor
-  augmentation_strength: 0.5
+  augmentation_strength: 1.2  # Increase to 1.2 instead of 0.5
 
 
   image_key: "image"  # Key for the image in the data dictionary
     
   # Transform probabilities
   transform_probs:
-  
-    tumor: 0.3
-
     # Geometric transforms
     flip: 0.5
     affine: 0.7
@@ -67,33 +64,33 @@ domain_randomization:
     hist_shift: 0.3  # Histogram shift
     
     # Noise/artifact transforms
-    blur: 0.2
+    blur: 0.4           # Up from 0.2
     bias: 0.5
     noise: 0.4
     rician: 0.3
     gibbs: 0.3
     
     # Resolution/dropout transforms
-    resolution: 0.1
-    coarse_do: 0.0
+    resolution: 0.4     # Up from 0.2
+    coarse_do: 0.2      # Up from 0.0
     
     
 
   
   
   # Geometric transform parameters
-  scaling_range: [0.85, 1.15]  # Range for scaling transformations
-  rotation_range: 15.0  # Maximum rotation in degrees
-  shearing_bounds: 0.3  # Maximum shearing
+  scaling_range: [0.9, 1.1]      # More conservative
+  rotation_range: 10.0  # Maximum rotation in degrees
+  shearing_bounds: 0.2           # More conservative  
   
   # Intensity transform parameters
-  contrast_range: [0.1, 2.0]  # Range for contrast adjustment
+  contrast_range: [0.7, 1.3]  # Range for contrast adjustment
   log_gamma_std: 0.3  # Standard deviation for gamma transformation
-  bias_field_range: [0.0, 0.8]  # Range for bias field artifact
+  bias_field_range: [0.0, 0.4]  # Range for bias field artifact
   
   # Noise parameters
-  noise_mean: 0.5  # Mean for Gaussian noise
-  noise_std: 0.08  # Standard deviation for Gaussian noise
+  noise_mean: 0.0          # ❌ Fix this! Was 0.2
+  noise_std: 0.05          # ✅ Keep
   rician_std: 0.08  # Standard deviation for Rician noise
   gibbs_alpha: [0.0, 1.0]  # Alpha range for Gibbs noise
   
@@ -101,7 +98,7 @@ domain_randomization:
   blur_sigma: [0.5, 2.0]  # Sigma range for Gaussian smoothing
   
   # Intensity shift parameters
-  shift_offset: [-0.15, 0.15]  # Range for intensity shift
+  shift_offset: [-0.1, 0.1]      # More conservative
   hist_control_points: [4, 12]  # Control points for histogram shift
   
   # Resolution/artifact parameters
@@ -124,43 +121,7 @@ domain_randomization:
   spike_intensity: [0.1, 0.6]  # Intensity of spikes
   ghost_num: [2, 10]  # Number of ghosts
   
-  # Tumor simulation configuration
-  tumor_config:
-
-    # Age-based segmentation
-    use_age_based_segmentation: true
-    segmentation_paths:
-      young: "brain_age_pred/data/segmentations/seg_18_40.nii.npy"
-      middle: "brain_age_pred/data/segmentations/seg_40_60.nii.npy"
-      old: "brain_age_pred/data/segmentations/seg_60_85.nii.npy"
-    age_ranges:
-      young: [18, 40]
-      middle: [40, 60]
-      old: [60, 85]
-    
-    # Tumor generation parameters
-    perlin_res: [2, 2, 2]  # Perlin noise resolution
-    mask_percentile_min: 90.0
-    mask_percentile_max: 99.6
-    tumor_size_factor_range: [0.5, 2.0]  # Random size scaling
-    pathol_thres: 0.2
-    min_tumor_size: 100
-    
-    # Fluid dynamics (makes tumors more realistic)
-    use_fluid_dynamics: true
-    V_multiplier: 500.0
-    dt: 0.1
-    min_nt: 10
-    max_nt: 20
-    integ_method: 'dopri5'
-    bc: 'neumann'
-    
-    # Intensity parameters
-    modality: 'T1'  # Default modality if not in data
-    intensity_variation: 0.3
-    
-    # Brain mask parameters (fallback when segmentation fails)
-    brain_threshold: 0.1
+ 
 
 # ──────────────────────────  TRAINING  ────────────────────────── #
 training:
