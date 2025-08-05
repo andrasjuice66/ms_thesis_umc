@@ -29,7 +29,7 @@ model:
   type: "sfcn_class"                             # sfcn | resnet3d | efficientnet3d
   in_channels: 1
   dropout_rate: 0.5
-  checkpoint: "/home/ajoos/brain_age_pred/output/checkpoints/sfcn_class_baseline/sfcn_class_baseline_epoch64.pt"
+  checkpoint: "/home/ajoos/brain_age_pred/output/checkpoints/sfcn_class_baseline/sfcn_class_baseline_epoch064.pt"
 
 # ────────────────  DOMAIN-RANDOMISATION / AUGS  ───────────────── #
 # -------------------------------------------------------------------------
@@ -181,7 +181,7 @@ training:
     gamma: 0.3
 
   # losses
-  loss: "exp_mae"                        # mse | mae | huber | huber_mae | weighted_mse
+  loss: "kl_div"                        # mse | mae | huber | huber_mae | weighted_mse
   loss_params:
     delta: 1.0
     mae_weight: 0.5
