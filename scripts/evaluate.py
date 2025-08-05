@@ -5,7 +5,7 @@ Evaluation script to test trained models on various test sets.
 This script takes a configuration file that specifies which models to evaluate
 and which test CSVs to use. It loads each model from its checkpoint, runs
 predictions on each specified test set, and computes evaluation metrics,
-including overall MAE, MAE per modality, and MAE per sex.
+including overall MAE, MAE per modality, MAE per sex, and MAE per headmotion type.
 
 The results are printed in a summary table for easy comparison.
 """
@@ -30,6 +30,34 @@ from brain_age_pred.models.brainagenext import BrainAgeNeXt
 from brain_age_pred.models.multi_head import MultiTaskBrainAge
 from brain_age_pred.utils.logger import setup_logger
 from brain_age_pred.utils.utils import read_csv, load_checkpoint
+
+def read_csv_with_headmotion(
+    csv_path: str,
+    data_root: str,
+    image_key: str = "image_path",
+    age_key: str = "age",
+    weight_key: str = "sample_weight", 
+    sex_key: str = "sex",
+    modalities_key: str = "modality",
+    headmotion_key: str = "headmotion",
+):
+    """Extended version of read_csv that also extracts headmotion data if available."""
+    df = pd.read_csv(csv_path)
+    paths, ages, weights, sexes, modalities, headmotions = [], [], [], [], [], []
+    data_root = Path(data_root)
+    
+    for _, row in df.iterrows():
+        rel_path = row[image_key]
+        fpath = data_root / rel_path
+        if fpath.exists():
+            paths.append(str(fpath))
+            ages.append(float(row[age_key]))
+            weights.append(float(row.get(weight_key, 1.0)))
+            sexes.append(str(row.get(sex_key, 'N/A')))
+            modalities.append(str(row.get(modalities_key, 'N/A')))
+            headmotions.append(str(row.get(headmotion_key, 'N/A')))
+    
+    return paths, ages, weights, sexes, modalities, headmotions
 
 def get_model(model_config, device):
     """Initializes a model based on the provided configuration."""
@@ -70,16 +98,17 @@ def get_model(model_config, device):
         
     return model.to(device)
 
-def evaluate_model(model, test_loader, device, model_type):
+def evaluate_model(model, test_loader, device, model_type, headmotions=None):
     """Runs the evaluation loop for a given model and test loader."""
     model.eval()
     all_preds = []
     all_ages = []
     all_modalities = []
     all_sexes = []
+    all_headmotions = []
 
     with torch.no_grad():
-        for batch in test_loader:
+        for i, batch in enumerate(test_loader):
             images = batch["image"].to(device)
             ages = batch["age"].numpy()
             modalities = batch["modality"]
@@ -100,16 +129,29 @@ def evaluate_model(model, test_loader, device, model_type):
             all_modalities.extend(modalities)
             all_sexes.extend(sexes)
             
-    return np.array(all_preds), np.array(all_ages), all_modalities, all_sexes
+            # Add headmotion data if available
+            if headmotions is not None:
+                batch_size = len(ages)
+                start_idx = i * test_loader.batch_size
+                end_idx = start_idx + batch_size
+                batch_headmotions = headmotions[start_idx:end_idx]
+                all_headmotions.extend(batch_headmotions)
+            
+    return np.array(all_preds), np.array(all_ages), all_modalities, all_sexes, all_headmotions
 
-def calculate_metrics(predictions, true_ages, modalities, sexes):
-    """Calculates MAE overall, per modality, and per sex."""
-    df = pd.DataFrame({
+def calculate_metrics(predictions, true_ages, modalities, sexes, headmotions=None):
+    """Calculates MAE overall, per modality, per sex, and per headmotion type."""
+    df_data = {
         'prediction': predictions,
         'age': true_ages,
         'modality': modalities,
         'sex': sexes,
-    })
+    }
+    
+    if headmotions:
+        df_data['headmotion'] = headmotions
+        
+    df = pd.DataFrame(df_data)
     df['ae'] = np.abs(df['prediction'] - df['age'])
     
     metrics = {
@@ -123,6 +165,21 @@ def calculate_metrics(predictions, true_ages, modalities, sexes):
     # MAE per sex
     sex_mae = df.groupby('sex')['ae'].mean().to_dict()
     metrics['sex_mae'] = {s: v for s, v in sex_mae.items()}
+    
+    # MAE per headmotion type (if available)
+    if headmotions and any(h != 'N/A' for h in headmotions):
+        headmotion_mae = df.groupby('headmotion')['ae'].mean().to_dict()
+        # Map headmotion codes to readable names
+        headmotion_mapping = {
+            '0': 'Standard',
+            '1': 'HeadMotion1', 
+            '2': 'HeadMotion2',
+            'N/A': 'N/A'
+        }
+        metrics['headmotion_mae'] = {
+            headmotion_mapping.get(str(h), str(h)): v 
+            for h, v in headmotion_mae.items()
+        }
     
     return metrics
 
@@ -147,6 +204,12 @@ def print_summary_table(model_name, test_set_name, metrics):
             print(f"    - {sex}: {mae:.4f}")
     else:
         print("    No sex data available.")
+    
+    # Add headmotion results if available
+    if 'headmotion_mae' in metrics:
+        print("\n  MAE by Head Motion Type:")
+        for headmotion, mae in metrics['headmotion_mae'].items():
+            print(f"    - {headmotion}: {mae:.4f}")
         
     print("="*80 + "\n")
 
@@ -184,7 +247,7 @@ def main():
         # Initialize model
         model = get_model(model_info["params"], device)
         
-        # Load checkpoint
+        # Load checkpoint 
         checkpoint_path = model_info["checkpoint"]
         try:
             load_checkpoint(model, checkpoint_path, device, logger)
@@ -205,8 +268,8 @@ def main():
             data_dir = Path(model_info.get("data_dir", global_data_dir))
             logger.info(f"Using data directory: {data_dir}")
 
-            # Load data
-            paths, ages, _, sexes, modalities = read_csv(
+            # Load data with headmotion support
+            paths, ages, _, sexes, modalities, headmotions = read_csv_with_headmotion(
                 test_csv,
                 data_dir,
             )
@@ -227,8 +290,10 @@ def main():
             )
 
             # Evaluate and calculate metrics
-            preds, true_ages, mods, sxs = evaluate_model(model, test_loader, device, model_info["params"]["type"])
-            metrics = calculate_metrics(preds, true_ages, mods, sxs)
+            preds, true_ages, mods, sxs, hmotions = evaluate_model(
+                model, test_loader, device, model_info["params"]["type"], headmotions
+            )
+            metrics = calculate_metrics(preds, true_ages, mods, sxs, hmotions)
             
             evaluation_results[model_name][test_set_name] = metrics
             

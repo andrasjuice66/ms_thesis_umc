@@ -32,7 +32,7 @@ model:
   in_channels: 15
   dropout_rate: 0.5
   use_attention: false                   
-  checkpoint: null #"/home/ajoos/brain_age_pred/output/checkpoints/sfcn_20250522_104159/sfcn_20250522_104159_epoch057.pt"
+  checkpoint: "/home/ajoos/brain_age_pred/output/checkpoints/sfcn_class_seg_map/sfcn_class_seg_map_best_mae.pt"
 
 # ──────────────────────────  TRAINING  ────────────────────────── #
 training:
@@ -40,7 +40,7 @@ training:
   epochs: 150
 
   # optimiser & LR
-  learning_rate: 0.0002 #0.002193
+  learning_rate: 0.00008 #0.002193
   weight_decay:  0.0001
   optimizer: "adamw"                       # adam | adamw | sgd | rmsprop | radam | novograd
   scheduler: "step"                      # cosine | plateau | onecycle | step | none
