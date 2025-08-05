@@ -2,7 +2,7 @@
 data:
   train_csv: "/home/ajoos/brain_age_pred/data/labels/train_synth.csv"
   val_csv:   "/home/ajoos/brain_age_pred/data/labels/val.csv"
-  test_csv:  "/home/ajoos/brain_age_pred/data/labels/test_balanced.csv"
+  test_csv:  "/home/ajoos/brain_age_pred/data/labels/test.csv"
 
   segmented_data_dir: "/scratch-shared/ajoos/brain_age_segmented_converted/"   
   real_data_dir: "/scratch-shared/ajoos/brain_age_segmented_converted/"   
@@ -41,7 +41,7 @@ training:
 
   # optimiser & LR
   learning_rate: 0.0002 #0.002193
-  weight_decay:  0.0
+  weight_decay:  0.0001
   optimizer: "adamw"                       # adam | adamw | sgd | rmsprop | radam | novograd
   scheduler: "step"                      # cosine | plateau | onecycle | step | none
   scheduler_params:
