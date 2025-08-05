@@ -11,7 +11,7 @@ data_dir: "/scratch-shared/ajoos/brain_age_preprocessed_converted/"
 device: "cuda"
 
 # DataLoader settings
-batch_size: 8
+batch_size: 2
 num_workers: 4
 
 # --- Models to Evaluate ---
@@ -85,8 +85,14 @@ models:
 # --- Test Sets for Evaluation ---
 # List of test sets, each with a name and a path to its CSV file.
 testing:
-  - name: "InternalTestSet"
-    csv_path: "data/splits/internal_test.csv"
+  - name: "ValidationSet"
+    csv_path: "/home/ajoos/brain_age_pred/data/labels/val.csv"
 
-  - name: "ExternalTestSet_A"
-    csv_path: "data/splits/external_test_A.csv" 
+  - name: "ExternalTestSet"
+    csv_path: "/home/ajoos/brain_age_pred/data/labels/test.csv"
+
+  - name: "ExternalTestSetBalanced"
+    csv_path: "/home/ajoos/brain_age_pred/data/labels/test_balanced.csv"
+
+  - name: "MovementNoise"
+    csv_path: "/home/ajoos/brain_age_pred/data/labels/test_movement_noise.csv"  
