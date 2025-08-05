@@ -69,7 +69,7 @@ output:
   output_dir: "/home/ajoos/brain_age_pred/output"
   checkpoint_dir: "checkpoints"
   log_dir: "logs"
-  experiment_name: sfcn_class_seg_map #"brain_age_with_tumors"                   # auto-generate if left null
+  experiment_name: sfcn_class_seg_map_finetune #"brain_age_with_tumors"                   # auto-generate if left null
 
 # ─────────────────────────────  W&B  ──────────────────────────── #
 wandb:
