@@ -1,6 +1,6 @@
 # ────────────────────────────  DATA  ──────────────────────────── #
 data:
-  train_csv: "/home/ajoos/brain_age_pred/data/labels/train.csv"
+  train_csv: "/home/ajoos/brain_age_pred/data/labels/train_synth.csv"
   val_csv:   "/home/ajoos/brain_age_pred/data/labels/val.csv"
   test_csv:  "/home/ajoos/brain_age_pred/data/labels/test_balanced.csv"
 

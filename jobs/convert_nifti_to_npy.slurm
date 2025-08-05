@@ -20,8 +20,7 @@ conda activate thesis
 # 2) navigate to the preprocessing directory
 cd $HOME/brain_age_pred/data/preprocess
 
-# 3) execute the conversion script
-python convert_nifti_to_npy.py --input /scratch-shared/ajoos/brain_age_segmented/ --output /scratch-shared/ajoos/brain_age_segmented_converted/ 
-python convert_nifti_to_npy.py --input /scratch-shared/ajoos/brain_age_preprocessed/ --output /scratch-shared/ajoos/brain_age_preprocessed_converted/ 
+# 3) execute the conversion script WITHOUT normalization
+python convert_nifti_to_npy.py --input /scratch-shared/ajoos/brain_age_segmented/ --output /scratch-shared/ajoos/brain_age_segmented_converted/ --no-normalize
 
 #python check_normalistation.py /scratch-shared/ajoos/brain_age_preprocessed_converted -r

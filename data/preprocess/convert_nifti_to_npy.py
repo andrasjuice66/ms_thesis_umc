@@ -165,8 +165,14 @@ def main():
     parser = argparse.ArgumentParser(description='Convert Nifti files to normalized NumPy arrays')
     parser.add_argument('--input', required=True, help='Input directory containing Nifti files')
     parser.add_argument('--output', required=True, help='Output directory for NumPy files')
-    parser.add_argument('--normalize', action='store_true', default=True, 
-                        help='Apply percentile-based normalization')
+    
+    # Fix the normalization argument logic
+    normalize_group = parser.add_mutually_exclusive_group()
+    normalize_group.add_argument('--normalize', action='store_true', default=True,
+                                help='Apply percentile-based normalization (default)')
+    normalize_group.add_argument('--no-normalize', action='store_true',
+                                help='Skip normalization, just convert to .npy format')
+    
     parser.add_argument('--percentile_low', type=int, default=1,
                         help='Lower percentile for normalization')
     parser.add_argument('--percentile_high', type=int, default=99,
@@ -180,13 +186,16 @@ def main():
     
     args = parser.parse_args()
     
+    # Determine normalization setting
+    normalize = not args.no_normalize if hasattr(args, 'no_normalize') and args.no_normalize else True
+    
     # Parse comma-separated extensions
     extensions = [ext.strip() for ext in args.extensions.split(',')]
     
     convert_nifti_to_numpy(
         args.input,
         args.output,
-        normalize=args.normalize,
+        normalize=normalize,
         perc_low=args.percentile_low,
         perc_high=args.percentile_high,
         extensions=extensions,
