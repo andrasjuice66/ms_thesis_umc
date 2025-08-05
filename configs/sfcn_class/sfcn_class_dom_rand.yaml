@@ -182,7 +182,7 @@ training:
     gamma: 0.3
 
   # losses
-  loss: "exp_mae"                        # mse | mae | huber | huber_mae | weighted_mse
+  loss: "kl_div"                        # mse | mae | huber | huber_mae | weighted_mse
   loss_params:
     delta: 1.0
     mae_weight: 0.5
