@@ -30,7 +30,7 @@ model:
   in_channels: 1
   dropout_rate: 0.2 
   use_attention: false                   
-  checkpoint: null #"/home/ajoos/brain_age_pred/output/checkpoints/sfcn_20250522_104159/sfcn_20250522_104159_epoch057.pt"
+  checkpoint: "/home/ajoos/brain_age_pred/output/checkpoints/brainagenext_baseline/brainagenext_baseline_best_mae.pt"
 
 # ────────────────  DOMAIN-RANDOMISATION / AUGS  ───────────────── #
 # -------------------------------------------------------------------------
@@ -130,7 +130,7 @@ training:
   epochs: 150
 
   # optimiser & LR
-  learning_rate: 0.001 #0.002193
+  learning_rate: 0.00001 #0.002193
   optimizer: "adamw"                       # adam | adamw | sgd | rmsprop | radam | novograd
   scheduler: "step"                      # cosine | plateau | onecycle | step | none
   scheduler_params:

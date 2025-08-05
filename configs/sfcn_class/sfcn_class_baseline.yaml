@@ -29,7 +29,7 @@ model:
   type: "sfcn_class"                             # sfcn | resnet3d | efficientnet3d
   in_channels: 1
   dropout_rate: 0.5
-  checkpoint: null #"/home/ajoos/brain_age_pred/output/checkpoints/sfcn_20250522_104159/sfcn_20250522_104159_epoch057.pt"
+  checkpoint: "/home/ajoos/brain_age_pred/output/checkpoints/sfcn_class_baseline/sfcn_class_baseline_best_mae.pt"
 
 # ────────────────  DOMAIN-RANDOMISATION / AUGS  ───────────────── #
 # -------------------------------------------------------------------------
@@ -167,7 +167,7 @@ training:
   epochs: 150
 
   # optimiser & LR
-  learning_rate: 0.002 #0.002193
+  learning_rate: 0.0004 #0.002 #0.002193
   weight_decay:  0.001
   optimizer: "adamw"                       # adam | adamw | sgd | rmsprop | radam | novograd
   scheduler: "step"                      # cosine | plateau | onecycle | step | none
