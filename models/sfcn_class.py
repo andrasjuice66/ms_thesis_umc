@@ -41,7 +41,7 @@ class _ConvBlock(nn.Sequential):
     ) -> None:
         layers: list[nn.Module] = [
             nn.Conv3d(in_ch, out_ch, kernel_size=kernel_size, padding=padding, bias=False),
-            nn.InstanceNorm3d(out_ch, affine=True, track_running_stats=True),
+            nn.InstanceNorm3d(out_ch, affine=True, track_running_stats=False),
         ]
         if use_pool:
             layers.append(nn.MaxPool3d(kernel_size=2, stride=2))

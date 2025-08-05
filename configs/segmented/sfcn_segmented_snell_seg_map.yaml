@@ -32,7 +32,7 @@ model:
   in_channels: 15
   dropout_rate: 0.5
   use_attention: false                   
-  checkpoint: "/home/ajoos/brain_age_pred/output/checkpoints/sfcn_class_seg_map/sfcn_class_seg_map_best_mae.pt"
+  checkpoint: "/home/ajoos/brain_age_pred/output/checkpoints/sfcn_class_seg_map/sfcn_class_seg_map_epoch070.pt"
 
 # ──────────────────────────  TRAINING  ────────────────────────── #
 training:
