@@ -23,9 +23,9 @@ conda activate thesis
 
 # 3) launch training exactly as on your laptop
 cd $HOME/
-python -m brain_age_pred.scripts.train brain_age_pred/configs/brainagenext/brainagenext_baseline.yaml
+#python -m brain_age_pred.scripts.train brain_age_pred/configs/brainagenext/brainagenext_baseline.yaml
 
-#python -m brain_age_pred.scripts.train brain_age_pred/configs/brainagenext/brainagenext_dom_rand.yaml
+python -m brain_age_pred.scripts.train brain_age_pred/configs/brainagenext/brainagenext_dom_rand.yaml
 
 #python -m brain_age_pred.scripts.train brain_age_pred/configs/brainagenext/brainagenext_dom_rand_tumor.yaml
 
