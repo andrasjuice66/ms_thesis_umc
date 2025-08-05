@@ -82,10 +82,36 @@ def load_checkpoint(model, checkpoint_path, device, logger):
             for k, v in state_dict.items():
                 name = k[7:] if k.startswith('module.') else k
                 new_state_dict[name] = v
+            
+            # Filter out incompatible InstanceNorm3d running stats buffers
+            # These were created in older PyTorch versions where track_running_stats=True by default
+            model_state_dict = model.state_dict()
+            filtered_state_dict = {}
+            incompatible_keys = []
+            
+            for k, v in new_state_dict.items():
+                # Check if this key exists in the current model
+                if k in model_state_dict:
+                    # Check if shapes match
+                    if v.shape == model_state_dict[k].shape:
+                        filtered_state_dict[k] = v
+                    else:
+                        incompatible_keys.append(f"{k}: shape mismatch ({v.shape} vs {model_state_dict[k].shape})")
+                else:
+                    # Key doesn't exist in current model - could be running_mean/running_var from InstanceNorm3d
+                    if 'running_mean' in k or 'running_var' in k:
+                        incompatible_keys.append(f"{k}: InstanceNorm3d running stats (track_running_stats=False in current model)")
+                    else:
+                        incompatible_keys.append(f"{k}: missing in current model")
+            
+            if incompatible_keys:
+                logger.warning(f"Skipping {len(incompatible_keys)} incompatible keys:")
+                for key in incompatible_keys:
+                    logger.warning(f"  - {key}")
                 
-            # Load the state dict
-            model.load_state_dict(new_state_dict, strict=False)
-            logger.info("Successfully loaded model weights")
+            # Load the filtered state dict
+            model.load_state_dict(filtered_state_dict, strict=False)
+            logger.info(f"Successfully loaded model weights ({len(filtered_state_dict)}/{len(new_state_dict)} keys)")
             
             # Return additional checkpoint info if available
             return {
@@ -97,8 +123,30 @@ def load_checkpoint(model, checkpoint_path, device, logger):
             }
         else:
             # Assume the checkpoint is just the state dict
-            model.load_state_dict(checkpoint, strict=False)
-            logger.info("Successfully loaded model weights (state dict only)")
+            # Apply same filtering for this case
+            model_state_dict = model.state_dict()
+            filtered_state_dict = {}
+            incompatible_keys = []
+            
+            for k, v in checkpoint.items():
+                if k in model_state_dict:
+                    if v.shape == model_state_dict[k].shape:
+                        filtered_state_dict[k] = v
+                    else:
+                        incompatible_keys.append(f"{k}: shape mismatch ({v.shape} vs {model_state_dict[k].shape})")
+                else:
+                    if 'running_mean' in k or 'running_var' in k:
+                        incompatible_keys.append(f"{k}: InstanceNorm3d running stats (track_running_stats=False in current model)")
+                    else:
+                        incompatible_keys.append(f"{k}: missing in current model")
+            
+            if incompatible_keys:
+                logger.warning(f"Skipping {len(incompatible_keys)} incompatible keys:")
+                for key in incompatible_keys:
+                    logger.warning(f"  - {key}")
+            
+            model.load_state_dict(filtered_state_dict, strict=False)
+            logger.info(f"Successfully loaded model weights ({len(filtered_state_dict)}/{len(checkpoint)} keys)")
             return {}
             
     except FileNotFoundError:

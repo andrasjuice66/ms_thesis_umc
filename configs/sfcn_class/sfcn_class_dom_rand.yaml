@@ -30,7 +30,7 @@ model:
   in_channels: 1
   dropout_rate: 0.3
   use_attention: false                   
-  checkpoint: "/home/ajoos/brain_age_pred/output/checkpoints/sfcn_class_dom_rand/sfcn_class_dom_rand_best_mae.pt"
+  checkpoint: "/home/ajoos/brain_age_pred/output/checkpoints/sfcn_class_dom_rand/sfcn_class_dom_rand_epoch105.pt"
 
 # ────────────────  DOMAIN-RANDOMISATION / AUGS  ───────────────── #
 # -------------------------------------------------------------------------
@@ -197,7 +197,7 @@ output:
   output_dir: "/home/ajoos/brain_age_pred/output"
   checkpoint_dir: "checkpoints"
   log_dir: "logs"
-  experiment_name: sfcn_class_dom_rand #"brain_age_with_tumors"                   # auto-generate if left null
+  experiment_name: sfcn_class_dom_rand_finetune #"brain_age_with_tumors"                   # auto-generate if left null
 
 # ─────────────────────────────  W&B  ──────────────────────────── #
 wandb:

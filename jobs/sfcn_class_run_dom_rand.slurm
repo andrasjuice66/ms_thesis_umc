@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=sfcn_class_baseline
+#SBATCH --job-name=sfcn_class_dom_rand
 #SBATCH --partition=gpu_a100            
 #SBATCH --gres=gpu:a100:1
 #SBATCH --cpus-per-task=8
@@ -23,9 +23,9 @@ conda activate thesis
 
 # 3) launch training exactly as on your laptop
 cd $HOME/
-python -m brain_age_pred.scripts.train brain_age_pred/configs/sfcn_class/sfcn_class_baseline.yaml
+#python -m brain_age_pred.scripts.train brain_age_pred/configs/sfcn_class/sfcn_class_baseline.yaml
 
-#python -m brain_age_pred.scripts.train brain_age_pred/configs/sfcn_class/sfcn_class_dom_rand.yaml
+python -m brain_age_pred.scripts.train brain_age_pred/configs/sfcn_class/sfcn_class_dom_rand.yaml
 
 #python -m brain_age_pred.scripts.train brain_age_pred/configs/sfcn_class/sfcn_class_dom_rand_tumor.yaml
 

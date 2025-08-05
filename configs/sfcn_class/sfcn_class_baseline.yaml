@@ -29,7 +29,7 @@ model:
   type: "sfcn_class"                             # sfcn | resnet3d | efficientnet3d
   in_channels: 1
   dropout_rate: 0.5
-  checkpoint: "/home/ajoos/brain_age_pred/output/checkpoints/sfcn_class_baseline/sfcn_class_baseline_best_mae.pt"
+  checkpoint: "/home/ajoos/brain_age_pred/output/checkpoints/sfcn_class_baseline/sfcn_class_baseline_epoch64.pt"
 
 # ────────────────  DOMAIN-RANDOMISATION / AUGS  ───────────────── #
 # -------------------------------------------------------------------------
@@ -196,7 +196,7 @@ output:
   output_dir: "/home/ajoos/brain_age_pred/output"
   checkpoint_dir: "checkpoints"
   log_dir: "logs"
-  experiment_name: sfcn_class_baseline #"brain_age_with_tumors"                   # auto-generate if left null
+  experiment_name: sfcn_class_baseline_finetune #"brain_age_with_tumors"                   # auto-generate if left null
 
 # ─────────────────────────────  W&B  ──────────────────────────── #
 wandb:
