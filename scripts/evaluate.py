@@ -32,6 +32,7 @@ from brain_age_pred.models.brainagenext import BrainAgeNeXt
 from brain_age_pred.models.multi_head import MultiTaskBrainAge
 from brain_age_pred.utils.logger import setup_logger
 from brain_age_pred.utils.utils import read_csv, load_checkpoint
+from brain_age_pred.brain_gen.labels import GENERATION_LABELS
 
 def read_csv_with_headmotion(
     csv_path: str,
@@ -92,7 +93,7 @@ def get_model(model_config, device):
         )
     elif mtype == "multitask":
         model = MultiTaskBrainAge(
-            n_classes=model_config.get("n_classes"),
+            n_classes=GENERATION_LABELS,
             encoder_chs=model_config.get("encoder_chs", (24, 48, 96, 192, 384)),
         )
     else:
