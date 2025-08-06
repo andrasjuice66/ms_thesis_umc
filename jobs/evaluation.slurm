@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=evaluation
+#SBATCH --job-name=evaluation_all_models
 #SBATCH --partition=gpu_a100            
 #SBATCH --gres=gpu:a100:1
 #SBATCH --cpus-per-task=8
