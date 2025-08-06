@@ -1,7 +1,7 @@
 # Configuration for the evaluation script
 
 # Directory where evaluation outputs (logs, results) will be saved
-output_dir: "output/evaluation_all_models"
+output_dir: "/home/ajoos/brain_age_pred/output/evaluation_all_models"
 
 # Default directory where the real image data (NIfTI files, etc.) is stored.
 # This can be overridden on a per-model basis.
