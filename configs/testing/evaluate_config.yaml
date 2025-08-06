@@ -26,7 +26,26 @@ models:
       age_min: 20
       age_max: 80
 
+
+  - name: "sfcn_baseline_finetune"
+    checkpoint: "/home/ajoos/brain_age_pred/output/checkpoints/sfcn_class_baseline/sfcn_class_baseline_best_mae.pt"
+    params:
+      type: "sfcn_class"
+      in_channels: 1
+      dropout_rate: 0.5
+      age_min: 20
+      age_max: 80
+
   - name: "sfcn_dom_rand"
+    checkpoint: "/home/ajoos/brain_age_pred/output/checkpoints/sfcn_class_dom_rand/sfcn_class_dom_rand_best_mae.pt"
+    params:
+      type: "sfcn_class"
+      in_channels: 1
+      dropout_rate: 0.5
+      age_min: 20
+      age_max: 80
+
+  - name: "sfcn_dom_rand_finetune"
     checkpoint: "/home/ajoos/brain_age_pred/output/checkpoints/sfcn_class_dom_rand/sfcn_class_dom_rand_best_mae.pt"
     params:
       type: "sfcn_class"
@@ -65,8 +84,18 @@ models:
       age_min: 20
       age_max: 80
 
+  - name: "sfcn_seg_map_finetune"
+    checkpoint: "/home/ajoos/brain_age_pred/output/checkpoints/sfcn_class_seg_map/sfcn_class_seg_map_best_mae.pt"
+    data_dir: "/scratch-shared/ajoos/brain_age_segmented_converted/" # Override data directory for this model
+    params:
+      type: "sfcn_class"
+      in_channels: 15 # Number of segmentation classes
+      dropout_rate: 0.3
+      age_min: 20
+      age_max: 80
+
   - name: "brainagenext_seg_map"
-    checkpoint: "path/to/brainagenext_seg_map/best_model.pth"
+    checkpoint: "/home/ajoos/brain_age_pred/output/checkpoints/brainagenext_seg_map/brainagenext_seg_map_best_mae.pt"
     data_dir: "/scratch-shared/ajoos/brain_age_segmented_converted/" # Override data directory
     params:
       type: "brainagenext"
@@ -76,11 +105,11 @@ models:
       feature_size: 512
       hidden_size: 64
 
-  - name: "multitask"
-    checkpoint: "path/to/multitask/best_model.pth"
-    params:
-      type: "multitask"
-      n_classes: 45 # Number of segmentation classes for the decoder head
+  # - name: "multitask"
+  #   checkpoint: "/home/ajoos/brain_age_pred/output/checkpoints/multitask/multitask_best_mae.pt"
+  #   params:
+  #     type: "multitask"
+  #     n_classes: 45 
 
 # --- Test Sets for Evaluation ---
 # List of test sets, each with a name and a path to its CSV file.
