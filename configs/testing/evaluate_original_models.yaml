@@ -1,0 +1,62 @@
+# Basic settings
+output_dir: "/mnt/c/Projects/thesis_project/brain_age_pred/output/evaluation_all_models"
+
+
+data_dir: "/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed/"
+device: "cuda"  # or "cpu"
+
+# DataLoader settings
+batch_size: 2
+num_workers: 4
+
+# W&B logging settings
+wandb:
+  use_wandb: true
+  project: "brain-age-evaluation"
+  entity: null  # Set to your W&B entity if needed
+  experiment_name: "original-eval-final"  # Auto-generated if not provided
+
+
+models:
+  # BrainAgeNeXt Original Model(s)
+  - name: "brainagenext_original_model1"
+    checkpoint: "/mnt/c/Projects/thesis_project/checkpoints/brainagenext_original/BrainAge_1.pth"  # Replace with actual path
+    params:
+      type: "brainagenext_original"
+
+
+  - name: "sfcn"
+    checkpoint: "/mnt/c/Projects/thesis_project/checkpoints/sfcn_original/run_20190719_00_epoch_best_mae.p"  # Replace with actual path
+    params:
+      type: "sfcn_original"
+
+testing:
+  - name: "ValidationSet"
+    csv_path: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels_local/val.csv"
+
+  - name: "OldValidationSet"
+    csv_path: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels_local/val_old.csv"
+
+  - name: "ExternalTestSet"
+    csv_path: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels_local/test.csv"
+
+  - name: "ExternalTestSetBalanced"
+    csv_path: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels_local/test_balanced.csv"
+  
+  - name: "OldExternalTestSet"
+    csv_path: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels_local/test_old.csv"
+
+  - name: "MovementNoise"
+    csv_path: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels_local/test_movement_noise.csv"  
+
+# Logging settings
+logging:
+  level: "INFO"
+  save_detailed_logs: true
+
+# Results saving
+save_results:
+  save_predictions: true
+  save_metrics: true
+  save_plots: true
+

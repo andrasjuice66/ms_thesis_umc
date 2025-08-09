@@ -38,10 +38,12 @@ class _ConvBlock(nn.Sequential):
         kernel_size: int = 3,
         padding: int = 1,
         use_pool: bool = True,
+        track_running_stats: bool = False,
     ) -> None:
+        print(f"track_running_stats: {track_running_stats}")
         layers: list[nn.Module] = [
             nn.Conv3d(in_ch, out_ch, kernel_size=kernel_size, padding=padding, bias=False),
-            nn.InstanceNorm3d(out_ch, affine=True, track_running_stats=False),
+            nn.InstanceNorm3d(out_ch, affine=True, track_running_stats=track_running_stats),
         ]
         if use_pool:
             layers.append(nn.MaxPool3d(kernel_size=2, stride=2))
@@ -60,10 +62,11 @@ class SFCNClass(nn.Module):
 
     Parameters
     ----------
-    in_channels     : number of MRI modalities (default 1)
-    channels        : widths of the 6 convolutional blocks
-    age_min, age_max: inclusive age range; one bin per integer year
-    dropout_rate    : if 0 → no dropout before the classifier
+    in_channels        : number of MRI modalities (default 1)
+    channels           : widths of the 6 convolutional blocks
+    age_min, age_max   : inclusive age range; one bin per integer year
+    dropout_rate       : if 0 → no dropout before the classifier
+    track_running_stats: if True, `InstanceNorm3d` layers track running statistics
     """
 
     def __init__(
@@ -74,6 +77,7 @@ class SFCNClass(nn.Module):
         age_min: int = 20,
         age_max: int = 80,
         dropout_rate: float = 0.5,
+        track_running_stats: bool = True,
     ) -> None:
         super().__init__()
 
@@ -96,6 +100,7 @@ class SFCNClass(nn.Module):
                     kernel_size=1 if last else 3,
                     padding=0 if last else 1,
                     use_pool=not last,
+                    track_running_stats=track_running_stats,
                 )
             )
             in_ch = out_ch

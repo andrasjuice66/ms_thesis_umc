@@ -83,7 +83,7 @@ class BrainAgeNeXt(nn.Module):
         features = self.feature_extractor(x)
         x = self.global_avg_pool(features)
         age_estimate = self.regression_head(x)
-        return age_estimate.squeeze()
+        return age_estimate.squeeze(-1)
 
 
 

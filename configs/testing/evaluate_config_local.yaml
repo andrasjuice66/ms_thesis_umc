@@ -1,133 +1,130 @@
 # Configuration for the evaluation script
 
 # Directory where evaluation outputs (logs, results) will be saved
-output_dir: "/home/ajoos/brain_age_pred/output/evaluation_all_models"
+output_dir: "/mnt/c/Projects/thesis_project/brain_age_pred/output/evaluation_all_models"
 
 # Default directory where the real image data (NIfTI files, etc.) is stored.
 # This can be overridden on a per-model basis.
-data_dir: "/scratch-shared/ajoos/brain_age_preprocessed_converted/"
+data_dir: "/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed/"
 
 # Device to run evaluation on ('cuda', 'cpu', or null to auto-detect)
 device: "cuda"
 
 # DataLoader settings
-batch_size: 2
-num_workers: 8
+batch_size: 4
+num_workers: 2
 
 wandb:
   use_wandb: true
   project: "brain-age-evaluation"
   entity: null
-  experiment_name: "eval-test"  # optional, auto-generated if not provided
+  experiment_name: "evaluation-final-all-datasets"  # optional, auto-generated if not provided
 
 # --- Models to Evaluate ---
 # List of models, each with a name, checkpoint path, and parameters.
 models:
-  # - name: "sfcn_baseline"
-  #   checkpoint: "/home/ajoos/brain_age_pred/output/checkpoints/sfcn_class_baseline/sfcn_class_baseline_best_mae.pt"
-  #   params:
-  #     type: "sfcn_class"
-  #     in_channels: 1
-  #     dropout_rate: 0.5
-  #     age_min: 20
-  #     age_max: 80
 
 
-  # - name: "sfcn_baseline_finetune"
-  #   checkpoint: "/home/ajoos/brain_age_pred/output/checkpoints/sfcn_class_baseline/sfcn_class_baseline_best_mae.pt"
-  #   params:
-  #     type: "sfcn_class"
-  #     in_channels: 1
-  #     dropout_rate: 0.5
-  #     age_min: 20
-  #     age_max: 80
+  - name: "sfcn_baseline_finetune"
+    checkpoint: "/mnt/c/Projects/thesis_project/checkpoints/sfcn_class_baseline_finetune/sfcn_class_baseline_finetune_best_mae.pt"
+    params:
+      type: "sfcn_class"
+      in_channels: 1
+      dropout_rate: 0.5
+      age_min: 20
+      age_max: 80
+      normalize: true
 
-  # - name: "sfcn_dom_rand"
-  #   checkpoint: "/home/ajoos/brain_age_pred/output/checkpoints/sfcn_class_dom_rand/sfcn_class_dom_rand_best_mae.pt"
-  #   params:
-  #     type: "sfcn_class"
-  #     in_channels: 1
-  #     dropout_rate: 0.5
-  #     age_min: 20
-  #     age_max: 80
 
-  # - name: "sfcn_dom_rand_finetune"
-  #   checkpoint: "/home/ajoos/brain_age_pred/output/checkpoints/sfcn_class_dom_rand/sfcn_class_dom_rand_best_mae.pt"
-  #   params:
-  #     type: "sfcn_class"
-  #     in_channels: 1
-  #     dropout_rate: 0.5
-  #     age_min: 20
-  #     age_max: 80
 
-  # - name: "brainagenext_baseline"
-  #   checkpoint: "/home/ajoos/brain_age_pred/output/checkpoints/brainagenext_baseline/brainagenext_baseline_best_mae.pt"
-  #   params:
-  #     type: "brainagenext"
-  #     in_channels: 1
-  #     dropout_rate: 0.0
-  #     model_id: "B"
-  #     feature_size: 512
-  #     hidden_size: 64
+  - name: "sfcn_dom_rand_finetune"
+    checkpoint: "/mnt/c/Projects/thesis_project/checkpoints/sfcn_class_dom_rand_finetune/sfcn_class_dom_rand_finetune_best_mae.pt"
+    params:
+      type: "sfcn_class"
+      in_channels: 1
+      dropout_rate: 0.5
+      age_min: 20
+      age_max: 80
+      normalize: true
 
-  # - name: "brainagenext_dom_rand"
-  #   checkpoint: "/home/ajoos/brain_age_pred/output/checkpoints/brainagenext_dom_rand/brainagenext_dom_rand_best_mae.pt"
-  #   params:
-  #     type: "brainagenext"
-  #     in_channels: 1
-  #     dropout_rate: 0.2
-  #     model_id: "B"
-  #     feature_size: 512
-  #     hidden_size: 64
+  - name: "brainagenext_baseline"
+    checkpoint: "/mnt/c/Projects/thesis_project/checkpoints/brainagenext_baseline/brainagenext_baseline_best_mae.pt"
+    params:
+      type: "brainagenext"
+      in_channels: 1
+      dropout_rate: 0.0
+      model_id: "B"
+      feature_size: 512
+      hidden_size: 64
+      normalize: true
 
-  # - name: "sfcn_seg_map"
-  #   checkpoint: "/home/ajoos/brain_age_pred/output/checkpoints/sfcn_class_seg_map/sfcn_class_seg_map_best_mae.pt"
-  #   data_dir: "/scratch-shared/ajoos/brain_age_segmented_converted/" # Override data directory for this model
-  #   params:
-  #     type: "sfcn_class"
-  #     in_channels: 15 # Number of segmentation classes
-  #     dropout_rate: 0.3
-  #     age_min: 20
-  #     age_max: 80
+  - name: "brainagenext_dom_rand"
+    checkpoint: "/mnt/c/Projects/thesis_project/checkpoints/brainagenext_dom_rand/brainagenext_dom_rand_best_mae.pt"
+    params:
+      type: "brainagenext"
+      in_channels: 1
+      dropout_rate: 0.2
+      model_id: "B"
+      feature_size: 512
+      hidden_size: 64
+      normalize: true
 
-  # - name: "sfcn_seg_map_finetune"
-  #   checkpoint: "/home/ajoos/brain_age_pred/output/checkpoints/sfcn_class_seg_map/sfcn_class_seg_map_best_mae.pt"
-  #   data_dir: "/scratch-shared/ajoos/brain_age_segmented_converted/" # Override data directory for this model
-  #   params:
-  #     type: "sfcn_class"
-  #     in_channels: 15 # Number of segmentation classes
-  #     dropout_rate: 0.3
-  #     age_min: 20
-  #     age_max: 80
 
-  # - name: "brainagenext_seg_map"
-  #   checkpoint: "/home/ajoos/brain_age_pred/output/checkpoints/brainagenext_seg_map/brainagenext_seg_map_best_mae.pt"
-  #   data_dir: "/scratch-shared/ajoos/brain_age_segmented_converted/" # Override data directory
-  #   params:
-  #     type: "brainagenext"
-  #     in_channels: 15 # Number of segmentation classes
-  #     dropout_rate: 0.0
-  #     model_id: "B"
-  #     feature_size: 512
-  #     hidden_size: 64
+
+  - name: "sfcn_seg_map_finetune"
+    checkpoint: "/mnt/c/Projects/thesis_project/checkpoints/sfcn_class_seg_map_finetune/sfcn_class_seg_map_finetune_best_mae.pt"
+    data_dir: "/mnt/c/Projects/thesis_project/Data/brain_age_segmented/" # Override data directory for this model
+    params:
+      type: "sfcn_class"
+      in_channels: 15 # Number of segmentation classes
+      dropout_rate: 0.3
+      age_min: 20
+      age_max: 80
+      track_running_stats: false
+      normalize: false
+
+  - name: "brainagenext_seg_map"
+    checkpoint: "/mnt/c/Projects/thesis_project/checkpoints/brainagenext_seg_map/brainagenext_seg_map_best_mae.pt"
+    data_dir: "/mnt/c/Projects/thesis_project/Data/brain_age_segmented/" # Override data directory
+    params:
+      type: "brainagenext"
+      in_channels: 15 # Number of segmentation classes
+      dropout_rate: 0.0
+      model_id: "B"
+      feature_size: 512
+      hidden_size: 64
+      normalize: false
 
   - name: "multitask"
-    checkpoint: "/mnt/c/Projects/thesis_project/output/multitask/checkpoints/multi_task_synth_head_only/multi_task_synth_head_only_best_mae.pt"
+    checkpoint: "/mnt/c/Projects/thesis_project/output/multitask/checkpoints/multitask_synth_head_only/multitask_synth_head_only_best_mae.pt"
     params:
       type: "multitask"
-      n_classes: 45 
+      normalize: true
+
+  - name: "two_step"
+    checkpoint: "/mnt/c/Projects/thesis_project/checkpoints/two_step/two_step_synth_best_mae.pt"
+    params:
+      type: "multitask"
+      normalize: true
+
 
 # --- Test Sets for Evaluation ---
 # List of test sets, each with a name and a path to its CSV file.
 testing:
   - name: "ValidationSet"
-    csv_path: "/home/ajoos/brain_age_pred/data/labels/val.csv"
+    csv_path: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels_local/val.csv"
+
+  - name: "OldValidationSet"
+    csv_path: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels_local/val_old.csv"
 
   - name: "ExternalTestSet"
-    csv_path: "/home/ajoos/brain_age_pred/data/labels/test.csv"
+    csv_path: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels_local/test.csv"
 
   - name: "ExternalTestSetBalanced"
-    csv_path: "/home/ajoos/brain_age_pred/data/labels/test_balanced.csv"
+    csv_path: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels_local/test_balanced.csv"
+  
+  - name: "OldExternalTestSet"
+    csv_path: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels_local/test_old.csv"
 
   - name: "MovementNoise"
-    csv_path: "/home/ajoos/brain_age_pred/data/labels/test_movement_noise.csv"  
+    csv_path: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels_local/test_movement_noise.csv"  

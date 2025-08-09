@@ -1,164 +1,201 @@
 #!/usr/bin/env python
 """
-Evaluation script to test trained models on various test sets.
+Memory-optimized evaluation script for original BrainAgeNeXt paper weights.
 
-This script takes a configuration file that specifies which models to evaluate
-and which test CSVs to use. It loads each model from its checkpoint, runs
-predictions on each specified test set, and computes evaluation metrics,
-including overall MAE, MAE per modality, MAE per sex, and MAE per headmotion type.
-
-The results are printed in a summary table for easy comparison and logged to W&B.
+This is a memory-optimized version of evaluate_brainagenext_original.py that:
+- Disables dataset caching to reduce memory usage
+- Uses lower batch sizes
+- Implements memory-efficient data loading
+- Reduces multiprocessing to prevent memory leaks
 """
+
 import os, sys, json
+import argparse
 from pathlib import Path
-from collections import defaultdict
 from datetime import datetime
 
 import pandas as pd
 import numpy as np
 import torch
+import torch.nn as nn
 import wandb
 from torch.utils.data import DataLoader
-from monai.transforms import Compose, ToTensord, EnsureChannelFirstd, SqueezeDimd, AsDiscreted
-from brain_age_pred.dataset.custom_transformations import IntensityClipNormalizeD, ConvertLabelsD
 
-# Add project root to Python path
+import torchio
+import nibabel as nib
+from monai.transforms import Compose, ScaleIntensityd, Spacingd, CropForegroundd, SpatialPadd, CenterSpatialCropd, MapTransform
+from monai.data import Dataset  # Use regular Dataset instead of CacheDataset
+
+# Fix CUDA multiprocessing issue
+import torch.multiprocessing as mp
+try:
+    mp.set_start_method('spawn', force=True)
+except RuntimeError:
+    pass  # Already set
+
+# Add project root to path
 project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
 
-from brain_age_pred.configs.config import Config
-from brain_age_pred.dataset.dataset import BADataset
-from brain_age_pred.models.sfcn import SFCN
-from brain_age_pred.models.sfcn_class import SFCNClass
-from brain_age_pred.models.brainagenext import BrainAgeNeXt
-from brain_age_pred.models.multi_head import MultiTaskBrainAge
+# Import project modules
+from brain_age_pred.models.create_mednext_encoder_v1 import create_mednext_encoder_v1
 from brain_age_pred.utils.logger import setup_logger
-from brain_age_pred.utils.utils import read_csv, load_checkpoint
-from brain_age_pred.brain_gen.labels import GENERATION_LABELS, GENERATION_CLASSES
+from brain_age_pred.configs.config import Config
 
-class TestGenerator:
-    """
-    A minimal test-time transform pipeline that applies intensity normalization.
-    """
-    def __init__(self, normalize=True):
-        if normalize:
-            self.transform = Compose([
-                IntensityClipNormalizeD(
-                    keys=["image"],
-                    clip_percentiles=(1.0, 99.0),
-                    normalise=True,
-                    gamma_std=0.0,
-                    prob=1.0
-                )
-            ])
-        else:
-            self.transform = Compose([])
+
+class LoadImageArrayd(MapTransform):
+    """Custom MONAI transform to load image arrays (.npy or .nii.gz files)"""
+    def __init__(self, keys, ensure_channel_first=True):
+        super().__init__(keys)
+        self.ensure_channel_first = ensure_channel_first
 
     def __call__(self, data):
-        return self.transform(data)
+        d = dict(data)
+        for key in self.keys:
+            if isinstance(d[key], str):
+                # Load image array - handle both .npy and .nii.gz formats
+                file_path = d[key]
+                
+                if file_path.endswith(".npy"):
+                    try:
+                        array = np.load(file_path, allow_pickle=True).astype(np.float32)
+                    except (ValueError, OSError):
+                        # Fallback: try without allow_pickle for newer files
+                        array = np.load(file_path).astype(np.float32)
+                elif file_path.endswith(".nii.gz") or file_path.endswith(".nii"):
+                    # Load NIfTI file
+                    nii_img = nib.load(file_path)
+                    array = nii_img.get_fdata().astype(np.float32)
+                else:
+                    raise ValueError(f"Unsupported file format: {file_path}. Only .npy, .nii, and .nii.gz are supported.")
+                
+                # Add channel dimension if needed and ensure_channel_first is True
+                if self.ensure_channel_first and array.ndim == 3:
+                    array = array[np.newaxis, ...]  # Add channel dimension
+                d[key] = array
+        return d
 
-class SegmentationTestGenerator:
-    """
-    Test-time transform pipeline for segmentation models that require one-hot encoded input.
-    """
-    def __init__(self, normalize=True, n_classes=15):
-        transforms = [
-            EnsureChannelFirstd(keys=["image"], channel_dim="no_channel"),
-            ConvertLabelsD(
-                keys=["image"],
-                generation_labels=GENERATION_LABELS,
-                output_labels=GENERATION_CLASSES
-            ),
-            SqueezeDimd(keys=["image"], dim=0),
-            AsDiscreted(keys=["image"], to_onehot=n_classes),
-        ]
-        
-        if normalize:
-            transforms.append(
-                IntensityClipNormalizeD(
-                    keys=["image"],
-                    clip_percentiles=(1.0, 99.0),
-                    normalise=True,
-                    gamma_std=0.0,
-                    prob=1.0
-                )
-            )
-        
-        self.transform = Compose(transforms)
 
-    def __call__(self, data):
-        return self.transform(data)
+class MedNeXtEncReg(nn.Module):
+    """Original BrainAgeNeXt model architecture using MedNeXt encoder"""
+    def __init__(self, *args, **kwargs):
+        super(MedNeXtEncReg, self).__init__()
+        self.mednextv1 = create_mednext_encoder_v1(
+            num_input_channels=1, 
+            num_classes=1, 
+            model_id='B', 
+            kernel_size=3, 
+            deep_supervision=True
+        )
+        self.global_avg_pool = nn.AdaptiveAvgPool3d((1, 1, 1))
+        self.regression_fc = nn.Sequential(
+            nn.Linear(512, 64),
+            nn.ReLU(),
+            nn.Dropout(0.0),
+            nn.Linear(64, 1)
+        )
 
-def read_csv_with_headmotion(
+    def forward(self, x):
+        mednext_out = self.mednextv1(x)
+        x = mednext_out
+        x = self.global_avg_pool(x)
+        x = torch.flatten(x, start_dim=1)
+        age_estimate = self.regression_fc(x)
+        return age_estimate.squeeze()
+
+
+def brain_mask_function(x):
+    """Picklable function for brain masking instead of lambda"""
+    return x > 0
+
+
+def prepare_monai_transforms():
+    """Prepare MONAI transforms for image arrays - handles both .npy and .nii.gz files"""
+    x, y, z = (160, 192, 160)
+    p = 1.0
+    monai_transforms = [
+        LoadImageArrayd(keys=["image"], ensure_channel_first=True),
+        Spacingd(keys=["image"], pixdim=(p, p, p)),
+        CropForegroundd(keys=["image"], allow_smaller=True, source_key="image"),
+        SpatialPadd(keys=["image"], spatial_size=(x, y, z)),
+        CenterSpatialCropd(keys=["image"], roi_size=(x, y, z))
+    ]
+    val_torchio_transforms = torchio.transforms.Compose(
+        [torchio.transforms.ZNormalization(masking_method=brain_mask_function, keys=["image"], include=['image'])]
+    )
+    return Compose(monai_transforms + [val_torchio_transforms])
+
+
+def read_csv_with_headmotion_monai(
     csv_path: str,
     data_root: str,
     image_key: str = "image_path",
     age_key: str = "age",
-    weight_key: str = "sample_weight", 
     sex_key: str = "sex",
     modalities_key: str = "modality",
     headmotion_key: str = "headmotion",
 ):
-    """Extended version of read_csv that also extracts headmotion data if available."""
+    """Extended version of read_csv for MONAI dataloader that also extracts headmotion data if available."""
     df = pd.read_csv(csv_path)
-    paths, ages, weights, sexes, modalities, headmotions = [], [], [], [], [], []
+    data_dicts = []
+    headmotions = []
+    sexes = []
+    modalities = []
     data_root = Path(data_root)
     
     for _, row in df.iterrows():
         rel_path = row[image_key]
         fpath = data_root / rel_path
         if fpath.exists():
-            paths.append(str(fpath))
-            ages.append(float(row[age_key]))
-            weights.append(float(row.get(weight_key, 1.0)))
+            data_dicts.append({
+                'image': str(fpath), 
+                'label': float(row[age_key])
+            })
+            headmotions.append(str(row.get(headmotion_key, 'N/A')))
             sexes.append(str(row.get(sex_key, 'N/A')))
             modalities.append(str(row.get(modalities_key, 'N/A')))
-            headmotions.append(str(row.get(headmotion_key, 'N/A')))
     
-    return paths, ages, weights, sexes, modalities, headmotions
+    return data_dicts, headmotions, sexes, modalities
 
-def get_model(model_config, device):
-    """Initializes a model based on the provided configuration."""
-    mtype = model_config.get("type", "sfcn").lower()
+
+def create_monai_dataloader_with_metadata(csv_path, data_dir, batch_size=2, num_workers=2):
+    """Create memory-efficient dataloader using MONAI transforms for image arrays (.npy or .nii.gz) with metadata"""
+    data_dicts, headmotions, sexes, modalities = read_csv_with_headmotion_monai(csv_path, data_dir)
     
-    if mtype == "sfcn":
-        model = SFCN(
-            in_channels=model_config.get("in_channels"),
-            dropout_rate=model_config.get("dropout_rate"),
-            age_min=model_config.get("age_min"),
-            age_max=model_config.get("age_max"),
-        )
-    elif mtype == "sfcn_class":
-        model = SFCNClass(
-            in_channels=model_config.get("in_channels"),
-            dropout_rate=model_config.get("dropout_rate"),
-            channels=model_config.get("channels", (32, 64, 128, 256, 256, 64)),
-            age_min=model_config.get("age_min"),
-            age_max=model_config.get("age_max"),
-            track_running_stats=model_config.get("track_running_stats", True),
-        )
-    elif mtype == "brainagenext":
-        model = BrainAgeNeXt(
-            in_channels=model_config.get("in_channels"),
-            dropout_rate=model_config.get("dropout_rate"),
-            model_id=model_config.get("model_id", "B"),
-            kernel_size=model_config.get("kernel_size", 3),
-            deep_supervision=model_config.get("deep_supervision", True),
-            feature_size=model_config.get("feature_size", 512),
-            hidden_size=model_config.get("hidden_size", 64),
-        )
-    elif mtype == "multitask":
-        model = MultiTaskBrainAge(
-            n_classes=len(GENERATION_LABELS),
-            encoder_chs=model_config.get("encoder_chs", (24, 48, 96, 192, 384)),
-        )
-    else:
-        raise ValueError(f"Unknown model type: {mtype}")
-        
-    return model.to(device)
+    # Create transforms and dataset
+    transforms = prepare_monai_transforms()
+    # Use regular Dataset instead of CacheDataset to save memory
+    dataset = Dataset(data=data_dicts, transform=transforms)
+    
+    # Reduced num_workers and disabled pin_memory for memory efficiency
+    dataloader = DataLoader(
+        dataset, 
+        batch_size=batch_size, 
+        num_workers=num_workers,  # Reduced from 4 to 2
+        shuffle=False, 
+        pin_memory=False  # Disabled to save memory
+    )
+    
+    return dataloader, headmotions, sexes, modalities
 
-def evaluate_model(model, test_loader, device, model_type, headmotions=None):
-    """Runs the evaluation loop for a given model and test loader."""
+
+def load_brainagenext_model(model_path, device):
+    """Load BrainAgeNeXt model from checkpoint using original loading approach"""
+    print(f"Loading BrainAgeNeXt model from {model_path}")
+    
+    if not os.path.exists(model_path):
+        raise FileNotFoundError(f"Model checkpoint not found: {model_path}")
+    
+    model = MedNeXtEncReg().to(device)
+    model.load_state_dict(torch.load(model_path, map_location=device))
+    model.eval()
+    
+    print(f"BrainAgeNeXt model loaded successfully on {device}")
+    return model
+
+
+def evaluate_model_brainagenext(model, test_loader, device, headmotions=None, sexes=None, modalities=None):
+    """Runs the evaluation loop for BrainAgeNeXt model with comprehensive metadata tracking."""
     model.eval()
     all_preds = []
     all_ages = []
@@ -167,36 +204,55 @@ def evaluate_model(model, test_loader, device, model_type, headmotions=None):
     all_headmotions = []
 
     with torch.no_grad():
-        for i, batch in enumerate(test_loader):
-            images = batch["image"].to(device)
-            ages = batch["age"].numpy()
-            modalities = batch["modality"]
-            sexes = batch["sex"]
-
-            output = model(images)
-
-            if model_type == "multitask":
-                _, preds_tensor = output  # seg_logits, age_pred
-                preds = preds_tensor.cpu().numpy()
-            elif model_type == "sfcn_class":
-                preds = model.expected_age(output).cpu().numpy()
-            else:
-                preds = output.cpu().numpy()
-
-            all_preds.extend(preds)
-            all_ages.extend(ages)
-            all_modalities.extend(modalities)
-            all_sexes.extend(sexes)
+        for i, batch_data in enumerate(test_loader):
+            # Clear cache every 10 batches to prevent memory buildup
+            if i % 10 == 0:
+                torch.cuda.empty_cache()
+                
+            images = batch_data['image'].to(device)
+            labels = batch_data['label'].to(device)
             
-            # Add headmotion data if available
+            # Model inference
+            pred = model(images)
+            
+            # Convert to numpy and ensure it's at least 1D for extending the list
+            pred_np = pred.cpu().numpy()
+            labels_np = labels.cpu().numpy()
+            
+            # Handle both scalar (0-d) and vector outputs
+            if pred_np.ndim == 0:
+                all_preds.append(pred_np.item())
+            else:
+                all_preds.extend(pred_np)
+                
+            if labels_np.ndim == 0:
+                all_ages.append(labels_np.item())
+            else:
+                all_ages.extend(labels_np)
+            
+            # Add metadata
+            batch_size = len(labels)
+            start_idx = i * test_loader.batch_size
+            end_idx = start_idx + batch_size
+            
+            if modalities is not None:
+                batch_modalities = modalities[start_idx:end_idx]
+                all_modalities.extend(batch_modalities)
+            
+            if sexes is not None:
+                batch_sexes = sexes[start_idx:end_idx]
+                all_sexes.extend(batch_sexes)
+                
             if headmotions is not None:
-                batch_size = len(ages)
-                start_idx = i * test_loader.batch_size
-                end_idx = start_idx + batch_size
                 batch_headmotions = headmotions[start_idx:end_idx]
                 all_headmotions.extend(batch_headmotions)
             
+            # Print progress every 20 batches
+            if (i + 1) % 20 == 0:
+                print(f"Processed {i + 1}/{len(test_loader)} batches")
+            
     return np.array(all_preds), np.array(all_ages), all_modalities, all_sexes, all_headmotions
+
 
 def calculate_metrics(predictions, true_ages, modalities, sexes, headmotions=None):
     """Calculates MAE, MSE, R², and correlation overall, per modality, per sex, and per headmotion type."""
@@ -329,6 +385,7 @@ def calculate_metrics(predictions, true_ages, modalities, sexes, headmotions=Non
     
     return metrics
 
+
 def print_summary_table(model_name, test_set_name, metrics):
     """Prints a formatted summary table of the evaluation metrics."""
     print("\n" + "="*80)
@@ -368,6 +425,7 @@ def print_summary_table(model_name, test_set_name, metrics):
                   f"Corr={hm_metrics['correlation']:.4f}")
         
     print("="*80 + "\n")
+
 
 def create_wandb_summary_table(evaluation_results):
     """Create a comprehensive wandb table showing all evaluation results."""
@@ -444,74 +502,39 @@ def create_wandb_summary_table(evaluation_results):
     
     return table
 
-def print_final_summary(evaluation_results):
-    """Print a comprehensive final summary of all evaluations."""
-    print("\n" + "="*100)
-    print("FINAL EVALUATION SUMMARY - ALL MODELS AND TEST SETS")
-    print("="*100)
-    
-    # Create summary table
-    summary_data = []
-    for model_name, test_results in evaluation_results.items():
-        for test_set_name, metrics in test_results.items():
-            summary_data.append({
-                'Model': model_name,
-                'Test Set': test_set_name,
-                'MAE': metrics['overall_mae'],
-                'MSE': metrics['overall_mse'],
-                'R²': metrics['overall_r2'],
-                'Correlation': metrics['overall_correlation'],
-                'Count': metrics['count']
-            })
-    
-    # Print as formatted table
-    if summary_data:
-        df = pd.DataFrame(summary_data)
-        print(f"\n{'Model':<20} {'Test Set':<20} {'MAE':<8} {'MSE':<8} {'R²':<8} {'Corr':<8} {'Count':<8}")
-        print("-" * 100)
-        for _, row in df.iterrows():
-            print(f"{row['Model']:<20} {row['Test Set']:<20} {row['MAE']:<8.4f} {row['MSE']:<8.4f} "
-                  f"{row['R²']:<8.4f} {row['Correlation']:<8.4f} {row['Count']:<8}")
-        
-        # Print best performers
-        print(f"\n{'-'*50}")
-        print("BEST PERFORMERS:")
-        print(f"{'-'*50}")
-        best_mae_idx = df['MAE'].idxmin()
-        best_r2_idx = df['R²'].idxmax()
-        best_corr_idx = df['Correlation'].idxmax()
-        
-        print(f"Best MAE: {df.loc[best_mae_idx, 'Model']} on {df.loc[best_mae_idx, 'Test Set']} "
-              f"(MAE: {df.loc[best_mae_idx, 'MAE']:.4f})")
-        print(f"Best R²:  {df.loc[best_r2_idx, 'Model']} on {df.loc[best_r2_idx, 'Test Set']} "
-              f"(R²: {df.loc[best_r2_idx, 'R²']:.4f})")
-        print(f"Best Corr: {df.loc[best_corr_idx, 'Model']} on {df.loc[best_corr_idx, 'Test Set']} "
-              f"(Corr: {df.loc[best_corr_idx, 'Correlation']:.4f})")
-    
-    print("="*100 + "\n")
 
 def main():
-    # 1. --- Configuration ---
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    cfg_file = sys.argv[1] if len(sys.argv) > 1 else "configs/evaluate_config.yaml"
-    if not Path(cfg_file).exists():
+    # Parse arguments
+    parser = argparse.ArgumentParser(description="BrainAgeNeXt Original Weights Evaluation (Memory Optimized)")
+    parser.add_argument("--config", type=str, required=True, help="Path to configuration YAML file")
+    args = parser.parse_args()
+    
+    # Load configuration
+    cfg_file = Path(args.config)
+    if not cfg_file.exists():
         print(f"Error: Config file not found at '{cfg_file}'")
         sys.exit(1)
     cfg = Config(cfg_file)
-
-    # 2. --- Setup ---
+    
+    # Setup
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_dir = Path(cfg.get("output_dir", "output/evaluation"))
     log_dir.mkdir(parents=True, exist_ok=True)
-    logger = setup_logger("evaluation", log_file=log_dir / "eval.log")
+    logger = setup_logger("brainagenext_evaluation", log_file=log_dir / "brainagenext_eval_memopt.log")
     
     device = torch.device(cfg.get("device") or ("cuda" if torch.cuda.is_available() else "cpu"))
     logger.info(f"Using device: {device}")
-
-    # 3. --- W&B Setup ---
+    
+    # Memory optimization settings
+    batch_size = max(1, min(cfg.get("batch_size", 2), 2))  # Force max batch size of 2
+    num_workers = max(0, min(cfg.get("num_workers", 2), 2))  # Force max num_workers of 2
+    logger.info(f"Memory optimized settings: batch_size={batch_size}, num_workers={num_workers}")
+    
+    # W&B Setup
     use_wandb = cfg.get("wandb.use_wandb", True)
     experiment_name = cfg.get("wandb.experiment_name")
     if not experiment_name:
-        experiment_name = f'evaluation_{timestamp}'
+        experiment_name = f'brainagenext_original_evaluation_memopt_{timestamp}'
     
     if use_wandb:
         logger.info("Setting up Weights & Biases...")
@@ -525,33 +548,30 @@ def main():
             reinit=True,
         )
         logger.info("W&B initialized successfully")
-
-    # 4. --- Evaluation Loop ---
+    
+    # Evaluation Loop
     evaluation_results = {}
     models_to_eval = cfg.get("models", [])
     test_sets = cfg.get("testing", [])
     global_data_dir = Path(cfg.get("data_dir"))
-
+    
     if not models_to_eval or not test_sets:
         logger.error("Config file must contain 'models' and 'testing' sections.")
         return
-
+    
     for model_info in models_to_eval:
         model_name = model_info["name"]
-        logger.info(f"--- Evaluating model: {model_name} ---")
+        logger.info(f"--- Evaluating BrainAgeNeXt model: {model_name} ---")
         evaluation_results[model_name] = {}
         
-        # Initialize model
-        model = get_model(model_info["params"], device)
-        
-        # Load checkpoint 
+        # Load BrainAgeNeXt model
         checkpoint_path = model_info["checkpoint"]
         try:
-            load_checkpoint(model, checkpoint_path, device, logger)
+            model = load_brainagenext_model(checkpoint_path, device)
         except Exception as e:
-            logger.error(f"Could not load checkpoint for model '{model_name}'. Skipping.")
+            logger.error(f"Could not load checkpoint for model '{model_name}': {e}. Skipping.")
             continue
-
+        
         for test_info in test_sets:
             test_set_name = test_info["name"]
             test_csv = Path(test_info["csv_path"])
@@ -560,51 +580,24 @@ def main():
             if not test_csv.exists():
                 logger.error(f"Test CSV for '{test_set_name}' not found at '{test_csv}'. Skipping.")
                 continue
-
+            
             # Determine data directory (model-specific or global)
             data_dir = Path(model_info.get("data_dir", global_data_dir))
             logger.info(f"Using data directory: {data_dir}")
-
-            # Load data with headmotion support
-            paths, ages, _, sexes, modalities, headmotions = read_csv_with_headmotion(
-                test_csv,
-                data_dir,
+            
+            # Clear GPU cache before creating dataloader
+            torch.cuda.empty_cache()
+            
+            # Create MONAI dataloader with metadata (memory optimized)
+            test_loader, headmotions, sexes, modalities = create_monai_dataloader_with_metadata(
+                test_csv, data_dir, 
+                batch_size=batch_size,
+                num_workers=num_workers
             )
-
-            # Check if this model requires segmentation input and select appropriate transform
-            model_params = model_info["params"]
-            in_channels = model_params.get("in_channels", 1)
-            should_normalize = model_params.get("normalize", False)
-
-            if in_channels > 1:
-                # Model expects multi-channel segmentation input
-                n_classes = in_channels  # Assume in_channels equals number of segmentation classes
-                transform = SegmentationTestGenerator(normalize=should_normalize, n_classes=n_classes)
-                logger.info(f"Using segmentation transforms for model '{model_name}' with {n_classes} classes. Normalization: {'ENABLED' if should_normalize else 'DISABLED'}.")
-            else:
-                # Model expects single-channel input
-                transform = TestGenerator(normalize=should_normalize)
-                logger.info(f"Using standard transforms for model '{model_name}'. Normalization: {'ENABLED' if should_normalize else 'DISABLED'}.")
-
-            test_ds = BADataset(
-                file_paths=paths,
-                age_labels=ages,
-                sexes=sexes,
-                modalities=modalities,
-                mode="test",
-                transform=transform,
-            )
-
-            test_loader = DataLoader(
-                test_ds,
-                batch_size=cfg.get("batch_size", 8),
-                shuffle=False,
-                num_workers=cfg.get("num_workers", 4),
-            )
-
+            
             # Evaluate and calculate metrics
-            preds, true_ages, mods, sxs, hmotions = evaluate_model(
-                model, test_loader, device, model_info["params"]["type"], headmotions
+            preds, true_ages, mods, sxs, hmotions = evaluate_model_brainagenext(
+                model, test_loader, device, headmotions, sexes, modalities
             )
             metrics = calculate_metrics(preds, true_ages, mods, sxs, hmotions)
             
@@ -642,13 +635,25 @@ def main():
                             f"{log_prefix}/{sex}_correlation": sex_metrics_data['correlation'],
                             f"{log_prefix}/{sex}_count": sex_metrics_data['count']
                         })
+                
+                # Log headmotion-specific metrics if available
+                if metrics.get('headmotion_metrics'):
+                    for headmotion, hm_metrics in metrics['headmotion_metrics'].items():
+                        wandb.log({
+                            f"{log_prefix}/{headmotion}_mae": hm_metrics['mae'],
+                            f"{log_prefix}/{headmotion}_mse": hm_metrics['mse'],
+                            f"{log_prefix}/{headmotion}_r2": hm_metrics['r2'],
+                            f"{log_prefix}/{headmotion}_correlation": hm_metrics['correlation'],
+                            f"{log_prefix}/{headmotion}_count": hm_metrics['count']
+                        })
             
             # Print summary
             print_summary_table(model_name, test_set_name, metrics)
-
-    # 5. --- Final Summary and W&B Table ---
-    print_final_summary(evaluation_results)
+            
+            # Clear cache after each test set
+            torch.cuda.empty_cache()
     
+    # Final Summary and W&B Table
     if use_wandb:
         # Create and log comprehensive table
         logger.info("Creating comprehensive results table for W&B...")
@@ -668,9 +673,9 @@ def main():
                 "summary/worst_mae": np.max(all_maes),
                 "summary/num_evaluations": len(all_maes)
             })
-
-    # 6. --- Save final results ---
-    results_file = log_dir / "evaluation_summary.json"
+    
+    # Save final results
+    results_file = log_dir / "brainagenext_evaluation_summary_memopt.json"
     with open(results_file, "w") as f:
         json.dump(evaluation_results, f, indent=4)
     logger.info(f"Full evaluation results saved to {results_file}")
@@ -679,6 +684,6 @@ def main():
         wandb.finish()
         logger.info("W&B session finished")
 
+
 if __name__ == "__main__":
-    main() 
-    
+    main()
