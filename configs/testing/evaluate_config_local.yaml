@@ -111,14 +111,9 @@ models:
 # --- Test Sets for Evaluation ---
 # List of test sets, each with a name and a path to its CSV file.
 testing:
-  - name: "ValidationSet"
-    csv_path: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels_local/val.csv"
 
   - name: "OldValidationSet"
     csv_path: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels_local/val_old.csv"
-
-  - name: "ExternalTestSet"
-    csv_path: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels_local/test.csv"
 
   - name: "ExternalTestSetBalanced"
     csv_path: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels_local/test_balanced.csv"

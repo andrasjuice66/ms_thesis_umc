@@ -31,10 +31,10 @@ from brain_age_pred.dataset.custom_transformations import RandomResolutionD, Ran
 # Individual transform imports
 from monai.transforms import (
     RandFlipd, RandAffined, RandAdjustContrastd, RandBiasFieldd,
-    RandGaussianSmoothd, RandGaussianNoised, RandRicianNoised,
-    RandScaleIntensityd, RandShiftIntensityd, RandHistogramShiftd,
-    RandGibbsNoised, RandCoarseDropoutd, RandSpatialCropd, CenterSpatialCropd,
-    ToTensord, LoadImaged, EnsureChannelFirstd, Compose
+    RandGaussianSmoothd, RandGaussianNoised, RandScaleIntensityd, 
+    RandShiftIntensityd, RandHistogramShiftd, RandGibbsNoised, 
+    RandCoarseDropoutd, RandSpatialCropd, CenterSpatialCropd,
+    ToTensord, LoadImaged, EnsureChannelFirstd, Compose, RandRicianNoised
 )
 
 # ====================================================================
@@ -148,6 +148,11 @@ class DomainRandomizationVisualizer:
     def _apply_individual_transform(self, transform, title: str) -> Tuple[torch.Tensor, np.ndarray]:
         """Apply a single transform and return result with difference map."""
         sample = {self.image_key: self.original_image.clone()}
+        
+        # Ensure random transforms are actually applied for visualization
+        if hasattr(transform, 'set_random_state'):
+            transform.set_random_state(seed=0) # for reproducibility
+        
         transformed = transform(sample)[self.image_key]
         
         # Calculate difference map
@@ -161,7 +166,7 @@ class DomainRandomizationVisualizer:
         """Create the main figure showing the complete domain randomization pipeline."""
         print("Creating main domain randomization pipeline figure...")
         
-        # Define the most interesting transforms for visualization
+        # Define the 8 key transforms from the pipeline for visualization
         transforms_config = [
             {
                 'name': 'Original',
@@ -169,20 +174,28 @@ class DomainRandomizationVisualizer:
                 'description': 'Original\nImage'
             },
             {
-                'name': 'Geometric',
-                'transform': RandAffined(
-                    keys=[self.image_key], prob=1.0,
-                    rotate_range=(0.2, 0.2, 0.2),  # ~11 degrees
-                    scale_range=(0.15, 0.15, 0.15),
-                    mode="bilinear"
+                'name': 'Flip',
+                'transform': RandFlipd(
+                    keys=[self.image_key], prob=1.0, 
+                    spatial_axis=0
                 ),
-                'description': 'Geometric\nTransforms'
+                'description': 'Random\nFlip'
             },
             {
-                'name': 'Intensity',
+                'name': 'Affine',
+                'transform': RandAffined(
+                    keys=[self.image_key], prob=1.0,
+                    rotate_range=(0.26, 0.26, 0.26),  # ~15 degrees
+                    scale_range=(0.15, 0.15, 0.15),   # Corresponds to [0.85, 1.15]
+                    mode="bilinear"
+                ),
+                'description': 'Affine\nTransform'
+            },
+            {
+                'name': 'Contrast',
                 'transform': RandAdjustContrastd(
                     keys=[self.image_key], prob=1.0,
-                    gamma=(0.7, 1.4)
+                    gamma=(0.5, 2.0) # From config [0.1, 2.0], narrowed for visual effect
                 ),
                 'description': 'Contrast\nAdjustment'
             },
@@ -198,7 +211,7 @@ class DomainRandomizationVisualizer:
                 'name': 'Bias Field',
                 'transform': RandBiasFieldd(
                     keys=[self.image_key], prob=1.0,
-                    coeff_range=(0.0, 0.6)
+                    coeff_range=(0.0, 0.8)
                 ),
                 'description': 'Bias Field\nArtifact'
             },
@@ -206,7 +219,7 @@ class DomainRandomizationVisualizer:
                 'name': 'Noise',
                 'transform': RandGaussianNoised(
                     keys=[self.image_key], prob=1.0,
-                    mean=0.0, std=0.06
+                    mean=0.0, std=0.08
                 ),
                 'description': 'Gaussian\nNoise'
             },
@@ -214,30 +227,28 @@ class DomainRandomizationVisualizer:
                 'name': 'Blur',
                 'transform': RandGaussianSmoothd(
                     keys=[self.image_key], prob=1.0,
-                    sigma_x=(1.0, 1.5), sigma_y=(1.0, 1.5), sigma_z=(1.0, 1.5)
+                    sigma_x=(0.5, 2.0), sigma_y=(0.5, 2.0), sigma_z=(0.5, 2.0)
                 ),
                 'description': 'Gaussian\nBlur'
-            },
-            {
-                'name': 'Resolution',
-                'transform': RandomResolutionD(
-                    keys=[self.image_key], prob=1.0,
-                    min_res=1.0, max_res_iso=2.5
-                ),
-                'description': 'Resolution\nDegradation'
             }
         ]
         
-        # Create figure with subplots: 2 rows (augmented + difference maps)
+        # Create figure with 4x4 layout: 2 rows of images, 2 rows of diffs
         n_transforms = len(transforms_config)
-        fig, axes = plt.subplots(2, n_transforms, figsize=(3*n_transforms, 6))
+        n_cols = 4
+        n_rows = ((n_transforms + n_cols - 1) // n_cols) * 2
+        fig, axes = plt.subplots(n_rows, n_cols, figsize=(3 * n_cols, 3 * n_rows + 0.5))
         
         # Set overall title
-        fig.suptitle('Domain Randomization Augmentation Pipeline', fontsize=16, fontweight='bold')
+        #fig.suptitle('Domain Randomization Augmentation Pipeline', fontsize=16, fontweight='bold')
         
         original_slice = self._get_center_slice(self.original_image)
-        
+        im = None
+
         for i, config in enumerate(transforms_config):
+            row = (i // n_cols) * 2
+            col = i % n_cols
+            
             transform = config['transform']
             title = config['description']
             
@@ -250,29 +261,42 @@ class DomainRandomizationVisualizer:
                 transformed, diff_map = self._apply_individual_transform(transform, title)
                 transformed_slice = self._get_center_slice(transformed)
             
-            # Plot augmented image (top row)
-            axes[0, i].imshow(transformed_slice, cmap='gray', vmin=0, vmax=1)
-            axes[0, i].set_title(title, fontsize=11, fontweight='bold')
-            axes[0, i].axis('off')
+            # Plot augmented image (top row of pair)
+            axes[row, col].imshow(transformed_slice, cmap='gray', vmin=0, vmax=1)
+            axes[row, col].set_title(title, fontsize=11, fontweight='bold')
+            axes[row, col].axis('off')
             
-            # Plot difference map (bottom row)
+            # Plot difference map (bottom row of pair)
             if i == 0:
                 # For original, show empty difference map
-                axes[1, i].imshow(diff_map, cmap='gray', vmin=0, vmax=0.3)
-                axes[1, i].set_title('No Change', fontsize=10)
+                axes[row + 1, col].imshow(diff_map, cmap='gray', vmin=0, vmax=0.3)
             else:
                 # Show actual difference map
-                im = axes[1, i].imshow(diff_map, cmap='hot', vmin=0, vmax=0.3)
-                axes[1, i].set_title('Difference Map', fontsize=10)
-            axes[1, i].axis('off')
+                im = axes[row + 1, col].imshow(diff_map, cmap='hot', vmin=0, vmax=0.3)
+            axes[row + 1, col].axis('off')
         
+        # Add row labels
+        if n_rows > 1:
+            axes[0, 0].set_ylabel('Augmented', fontsize=12, fontweight='bold', labelpad=20)
+            axes[1, 0].set_ylabel('Difference Map', fontsize=12, fontweight='bold', labelpad=20)
+        if n_rows > 3:
+            axes[2, 0].set_ylabel('Augmented', fontsize=12, fontweight='bold', labelpad=20)
+            axes[3, 0].set_ylabel('Difference Map', fontsize=12, fontweight='bold', labelpad=20)
+
+        # Hide any unused subplots
+        for i in range(n_transforms, n_cols * (n_rows // 2)):
+            row = (i // n_cols) * 2
+            col = i % n_cols
+            axes[row, col].axis('off')
+            axes[row + 1, col].axis('off')
+
         # Add colorbar for difference maps
-        cbar_ax = fig.add_axes([0.92, 0.15, 0.02, 0.3])
-        cbar = fig.colorbar(im, cax=cbar_ax)
-        cbar.set_label('Intensity Difference', rotation=270, labelpad=15)
+        if im is not None:
+            cbar_ax = fig.add_axes([0.92, 0.15, 0.02, 0.7])
+            cbar = fig.colorbar(im, cax=cbar_ax)
+            cbar.set_label('Intensity Difference', rotation=270, labelpad=15)
         
-        plt.tight_layout()
-        plt.subplots_adjust(top=0.9, right=0.9)
+        plt.tight_layout(rect=[0, 0, 0.9, 0.95])
         
         # Save figure
         output_path = self.output_dir / 'domain_randomization_pipeline.png'
@@ -321,13 +345,19 @@ class DomainRandomizationVisualizer:
         ]
         
         n_configs = len(intensity_configs)
-        fig, axes = plt.subplots(2, n_configs, figsize=(3*n_configs, 6))
+        n_cols = 3
+        n_rows = ((n_configs + n_cols - 1) // n_cols) * 2
+        fig, axes = plt.subplots(n_rows, n_cols, figsize=(3 * n_cols, 3 * n_rows + 0.5))
         
         fig.suptitle('Combined Domain Randomization at Different Intensities', fontsize=16, fontweight='bold')
         
         original_slice = self._get_center_slice(self.original_image)
+        im = None
         
         for i, config in enumerate(intensity_configs):
+            row = (i // n_cols) * 2
+            col = i % n_cols
+
             if config['prob_scale'] == 0.0:
                 # Original image
                 transformed_slice = original_slice
@@ -349,26 +379,39 @@ class DomainRandomizationVisualizer:
                 diff_map = np.abs(transformed_slice - original_slice)
             
             # Plot augmented image (top row)
-            axes[0, i].imshow(transformed_slice, cmap='gray', vmin=0, vmax=1)
-            axes[0, i].set_title(config['description'], fontsize=11, fontweight='bold')
-            axes[0, i].axis('off')
+            axes[row, col].imshow(transformed_slice, cmap='gray', vmin=0, vmax=1)
+            axes[row, col].set_title(config['description'], fontsize=11, fontweight='bold')
+            axes[row, col].axis('off')
             
             # Plot difference map (bottom row)
             if config['prob_scale'] == 0.0:
-                axes[1, i].imshow(diff_map, cmap='gray', vmin=0, vmax=0.3)
-                axes[1, i].set_title('No Change', fontsize=10)
+                axes[row+1, col].imshow(diff_map, cmap='gray', vmin=0, vmax=0.3)
             else:
-                im = axes[1, i].imshow(diff_map, cmap='hot', vmin=0, vmax=0.3)
-                axes[1, i].set_title('Difference Map', fontsize=10)
-            axes[1, i].axis('off')
-        
+                im = axes[row+1, col].imshow(diff_map, cmap='hot', vmin=0, vmax=0.3)
+            axes[row+1, col].axis('off')
+
+        # Add row labels
+        if n_rows > 1:
+            axes[0, 0].set_ylabel('Augmented', fontsize=12, fontweight='bold', labelpad=20)
+            axes[1, 0].set_ylabel('Difference Map', fontsize=12, fontweight='bold', labelpad=20)
+        if n_rows > 3:
+            axes[2, 0].set_ylabel('Augmented', fontsize=12, fontweight='bold', labelpad=20)
+            axes[3, 0].set_ylabel('Difference Map', fontsize=12, fontweight='bold', labelpad=20)
+
+        # Hide any unused subplots
+        for i in range(n_configs, n_cols * (n_rows // 2)):
+            row = (i // n_cols) * 2
+            col = i % n_cols
+            axes[row, col].axis('off')
+            axes[row + 1, col].axis('off')
+
         # Add colorbar
-        cbar_ax = fig.add_axes([0.92, 0.15, 0.02, 0.3])
-        cbar = fig.colorbar(im, cax=cbar_ax)
-        cbar.set_label('Intensity Difference', rotation=270, labelpad=15)
+        if im is not None:
+            cbar_ax = fig.add_axes([0.92, 0.15, 0.02, 0.7])
+            cbar = fig.colorbar(im, cax=cbar_ax)
+            cbar.set_label('Intensity Difference', rotation=270, labelpad=15)
         
-        plt.tight_layout()
-        plt.subplots_adjust(top=0.9, right=0.9)
+        plt.tight_layout(rect=[0, 0, 0.9, 0.95])
         
         # Save figure
         output_path = self.output_dir / 'combined_augmentations.png'
@@ -385,6 +428,14 @@ class DomainRandomizationVisualizer:
                 'name': 'Original',
                 'transform': None,
                 'description': 'Original\nImage'
+            },
+            {
+                'name': 'Bias Field',
+                'transform': RandBiasFieldd(
+                    keys=[self.image_key], prob=1.0,
+                    coeff_range=(0.0, 0.6)
+                ),
+                'description': 'Bias Field\nArtifact'
             },
             {
                 'name': 'Gaussian Noise',
@@ -417,18 +468,24 @@ class DomainRandomizationVisualizer:
                     holes=6, spatial_size=(25, 25, 25),
                     fill_value=0.0
                 ),
-                'description': 'Coarse\nDropout'
+                'description': 'Signal\nDropout'
             }
         ]
         
         n_configs = len(noise_configs)
-        fig, axes = plt.subplots(2, n_configs, figsize=(3*n_configs, 6))
+        n_cols = 3
+        n_rows = ((n_configs + n_cols - 1) // n_cols) * 2
+        fig, axes = plt.subplots(n_rows, n_cols, figsize=(3*n_cols, 3*n_rows + 0.5))
         
         fig.suptitle('Noise and Artifact Augmentations', fontsize=16, fontweight='bold')
         
         original_slice = self._get_center_slice(self.original_image)
+        im = None
         
         for i, config in enumerate(noise_configs):
+            row = (i // n_cols) * 2
+            col = i % n_cols
+
             transform = config['transform']
             title = config['description']
             
@@ -440,26 +497,39 @@ class DomainRandomizationVisualizer:
                 transformed_slice = self._get_center_slice(transformed)
             
             # Plot augmented image (top row)
-            axes[0, i].imshow(transformed_slice, cmap='gray', vmin=0, vmax=1)
-            axes[0, i].set_title(title, fontsize=11, fontweight='bold')
-            axes[0, i].axis('off')
+            axes[row, col].imshow(transformed_slice, cmap='gray', vmin=0, vmax=1)
+            axes[row, col].set_title(title, fontsize=11, fontweight='bold')
+            axes[row, col].axis('off')
             
             # Plot difference map (bottom row)
             if i == 0:
-                axes[1, i].imshow(diff_map, cmap='gray', vmin=0, vmax=0.3)
-                axes[1, i].set_title('No Change', fontsize=10)
+                axes[row + 1, col].imshow(diff_map, cmap='gray', vmin=0, vmax=0.3)
             else:
-                im = axes[1, i].imshow(diff_map, cmap='hot', vmin=0, vmax=0.3)
-                axes[1, i].set_title('Difference Map', fontsize=10)
-            axes[1, i].axis('off')
+                im = axes[row + 1, col].imshow(diff_map, cmap='hot', vmin=0, vmax=0.3)
+            axes[row + 1, col].axis('off')
         
+        # Add row labels
+        if n_rows > 1:
+            axes[0, 0].set_ylabel('Augmented', fontsize=12, fontweight='bold', labelpad=20)
+            axes[1, 0].set_ylabel('Difference Map', fontsize=12, fontweight='bold', labelpad=20)
+        if n_rows > 3:
+            axes[2, 0].set_ylabel('Augmented', fontsize=12, fontweight='bold', labelpad=20)
+            axes[3, 0].set_ylabel('Difference Map', fontsize=12, fontweight='bold', labelpad=20)
+
+        # Hide any unused subplots
+        for i in range(n_configs, n_cols * (n_rows // 2)):
+            row = (i // n_cols) * 2
+            col = i % n_cols
+            axes[row, col].axis('off')
+            axes[row + 1, col].axis('off')
+
         # Add colorbar
-        cbar_ax = fig.add_axes([0.92, 0.15, 0.02, 0.3])
-        cbar = fig.colorbar(im, cax=cbar_ax)
-        cbar.set_label('Intensity Difference', rotation=270, labelpad=15)
+        if im is not None:
+            cbar_ax = fig.add_axes([0.92, 0.15, 0.02, 0.7])
+            cbar = fig.colorbar(im, cax=cbar_ax)
+            cbar.set_label('Intensity Difference', rotation=270, labelpad=15)
         
-        plt.tight_layout()
-        plt.subplots_adjust(top=0.9, right=0.9)
+        plt.tight_layout(rect=[0, 0, 0.9, 0.95])
         
         # Save figure
         output_path = self.output_dir / 'noise_artifacts.png'
@@ -475,8 +545,6 @@ class DomainRandomizationVisualizer:
         self.create_main_pipeline_figure()
         print()
         self.create_combined_augmentations_figure()
-        print()
-        self.create_noise_artifacts_figure()
         
         print("=" * 60)
         print("All figures created successfully!")
@@ -484,7 +552,6 @@ class DomainRandomizationVisualizer:
         print("\nGenerated files:")
         print("- domain_randomization_pipeline.png")
         print("- combined_augmentations.png")
-        print("- noise_artifacts.png")
         print("\nThese figures are ready for inclusion in your paper!")
 
 

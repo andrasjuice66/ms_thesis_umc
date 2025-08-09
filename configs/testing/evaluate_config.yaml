@@ -111,11 +111,13 @@ models:
       feature_size: 512
       hidden_size: 64
 
-  # - name: "multitask"
-  #   checkpoint: "/home/ajoos/brain_age_pred/output/checkpoints/multitask/multitask_best_mae.pt"
-  #   params:
-  #     type: "multitask"
-  #     n_classes: 45 
+  - name: "multitask"
+    checkpoint: "/home/ajoos/brain_age_pred/output/checkpoints/multitask/multitask_best_mae.pt"
+    params:
+      type: "multitask"
+      n_classes: 45 
+
+  
 
 # --- Test Sets for Evaluation ---
 # List of test sets, each with a name and a path to its CSV file.

@@ -21,6 +21,7 @@ import wandb
 from torch.utils.data import DataLoader
 from monai.transforms import Compose, ToTensord, EnsureChannelFirstd, SqueezeDimd, AsDiscreted
 from brain_age_pred.dataset.custom_transformations import IntensityClipNormalizeD, ConvertLabelsD
+from sklearn.linear_model import LinearRegression
 
 # Add project root to Python path
 project_root = Path(__file__).resolve().parent.parent
@@ -89,6 +90,66 @@ class SegmentationTestGenerator:
     def __call__(self, data):
         return self.transform(data)
 
+def get_regression_correction_params(model, model_info, test_sets, global_data_dir, cfg, device, logger):
+    """
+    Calculates or loads regression correction parameters (alpha, beta) for a model.
+    If a `regression_correction.json` file exists in the model's checkpoint directory, it loads from there.
+    Otherwise, it calculates them using the 'OldValidationSet', saves them, and returns them.
+    """
+    model_type = model_info["params"].get("type", "").lower()
+    if model_type not in ["brainagenext", "multitask"]:
+        return None
+
+    checkpoint_path = Path(model_info["checkpoint"])
+    checkpoint_dir = checkpoint_path.parent
+    correction_file = checkpoint_dir / "regression_correction.json"
+
+    if correction_file.exists():
+        logger.info(f"Loading regression correction parameters from {correction_file}")
+        with open(correction_file, 'r') as f:
+            return json.load(f)
+
+    logger.info(f"Regression correction file not found. Calculating from 'OldValidationSet'...")
+    val_set_info = next((item for item in test_sets if item["name"] == "OldValidationSet"), None)
+
+    if not val_set_info:
+        logger.warning("Could not find 'OldValidationSet' in config to calculate regression correction. Skipping correction for this model.")
+        return None
+
+    # Copied logic from main loop to run evaluation on one dataset
+    val_csv = Path(val_set_info["csv_path"])
+    data_dir = Path(model_info.get("data_dir", global_data_dir))
+    paths, ages, _, sexes, modalities, headmotions = read_csv_with_headmotion(val_csv, data_dir)
+
+    model_params = model_info["params"]
+    in_channels = model_params.get("in_channels", 1)
+    should_normalize = model_params.get("normalize", False)
+    if in_channels > 1:
+        transform = SegmentationTestGenerator(normalize=should_normalize, n_classes=in_channels)
+    else:
+        transform = TestGenerator(normalize=should_normalize)
+
+    val_ds = BADataset(file_paths=paths, age_labels=ages, sexes=sexes, modalities=modalities, mode="test", transform=transform)
+    val_loader = DataLoader(val_ds, batch_size=cfg.get("batch_size", 8), shuffle=False, num_workers=cfg.get("num_workers", 4))
+
+    val_preds, val_true_ages, _, _, _ = evaluate_model(model, val_loader, device, model_type, headmotions=None)
+
+    reg = LinearRegression()
+    reg.fit(val_true_ages.reshape(-1, 1), val_preds)
+
+    alpha = reg.coef_[0]
+    beta = reg.intercept_
+
+    correction_params = {'alpha': float(alpha), 'beta': float(beta)}
+    logger.info(f"Calculated correction params: alpha={alpha:.4f}, beta={beta:.4f}")
+
+    with open(correction_file, 'w') as f:
+        json.dump(correction_params, f, indent=4)
+    logger.info(f"Saved correction parameters to {correction_file}")
+
+    return correction_params
+
+
 def read_csv_with_headmotion(
     csv_path: str,
     data_root: str,
@@ -98,23 +159,37 @@ def read_csv_with_headmotion(
     sex_key: str = "sex",
     modalities_key: str = "modality",
     headmotion_key: str = "headmotion",
+    min_age: float = 20.0,
+    max_age: float = 80.0,
 ):
-    """Extended version of read_csv that also extracts headmotion data if available."""
+    """Extended version of read_csv that also extracts headmotion data if available and filters by age."""
     df = pd.read_csv(csv_path)
     paths, ages, weights, sexes, modalities, headmotions = [], [], [], [], [], []
     data_root = Path(data_root)
     
+    total_samples = 0
+    filtered_samples = 0
+    
     for _, row in df.iterrows():
+        total_samples += 1
+        age = float(row[age_key])
+        
+        # Skip samples outside age range
+        if age < min_age or age > max_age:
+            continue
+            
         rel_path = row[image_key]
         fpath = data_root / rel_path
         if fpath.exists():
+            filtered_samples += 1
             paths.append(str(fpath))
-            ages.append(float(row[age_key]))
+            ages.append(age)
             weights.append(float(row.get(weight_key, 1.0)))
             sexes.append(str(row.get(sex_key, 'N/A')))
             modalities.append(str(row.get(modalities_key, 'N/A')))
             headmotions.append(str(row.get(headmotion_key, 'N/A')))
     
+    print(f"Age filtering: {filtered_samples}/{total_samples} samples kept (ages {min_age}-{max_age})")
     return paths, ages, weights, sexes, modalities, headmotions
 
 def get_model(model_config, device):
@@ -552,6 +627,11 @@ def main():
             logger.error(f"Could not load checkpoint for model '{model_name}'. Skipping.")
             continue
 
+        # Get regression correction parameters
+        correction_params = get_regression_correction_params(
+            model, model_info, test_sets, global_data_dir, cfg, device, logger
+        )
+
         for test_info in test_sets:
             test_set_name = test_info["name"]
             test_csv = Path(test_info["csv_path"])
@@ -606,6 +686,14 @@ def main():
             preds, true_ages, mods, sxs, hmotions = evaluate_model(
                 model, test_loader, device, model_info["params"]["type"], headmotions
             )
+            
+            # Apply correction if params are available
+            if correction_params:
+                logger.info(f"Applying regression correction to predictions for '{test_set_name}'")
+                alpha = correction_params['alpha']
+                beta = correction_params['beta']
+                preds = (preds - beta) / alpha
+
             metrics = calculate_metrics(preds, true_ages, mods, sxs, hmotions)
             
             evaluation_results[model_name][test_set_name] = metrics
