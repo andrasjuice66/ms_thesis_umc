@@ -109,9 +109,9 @@ def main() -> None:
     
     # Prior distribution parameters
     mean_loc = bg_cfg.get("mean_loc", 125.0)
-    mean_scale = bg_cfg.get("mean_scale", 125.0)
-    std_loc = bg_cfg.get("std_loc", 17.5)
-    std_scale = bg_cfg.get("std_scale", 17.5)
+    mean_scale = bg_cfg.get("mean_scale", 100.0)
+    std_loc = bg_cfg.get("std_loc", 15.0)
+    std_scale = bg_cfg.get("std_scale", 10.0)
     
     n_classes = len(GENERATION_LABELS)
 
