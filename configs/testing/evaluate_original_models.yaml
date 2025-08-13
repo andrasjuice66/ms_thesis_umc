@@ -14,7 +14,7 @@ wandb:
   use_wandb: true
   project: "brain-age-evaluation"
   entity: null  # Set to your W&B entity if needed
-  experiment_name: "original-eval-final"  # Auto-generated if not provided
+  experiment_name: "original-eval-final-all-datasets"  # Auto-generated if not provided
 
 
 models:

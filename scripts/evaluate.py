@@ -37,6 +37,11 @@ from brain_age_pred.utils.logger import setup_logger
 from brain_age_pred.utils.utils import read_csv, load_checkpoint
 from brain_age_pred.brain_gen.labels import GENERATION_LABELS, GENERATION_CLASSES
 
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+from scipy import stats
+
 class TestGenerator:
     """
     A minimal test-time transform pipeline that applies intensity normalization.
@@ -273,8 +278,49 @@ def evaluate_model(model, test_loader, device, model_type, headmotions=None):
             
     return np.array(all_preds), np.array(all_ages), all_modalities, all_sexes, all_headmotions
 
-def calculate_metrics(predictions, true_ages, modalities, sexes, headmotions=None):
-    """Calculates MAE, MSE, R², and correlation overall, per modality, per sex, and per headmotion type."""
+def _bootstrap_ci(y_true, y_pred, n_boot=1000, seed=42):
+    rng = np.random.default_rng(seed)
+    n = len(y_true)
+    if n == 0:
+        return {}
+    indices = np.arange(n)
+
+    def mae(a, b): return np.mean(np.abs(a - b))
+    def mse(a, b): return np.mean((a - b) ** 2)
+    def r2(a, b):
+        ss_res = np.sum((a - b) ** 2)
+        ss_tot = np.sum((a - np.mean(a)) ** 2)
+        return 1 - (ss_res / ss_tot) if ss_tot != 0 else 0.0
+    def corr(a, b):
+        return np.corrcoef(a, b)[0, 1] if len(a) > 1 else 0.0
+
+    maes, mses, r2s, cors, bad_means = [], [], [], [], []
+    for _ in range(n_boot):
+        bs_idx = rng.choice(indices, size=n, replace=True)
+        yt = y_true[bs_idx]
+        yp = y_pred[bs_idx]
+        maes.append(mae(yt, yp))
+        mses.append(mse(yt, yp))
+        r2s.append(r2(yt, yp))
+        cors.append(corr(yt, yp))
+        bad_means.append(np.mean(yp - yt))
+
+    def ci(arr): 
+        low, high = np.percentile(arr, [2.5, 97.5])
+        return float(low), float(high)
+
+    return {
+        "mae": ci(maes),
+        "mse": ci(mses),
+        "r2": ci(r2s),
+        "correlation": ci(cors),
+        "bad_mean": ci(bad_means),
+        "n_boot": int(n_boot),
+        "seed": int(seed),
+    }
+
+def calculate_metrics_with_ci(predictions, true_ages, modalities, sexes, headmotions=None, n_boot=1000, seed=42):
+    """Calculates MAE, MSE, R², and correlation overall, per modality, per sex, and per headmotion type with confidence intervals."""
     df_data = {
         'prediction': predictions,
         'age': true_ages,
@@ -288,10 +334,12 @@ def calculate_metrics(predictions, true_ages, modalities, sexes, headmotions=Non
     df = pd.DataFrame(df_data)
     df['ae'] = np.abs(df['prediction'] - df['age'])
     df['se'] = (df['prediction'] - df['age']) ** 2
+    df['bad'] = df['prediction'] - df['age']  # Brain Age Delta
     
     # Overall metrics - convert to native Python types
     mae = float(df['ae'].mean())
     mse = float(df['se'].mean())
+    bad_mean = float(df['bad'].mean())  # Overall BAD mean
     
     # Calculate R² and correlation
     y_true = df['age'].values
@@ -303,21 +351,27 @@ def calculate_metrics(predictions, true_ages, modalities, sexes, headmotions=Non
     
     correlation = float(np.corrcoef(y_true, y_pred)[0, 1]) if len(y_true) > 1 else 0.0
     
+    # Calculate overall bootstrap CIs
+    overall_ci = _bootstrap_ci(y_true, y_pred, n_boot=n_boot, seed=seed)
+    
     metrics = {
         'overall_mae': mae,
         'overall_mse': mse,
         'overall_r2': r2,
         'overall_correlation': correlation,
+        'overall_bad_mean': bad_mean,  # Add BAD mean
+        'overall_bootstrap_ci': overall_ci,  # Add bootstrap CIs
         'count': len(df)
     }
     
-    # MAE per modality
+    # MAE per modality with CIs
     modality_metrics = {}
     for modality in df['modality'].unique():
         mod_df = df[df['modality'] == modality]
         if len(mod_df) > 0:
             mod_mae = float(mod_df['ae'].mean())
             mod_mse = float(mod_df['se'].mean())
+            mod_bad_mean = float(mod_df['bad'].mean())
             
             mod_y_true = mod_df['age'].values
             mod_y_pred = mod_df['prediction'].values
@@ -328,23 +382,29 @@ def calculate_metrics(predictions, true_ages, modalities, sexes, headmotions=Non
             
             mod_correlation = float(np.corrcoef(mod_y_true, mod_y_pred)[0, 1]) if len(mod_y_true) > 1 else 0.0
             
+            # Calculate modality-specific bootstrap CIs
+            mod_ci = _bootstrap_ci(mod_y_true, mod_y_pred, n_boot=n_boot, seed=seed)
+            
             modality_metrics[modality] = {
                 'mae': mod_mae,
                 'mse': mod_mse,
                 'r2': mod_r2,
                 'correlation': mod_correlation,
+                'bad_mean': mod_bad_mean,
+                'bootstrap_ci': mod_ci,
                 'count': len(mod_df)
             }
     
     metrics['modality_metrics'] = modality_metrics
     
-    # MAE per sex
+    # MAE per sex with CIs
     sex_metrics = {}
     for sex in df['sex'].unique():
         sex_df = df[df['sex'] == sex]
         if len(sex_df) > 0:
             sex_mae = float(sex_df['ae'].mean())
             sex_mse = float(sex_df['se'].mean())
+            sex_bad_mean = float(sex_df['bad'].mean())
             
             sex_y_true = sex_df['age'].values
             sex_y_pred = sex_df['prediction'].values
@@ -355,17 +415,22 @@ def calculate_metrics(predictions, true_ages, modalities, sexes, headmotions=Non
             
             sex_correlation = float(np.corrcoef(sex_y_true, sex_y_pred)[0, 1]) if len(sex_y_true) > 1 else 0.0
             
+            # Calculate sex-specific bootstrap CIs
+            sex_ci = _bootstrap_ci(sex_y_true, sex_y_pred, n_boot=n_boot, seed=seed)
+            
             sex_metrics[sex] = {
                 'mae': sex_mae,
                 'mse': sex_mse,
                 'r2': sex_r2,
                 'correlation': sex_correlation,
+                'bad_mean': sex_bad_mean,
+                'bootstrap_ci': sex_ci,
                 'count': len(sex_df)
             }
     
     metrics['sex_metrics'] = sex_metrics
     
-    # MAE per headmotion type (if available)
+    # MAE per headmotion type (if available) with CIs
     if headmotions and any(h != 'N/A' for h in headmotions):
         headmotion_metrics = {}
         # Map headmotion codes to readable names
@@ -381,6 +446,7 @@ def calculate_metrics(predictions, true_ages, modalities, sexes, headmotions=Non
             if len(hm_df) > 0:
                 hm_mae = float(hm_df['ae'].mean())
                 hm_mse = float(hm_df['se'].mean())
+                hm_bad_mean = float(hm_df['bad'].mean())
                 
                 hm_y_true = hm_df['age'].values
                 hm_y_pred = hm_df['prediction'].values
@@ -391,12 +457,17 @@ def calculate_metrics(predictions, true_ages, modalities, sexes, headmotions=Non
                 
                 hm_correlation = float(np.corrcoef(hm_y_true, hm_y_pred)[0, 1]) if len(hm_y_true) > 1 else 0.0
                 
+                # Calculate headmotion-specific bootstrap CIs
+                hm_ci = _bootstrap_ci(hm_y_true, hm_y_pred, n_boot=n_boot, seed=seed)
+                
                 readable_name = headmotion_mapping.get(str(headmotion), str(headmotion))
                 headmotion_metrics[readable_name] = {
                     'mae': hm_mae,
                     'mse': hm_mse,
                     'r2': hm_r2,
                     'correlation': hm_correlation,
+                    'bad_mean': hm_bad_mean,
+                    'bootstrap_ci': hm_ci,
                     'count': len(hm_df)
                 }
         
@@ -404,33 +475,136 @@ def calculate_metrics(predictions, true_ages, modalities, sexes, headmotions=Non
     
     return metrics
 
+def compute_uncertainty_and_tests(y_true, y_pred, n_boot=1000, seed=42):
+    y_true = np.asarray(y_true).astype(float)
+    y_pred = np.asarray(y_pred).astype(float)
+    bad = y_pred - y_true
+
+    # Bootstrap 95% CIs
+    ci = _bootstrap_ci(y_true, y_pred, n_boot=n_boot, seed=seed)
+
+    # Significance tests
+    pearson_r, pearson_p = (np.nan, np.nan)
+    if len(y_true) > 1:
+        try:
+            pearson_r, pearson_p = stats.pearsonr(y_true, y_pred)
+        except Exception:
+            pass
+
+    bad_t, bad_p = (np.nan, np.nan)
+    if len(bad) > 0:
+        try:
+            bad_t, bad_p = stats.ttest_1samp(bad, popmean=0.0, alternative="two-sided")
+        except Exception:
+            pass
+
+    return {
+        "bootstrap_95ci": ci,  # dict with ('low','high') tuples per metric
+        "tests": {
+            "pearson_r": float(pearson_r) if np.isfinite(pearson_r) else None,
+            "pearson_p": float(pearson_p) if np.isfinite(pearson_p) else None,
+            "bad_mean": float(np.mean(bad)) if len(bad) else None,
+            "bad_t": float(bad_t) if np.isfinite(bad_t) else None,
+            "bad_p": float(bad_p) if np.isfinite(bad_p) else None,
+        }
+    }
+
+def _sanitize_name(s: str) -> str:
+    return str(s).replace(" ", "_").replace("/", "_").replace("\\", "_")
+
+def save_eval_plots(y_true, y_pred, out_dir: Path, model_name: str, test_set_name: str):
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # Predicted vs true
+    plt.figure(figsize=(6, 6))
+    plt.scatter(y_true, y_pred, s=8, alpha=0.6)
+    mn, mx = float(np.min(y_true + y_pred) / 2), float(np.max(y_true + y_pred) / 2)
+    mn = float(np.min([np.min(y_true), np.min(y_pred)]))
+    mx = float(np.max([np.max(y_true), np.max(y_pred)]))
+    plt.plot([mn, mx], [mn, mx], 'r--', lw=1)
+    plt.xlabel("Chronological age")
+    plt.ylabel("Predicted age")
+    plt.title(f"{model_name} vs Age ({test_set_name})")
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(out_dir / "pred_vs_age.png", dpi=200)
+    plt.close()
+
+    # BAD vs age
+    bad = y_pred - y_true
+    plt.figure(figsize=(6, 4))
+    plt.scatter(y_true, bad, s=8, alpha=0.6)
+    plt.axhline(0.0, color='r', linestyle='--', lw=1)
+    plt.xlabel("Chronological age")
+    plt.ylabel("Brain Age Delta (Pred - Age)")
+    plt.title(f"BAD vs Age ({model_name} | {test_set_name})")
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(out_dir / "bad_vs_age.png", dpi=200)
+    plt.close()
+
 def print_summary_table(model_name, test_set_name, metrics):
-    """Prints a formatted summary table of the evaluation metrics."""
+    """Prints a formatted summary table of the evaluation metrics with confidence intervals."""
     print("\n" + "="*80)
     print(f"Evaluation Summary: Model '{model_name}' on Test Set '{test_set_name}'")
     print("-"*80)
     
+    # Overall metrics with CIs
+    overall_ci = metrics.get('overall_bootstrap_ci', {})
+    mae_ci = overall_ci.get('mae')
+    bad_ci = overall_ci.get('bad_mean')
+    
     print(f"  Overall MAE: {metrics['overall_mae']:.4f}")
+    if mae_ci:
+        print(f"    MAE 95% CI: [{mae_ci[0]:.4f}, {mae_ci[1]:.4f}]")
+    
     print(f"  Overall MSE: {metrics['overall_mse']:.4f}")
     print(f"  Overall R²:  {metrics['overall_r2']:.4f}")
     print(f"  Overall Correlation: {metrics['overall_correlation']:.4f}")
+    print(f"  Overall BAD Mean: {metrics['overall_bad_mean']:.4f}")
+    if bad_ci:
+        print(f"    BAD Mean 95% CI: [{bad_ci[0]:.4f}, {bad_ci[1]:.4f}]")
+    
     print(f"  Sample Count: {metrics['count']}")
     
+    if 'uncertainty' in metrics:
+        tests = metrics['uncertainty'].get('tests', {})
+        if tests.get('pearson_p') is not None:
+            print(f"  Pearson r p-value: {tests['pearson_p']:.2e}")
+        if tests.get('bad_p') is not None:
+            print(f"  BAD mean vs 0 p-value: {tests['bad_p']:.2e}")
+
     print("\n  Metrics by Modality:")
     if metrics.get('modality_metrics'):
         for modality, mod_metrics in metrics['modality_metrics'].items():
+            mod_ci = mod_metrics.get('bootstrap_ci', {})
+            mod_mae_ci = mod_ci.get('mae', (None, None))
+            mod_bad_ci = mod_ci.get('bad_mean', (None, None))
+            
             print(f"    - {modality} (n={mod_metrics['count']}): MAE={mod_metrics['mae']:.4f}, "
                   f"MSE={mod_metrics['mse']:.4f}, R²={mod_metrics['r2']:.4f}, "
-                  f"Corr={mod_metrics['correlation']:.4f}")
+                  f"Corr={mod_metrics['correlation']:.4f}, BAD={mod_metrics['bad_mean']:.4f}")
+            if mod_mae_ci:
+                print(f"      MAE 95% CI: [{mod_mae_ci[0]:.4f}, {mod_mae_ci[1]:.4f}]")
+            if mod_bad_ci:
+                print(f"      BAD 95% CI: [{mod_bad_ci[0]:.4f}, {mod_bad_ci[1]:.4f}]")
     else:
         print("    No modality data available.")
         
     print("\n  Metrics by Sex:")
     if metrics.get('sex_metrics'):
         for sex, sex_metrics_data in metrics['sex_metrics'].items():
+            sex_ci = sex_metrics_data.get('bootstrap_ci', {})
+            sex_mae_ci = sex_ci.get('mae', (None, None))
+            sex_bad_ci = sex_ci.get('bad_mean', (None, None))
+            
             print(f"    - {sex} (n={sex_metrics_data['count']}): MAE={sex_metrics_data['mae']:.4f}, "
                   f"MSE={sex_metrics_data['mse']:.4f}, R²={sex_metrics_data['r2']:.4f}, "
-                  f"Corr={sex_metrics_data['correlation']:.4f}")
+                  f"Corr={sex_metrics_data['correlation']:.4f}, BAD={sex_metrics_data['bad_mean']:.4f}")
+            if sex_mae_ci:
+                print(f"      MAE 95% CI: [{sex_mae_ci[0]:.4f}, {sex_mae_ci[1]:.4f}]")
+            if sex_bad_ci:
+                print(f"      BAD 95% CI: [{sex_bad_ci[0]:.4f}, {sex_bad_ci[1]:.4f}]")
     else:
         print("    No sex data available.")
     
@@ -438,9 +612,17 @@ def print_summary_table(model_name, test_set_name, metrics):
     if 'headmotion_metrics' in metrics:
         print("\n  Metrics by Head Motion Type:")
         for headmotion, hm_metrics in metrics['headmotion_metrics'].items():
+            hm_ci = hm_metrics.get('bootstrap_ci', {})
+            hm_mae_ci = hm_ci.get('mae', (None, None))
+            hm_bad_ci = hm_ci.get('bad_mean', (None, None))
+            
             print(f"    - {headmotion} (n={hm_metrics['count']}): MAE={hm_metrics['mae']:.4f}, "
                   f"MSE={hm_metrics['mse']:.4f}, R²={hm_metrics['r2']:.4f}, "
-                  f"Corr={hm_metrics['correlation']:.4f}")
+                  f"Corr={hm_metrics['correlation']:.4f}, BAD={hm_metrics['bad_mean']:.4f}")
+            if hm_mae_ci:
+                print(f"      MAE 95% CI: [{hm_mae_ci[0]:.4f}, {hm_mae_ci[1]:.4f}]")
+            if hm_bad_ci:
+                print(f"      BAD 95% CI: [{hm_bad_ci[0]:.4f}, {hm_bad_ci[1]:.4f}]")
         
     print("="*80 + "\n")
 
@@ -451,6 +633,9 @@ def create_wandb_summary_table(evaluation_results):
     for model_name, test_results in evaluation_results.items():
         for test_set_name, metrics in test_results.items():
             # Overall metrics row
+            overall_ci = metrics.get('overall_bootstrap_ci', {})
+            mae_ci = overall_ci.get('mae', (None, None))
+            
             table_data.append([
                 model_name,
                 test_set_name,
@@ -458,14 +643,19 @@ def create_wandb_summary_table(evaluation_results):
                 "N/A",
                 metrics['count'],
                 f"{metrics['overall_mae']:.4f}",
+                f"[{mae_ci[0]:.4f}, {mae_ci[1]:.4f}]" if mae_ci[0] is not None else "N/A",
                 f"{metrics['overall_mse']:.4f}",
                 f"{metrics['overall_r2']:.4f}",
-                f"{metrics['overall_correlation']:.4f}"
+                f"{metrics['overall_correlation']:.4f}",
+                f"{metrics['overall_bad_mean']:.4f}"
             ])
             
             # Modality-specific rows
             if metrics.get('modality_metrics'):
                 for modality, mod_metrics in metrics['modality_metrics'].items():
+                    mod_ci = mod_metrics.get('bootstrap_ci', {})
+                    mod_mae_ci = mod_ci.get('mae', (None, None))
+                    
                     table_data.append([
                         model_name,
                         test_set_name,
@@ -473,14 +663,19 @@ def create_wandb_summary_table(evaluation_results):
                         modality,
                         mod_metrics['count'],
                         f"{mod_metrics['mae']:.4f}",
+                        f"[{mod_mae_ci[0]:.4f}, {mod_mae_ci[1]:.4f}]" if mod_mae_ci[0] is not None else "N/A",
                         f"{mod_metrics['mse']:.4f}",
                         f"{mod_metrics['r2']:.4f}",
-                        f"{mod_metrics['correlation']:.4f}"
+                        f"{mod_metrics['correlation']:.4f}",
+                        f"{mod_metrics['bad_mean']:.4f}"
                     ])
             
             # Sex-specific rows
             if metrics.get('sex_metrics'):
                 for sex, sex_metrics_data in metrics['sex_metrics'].items():
+                    sex_ci = sex_metrics_data.get('bootstrap_ci', {})
+                    sex_mae_ci = sex_ci.get('mae', (None, None))
+                    
                     table_data.append([
                         model_name,
                         test_set_name,
@@ -488,14 +683,19 @@ def create_wandb_summary_table(evaluation_results):
                         sex,
                         sex_metrics_data['count'],
                         f"{sex_metrics_data['mae']:.4f}",
+                        f"[{sex_mae_ci[0]:.4f}, {sex_mae_ci[1]:.4f}]" if sex_mae_ci[0] is not None else "N/A",
                         f"{sex_metrics_data['mse']:.4f}",
                         f"{sex_metrics_data['r2']:.4f}",
-                        f"{sex_metrics_data['correlation']:.4f}"
+                        f"{sex_metrics_data['correlation']:.4f}",
+                        f"{sex_metrics_data['bad_mean']:.4f}"
                     ])
             
             # Headmotion-specific rows
             if metrics.get('headmotion_metrics'):
                 for headmotion, hm_metrics in metrics['headmotion_metrics'].items():
+                    hm_ci = hm_metrics.get('bootstrap_ci', {})
+                    hm_mae_ci = hm_ci.get('mae', (None, None))
+                    
                     table_data.append([
                         model_name,
                         test_set_name,
@@ -503,16 +703,18 @@ def create_wandb_summary_table(evaluation_results):
                         headmotion,
                         hm_metrics['count'],
                         f"{hm_metrics['mae']:.4f}",
+                        f"[{hm_mae_ci[0]:.4f}, {hm_mae_ci[1]:.4f}]" if hm_mae_ci[0] is not None else "N/A",
                         f"{hm_metrics['mse']:.4f}",
                         f"{hm_metrics['r2']:.4f}",
-                        f"{hm_metrics['correlation']:.4f}"
+                        f"{hm_metrics['correlation']:.4f}",
+                        f"{hm_metrics['bad_mean']:.4f}"
                     ])
     
     # Create wandb table
     table = wandb.Table(
         columns=[
             "Model", "Test Set", "Category", "Subcategory", "Count",
-            "MAE", "MSE", "R²", "Correlation"
+            "MAE", "MAE 95% CI", "MSE", "R²", "Correlation", "BAD Mean"
         ],
         data=table_data
     )
@@ -536,17 +738,18 @@ def print_final_summary(evaluation_results):
                 'MSE': metrics['overall_mse'],
                 'R²': metrics['overall_r2'],
                 'Correlation': metrics['overall_correlation'],
+                'BAD Mean': metrics['overall_bad_mean'],
                 'Count': metrics['count']
             })
     
     # Print as formatted table
     if summary_data:
         df = pd.DataFrame(summary_data)
-        print(f"\n{'Model':<20} {'Test Set':<20} {'MAE':<8} {'MSE':<8} {'R²':<8} {'Corr':<8} {'Count':<8}")
-        print("-" * 100)
+        print(f"\n{'Model':<20} {'Test Set':<20} {'MAE':<8} {'MSE':<8} {'R²':<8} {'Corr':<8} {'BAD':<8} {'Count':<8}")
+        print("-" * 108)
         for _, row in df.iterrows():
             print(f"{row['Model']:<20} {row['Test Set']:<20} {row['MAE']:<8.4f} {row['MSE']:<8.4f} "
-                  f"{row['R²']:<8.4f} {row['Correlation']:<8.4f} {row['Count']:<8}")
+                  f"{row['R²']:<8.4f} {row['Correlation']:<8.4f} {row['BAD Mean']:<8.4f} {row['Count']:<8}")
         
         # Print best performers
         print(f"\n{'-'*50}")
@@ -694,8 +897,23 @@ def main():
                 beta = correction_params['beta']
                 preds = (preds - beta) / alpha
 
-            metrics = calculate_metrics(preds, true_ages, mods, sxs, hmotions)
+            metrics = calculate_metrics_with_ci(
+                preds, true_ages, mods, sxs, hmotions,
+                n_boot=cfg.get("n_bootstrap", 1000),
+                seed=cfg.get("bootstrap_seed", 42)
+            )
             
+            uncertainty = compute_uncertainty_and_tests(
+                true_ages, preds,
+                n_boot=cfg.get("n_bootstrap", 1000),
+                seed=cfg.get("bootstrap_seed", 42),
+            )
+            metrics['uncertainty'] = uncertainty
+
+            # save plots
+            plots_subdir = log_dir / "plots" / _sanitize_name(model_name) / _sanitize_name(test_set_name)
+            save_eval_plots(true_ages, preds, plots_subdir, model_name, test_set_name)
+
             evaluation_results[model_name][test_set_name] = metrics
             
             # Log to W&B
@@ -706,6 +924,7 @@ def main():
                     f"{log_prefix}/overall_mse": metrics['overall_mse'], 
                     f"{log_prefix}/overall_r2": metrics['overall_r2'],
                     f"{log_prefix}/overall_correlation": metrics['overall_correlation'],
+                    f"{log_prefix}/overall_bad_mean": metrics['overall_bad_mean'],
                     f"{log_prefix}/count": metrics['count']
                 })
                 
@@ -717,6 +936,7 @@ def main():
                             f"{log_prefix}/{modality}_mse": mod_metrics['mse'],
                             f"{log_prefix}/{modality}_r2": mod_metrics['r2'],
                             f"{log_prefix}/{modality}_correlation": mod_metrics['correlation'],
+                            f"{log_prefix}/{modality}_bad_mean": mod_metrics['bad_mean'],
                             f"{log_prefix}/{modality}_count": mod_metrics['count']
                         })
                 
@@ -728,9 +948,16 @@ def main():
                             f"{log_prefix}/{sex}_mse": sex_metrics_data['mse'],
                             f"{log_prefix}/{sex}_r2": sex_metrics_data['r2'],
                             f"{log_prefix}/{sex}_correlation": sex_metrics_data['correlation'],
+                            f"{log_prefix}/{sex}_bad_mean": sex_metrics_data['bad_mean'],
                             f"{log_prefix}/{sex}_count": sex_metrics_data['count']
                         })
-            
+                
+                if use_wandb:
+                    wandb.log({
+                        f"{log_prefix}/pred_vs_age": wandb.Image(str(plots_subdir / "pred_vs_age.png")),
+                        f"{log_prefix}/bad_vs_age": wandb.Image(str(plots_subdir / "bad_vs_age.png")),
+                    })
+
             # Print summary
             print_summary_table(model_name, test_set_name, metrics)
 
