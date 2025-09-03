@@ -22,7 +22,7 @@ warnings.filterwarnings("ignore")
 project_root = Path(__file__).parent
 sys.path.append(str(project_root))
 
-from brain_age_pred.dataset.domain_randomization import DomainRandomizer
+from brain_age_pred.dataset.augmentation import AugmentationPipeline
 from brain_age_pred.dataset.custom_transformations import RandomResolutionD, RandGammaD
 
 # Individual transform imports
@@ -387,8 +387,8 @@ class TransformationTester:
         plt.show()
   
     def _create_domain_randomizer(self, **override_params):
-        """Helper method to create DomainRandomizer with proper parameter handling."""
-        # Start with base config, excluding parameters that shouldn't be passed to DomainRandomizer
+        """Helper method to create AugmentationPipeline with proper parameter handling."""
+        # Start with base config, excluding parameters that shouldn't be passed to AugmentationPipeline
         config_copy = {k: v for k, v in self.dr_config.items() 
                       if k not in ['use_domain_randomization', 'augmentation_strength', 
                                    'enable_spatial', 'enable_simulation']}
@@ -396,7 +396,7 @@ class TransformationTester:
         # Apply any overrides
         config_copy.update(override_params)
       
-        return DomainRandomizer(device=self.device, **config_copy)
+        return AugmentationPipeline(device=self.device, **config_copy)
 
     def test_noise_and_artifacts(self):
         """Test noise and artifact transformations."""

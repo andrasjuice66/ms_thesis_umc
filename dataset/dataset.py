@@ -20,6 +20,7 @@ import torch
 from torch.utils.data import Dataset
 from monai.transforms import CenterSpatialCropd
 import nibabel as nib
+import torchio as tio
 
 __all__ = ["BADataset"]
 
@@ -37,6 +38,8 @@ class BADataset(Dataset):
     cache_size   : 0  → no per-worker cache  (recommended)
                    >0 → per-worker LRU cache of that many samples
     mode         : 'train' | 'val' | 'test'  (apply transform only in train)
+    apply_clipping : bool (default True) → clip negative values to 0
+    apply_normalization : bool (default True) → apply Z-normalization
     """
 
     def __init__(
@@ -49,6 +52,9 @@ class BADataset(Dataset):
         transform    = None,
         cache_size   : int = 0,        # 0 ⇒ off
         mode         : str = "train",
+        apply_clipping : bool = True,
+        apply_normalization : bool = True,
+        crop_size : tuple[int, int, int] = (160, 192, 160),
     ):
         assert len(file_paths) == len(age_labels), "len(paths) ≠ len(labels)"
         if modalities is not None:
@@ -62,9 +68,28 @@ class BADataset(Dataset):
         self.sample_wts    = sample_wts
         self.transform     = transform
         self.mode          = mode.lower()
+        self.apply_clipping = apply_clipping
+        self.apply_normalization = apply_normalization
         
-        # Center spatial crop that will be applied to all samples
-        self.center_crop = CenterSpatialCropd(keys=["image", "seg_gt"], roi_size=(160, 192, 160), allow_missing_keys=True)
+
+        self.center_crop = CenterSpatialCropd(keys=["image", "seg_gt"], roi_size=crop_size, allow_missing_keys=True)
+        
+        # Always-applied transforms
+        always_transforms = []
+        
+        # Clipping transform to set negative values to 0
+        if self.apply_clipping:
+            always_transforms.append(
+                tio.transforms.Clamp(out_min=0, keys=["image"], include=['image'])
+            )
+        
+        # Z-normalization with masking for positive values
+        if self.apply_normalization:
+            always_transforms.append(
+                tio.transforms.ZNormalization(masking_method=lambda x: x > 0, keys=["image"], include=['image'])
+            )
+        
+        self.always_transforms = tio.transforms.Compose(always_transforms) if always_transforms else None
 
         # --- local per-process cache (OrderedDict) ---------------------- #
         self.cache_size    = max(0, cache_size)
@@ -100,16 +125,18 @@ class BADataset(Dataset):
         if self.sexes is not None:
             sample["sex"] = self.sexes[idx]
 
-        # ---- always apply center crop ------------------------------------
-        
-        # ---- transform -------------------------------------------------
+        # ---- always apply transformations first --------------------------
+        if self.always_transforms is not None:
+            sample = self.always_transforms(sample)
+            
+        # ---- apply user-defined transform ---------------------------------
         if self.transform is not None:
             sample = self.transform(sample)         
             
+        # ---- always apply center crop last --------------------------------
         sample = self.center_crop(sample)
 
-
-        # ---- sanity checks --------------------------------------------
+        # ---- sanity checks ------------------------------------------------
         if sample is None:
             raise RuntimeError(f"Transform returned None for idx {idx}")
         if sample.get("image") is None:

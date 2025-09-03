@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Quick visual sanity-check for DomainRandomizer.
+Quick visual sanity-check for AugmentationPipeline.
 
 Usage
 -----
@@ -17,7 +17,7 @@ import numpy as np
 import torch
 import matplotlib.pyplot as plt
 
-from brain_age_pred.dataset.domain_randomization import DomainRandomizer
+from brain_age_pred.dataset.augmentation import AugmentationPipeline
 
 
 # ------------------------------------------------------------------------- #
@@ -50,7 +50,7 @@ def plot_three_planes(axs, volume: np.ndarray, title_prefix: str) -> None:
 
 def visualize_single_image(
     img_path: str | Path,
-    dr: DomainRandomizer,
+    dr: AugmentationPipeline,
     n_aug: int = 3,
 ) -> None:
     """
@@ -82,7 +82,7 @@ def visualize_single_image(
 #                                    main                                   #
 # ------------------------------------------------------------------------- #
 def parse_args():
-    ap = argparse.ArgumentParser(description="Visualize DomainRandomizer output")
+    ap = argparse.ArgumentParser(description="Visualize AugmentationPipeline output")
     ap.add_argument(
         "--device",
         choices=["auto", "cpu", "cuda"],
@@ -107,7 +107,7 @@ def main() -> None:
     )
 
     # Instantiate with default probabilities / ranges
-    dr = DomainRandomizer(device=device)
+    dr = AugmentationPipeline(device=device)
 
     img_paths = [
         r"C:\Projects\thesis_project\Data\brain_age_preprocessed\CamCAN\sub-CC110101_T2w.nii.gz",

@@ -23,7 +23,7 @@ sys.path.insert(0, str(project_root))
 
 from brain_age_pred.configs.config import Config
 from brain_age_pred.dataset.dataset import BADataset          
-from brain_age_pred.dataset.domain_randomization import DomainRandomizer
+from brain_age_pred.dataset.augmentation import AugmentationPipeline
 from brain_age_pred.models.sfcn import SFCN
 from brain_age_pred.models.sfcn_class import SFCNClass
 from brain_age_pred.models.brainagenext import BrainAgeNeXt

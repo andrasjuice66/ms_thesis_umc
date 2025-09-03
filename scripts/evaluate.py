@@ -543,6 +543,137 @@ def save_eval_plots(y_true, y_pred, out_dir: Path, model_name: str, test_set_nam
     plt.savefig(out_dir / "bad_vs_age.png", dpi=200)
     plt.close()
 
+def save_comparison_plots(y_true, y_pred_uncorrected, y_pred_corrected, out_dir: Path, model_name: str, test_set_name: str):
+    """Save comparison plots showing uncorrected vs corrected predictions."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # Before vs After Correction - Predicted vs True
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
+    
+    # Uncorrected predictions
+    ax1.scatter(y_true, y_pred_uncorrected, s=8, alpha=0.6, color='blue')
+    mn = float(np.min([np.min(y_true), np.min(y_pred_uncorrected)]))
+    mx = float(np.max([np.max(y_true), np.max(y_pred_uncorrected)]))
+    ax1.plot([mn, mx], [mn, mx], 'r--', lw=1)
+    ax1.set_xlabel("Chronological age")
+    ax1.set_ylabel("Predicted age")
+    ax1.set_title(f"Before Correction\n{model_name} ({test_set_name})")
+    ax1.grid(True, alpha=0.3)
+    
+    # Corrected predictions
+    ax2.scatter(y_true, y_pred_corrected, s=8, alpha=0.6, color='green')
+    mn = float(np.min([np.min(y_true), np.min(y_pred_corrected)]))
+    mx = float(np.max([np.max(y_true), np.max(y_pred_corrected)]))
+    ax2.plot([mn, mx], [mn, mx], 'r--', lw=1)
+    ax2.set_xlabel("Chronological age")
+    ax2.set_ylabel("Predicted age")
+    ax2.set_title(f"After Correction\n{model_name} ({test_set_name})")
+    ax2.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.savefig(out_dir / "pred_vs_age_comparison.png", dpi=200)
+    plt.close()
+
+    # Before vs After Correction - BAD vs Age
+    bad_uncorrected = y_pred_uncorrected - y_true
+    bad_corrected = y_pred_corrected - y_true
+    
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+    
+    # Uncorrected BAD
+    ax1.scatter(y_true, bad_uncorrected, s=8, alpha=0.6, color='blue')
+    ax1.axhline(0.0, color='r', linestyle='--', lw=1)
+    ax1.set_xlabel("Chronological age")
+    ax1.set_ylabel("Brain Age Delta (Pred - Age)")
+    ax1.set_title(f"BAD Before Correction\n{model_name} ({test_set_name})")
+    ax1.grid(True, alpha=0.3)
+    
+    # Corrected BAD
+    ax2.scatter(y_true, bad_corrected, s=8, alpha=0.6, color='green')
+    ax2.axhline(0.0, color='r', linestyle='--', lw=1)
+    ax2.set_xlabel("Chronological age")
+    ax2.set_ylabel("Brain Age Delta (Pred - Age)")
+    ax2.set_title(f"BAD After Correction\n{model_name} ({test_set_name})")
+    ax2.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.savefig(out_dir / "bad_vs_age_comparison.png", dpi=200)
+    plt.close()
+
+    # BAD Distribution Comparison
+    plt.figure(figsize=(10, 6))
+    plt.hist(bad_uncorrected, bins=50, alpha=0.6, label='Before Correction', color='blue', density=True)
+    plt.hist(bad_corrected, bins=50, alpha=0.6, label='After Correction', color='green', density=True)
+    plt.axvline(np.mean(bad_uncorrected), color='blue', linestyle='--', 
+                label=f'Mean Before: {np.mean(bad_uncorrected):.2f}')
+    plt.axvline(np.mean(bad_corrected), color='green', linestyle='--', 
+                label=f'Mean After: {np.mean(bad_corrected):.2f}')
+    plt.axvline(0, color='red', linestyle='-', alpha=0.8, label='Perfect (BAD=0)')
+    plt.xlabel("Brain Age Delta (Pred - Age)")
+    plt.ylabel("Density")
+    plt.title(f"BAD Distribution Comparison\n{model_name} ({test_set_name})")
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(out_dir / "bad_distribution_comparison.png", dpi=200)
+    plt.close()
+
+def print_comparison_summary(model_name, test_set_name, metrics_uncorrected, metrics_corrected):
+    """Print a comparison summary showing before and after correction metrics."""
+    print("\n" + "="*100)
+    print(f"CORRECTION COMPARISON: Model '{model_name}' on Test Set '{test_set_name}'")
+    print("="*100)
+    
+    print(f"{'Metric':<25} {'Before Correction':<20} {'After Correction':<20} {'Change':<15}")
+    print("-" * 100)
+    
+    # Overall metrics comparison
+    mae_before = metrics_uncorrected['overall_mae']
+    mae_after = metrics_corrected['overall_mae']
+    mae_change = mae_after - mae_before
+    mae_change_pct = (mae_change / mae_before) * 100
+    
+    mse_before = metrics_uncorrected['overall_mse']
+    mse_after = metrics_corrected['overall_mse']
+    mse_change = mse_after - mse_before
+    mse_change_pct = (mse_change / mse_before) * 100
+    
+    r2_before = metrics_uncorrected['overall_r2']
+    r2_after = metrics_corrected['overall_r2']
+    r2_change = r2_after - r2_before
+    
+    corr_before = metrics_uncorrected['overall_correlation']
+    corr_after = metrics_corrected['overall_correlation']
+    corr_change = corr_after - corr_before
+    
+    bad_before = metrics_uncorrected['overall_bad_mean']
+    bad_after = metrics_corrected['overall_bad_mean']
+    bad_change = bad_after - bad_before
+    
+    print(f"{'MAE':<25} {mae_before:<20.4f} {mae_after:<20.4f} {mae_change:+8.4f} ({mae_change_pct:+6.1f}%)")
+    print(f"{'MSE':<25} {mse_before:<20.4f} {mse_after:<20.4f} {mse_change:+8.4f} ({mse_change_pct:+6.1f}%)")
+    print(f"{'R²':<25} {r2_before:<20.4f} {r2_after:<20.4f} {r2_change:+8.4f}")
+    print(f"{'Correlation':<25} {corr_before:<20.4f} {corr_after:<20.4f} {corr_change:+8.4f}")
+    print(f"{'BAD Mean':<25} {bad_before:<20.4f} {bad_after:<20.4f} {bad_change:+8.4f}")
+    
+    # Confidence intervals comparison
+    ci_before = metrics_uncorrected.get('overall_bootstrap_ci', {})
+    ci_after = metrics_corrected.get('overall_bootstrap_ci', {})
+    
+    mae_ci_before = ci_before.get('mae', (None, None))
+    mae_ci_after = ci_after.get('mae', (None, None))
+    bad_ci_before = ci_before.get('bad_mean', (None, None))
+    bad_ci_after = ci_after.get('bad_mean', (None, None))
+    
+    print(f"\n{'Confidence Intervals (95%)':<25}")
+    print("-" * 50)
+    if mae_ci_before[0] is not None and mae_ci_after[0] is not None:
+        print(f"{'MAE CI':<25} [{mae_ci_before[0]:.4f}, {mae_ci_before[1]:.4f}] → [{mae_ci_after[0]:.4f}, {mae_ci_after[1]:.4f}]")
+    if bad_ci_before[0] is not None and bad_ci_after[0] is not None:
+        print(f"{'BAD CI':<25} [{bad_ci_before[0]:.4f}, {bad_ci_before[1]:.4f}] → [{bad_ci_after[0]:.4f}, {bad_ci_after[1]:.4f}]")
+    
+    print("="*100 + "\n")
+
 def print_summary_table(model_name, test_set_name, metrics):
     """Prints a formatted summary table of the evaluation metrics with confidence intervals."""
     print("\n" + "="*80)
@@ -886,51 +1017,105 @@ def main():
             )
 
             # Evaluate and calculate metrics
-            preds, true_ages, mods, sxs, hmotions = evaluate_model(
+            preds_uncorrected, true_ages, mods, sxs, hmotions = evaluate_model(
                 model, test_loader, device, model_info["params"]["type"], headmotions
             )
             
-            # Apply correction if params are available
-            if correction_params:
-                logger.info(f"Applying regression correction to predictions for '{test_set_name}'")
-                alpha = correction_params['alpha']
-                beta = correction_params['beta']
-                preds = (preds - beta) / alpha
-
-            metrics = calculate_metrics_with_ci(
-                preds, true_ages, mods, sxs, hmotions,
+            # Calculate metrics BEFORE correction
+            metrics_uncorrected = calculate_metrics_with_ci(
+                preds_uncorrected, true_ages, mods, sxs, hmotions,
                 n_boot=cfg.get("n_bootstrap", 1000),
                 seed=cfg.get("bootstrap_seed", 42)
             )
             
-            uncertainty = compute_uncertainty_and_tests(
-                true_ages, preds,
+            uncertainty_uncorrected = compute_uncertainty_and_tests(
+                true_ages, preds_uncorrected,
                 n_boot=cfg.get("n_bootstrap", 1000),
                 seed=cfg.get("bootstrap_seed", 42),
             )
-            metrics['uncertainty'] = uncertainty
+            metrics_uncorrected['uncertainty'] = uncertainty_uncorrected
+            
+            # Apply correction and calculate corrected metrics
+            preds_corrected = preds_uncorrected.copy()
+            metrics_corrected = None
+            correction_applied = False
+            
+            if correction_params:
+                logger.info(f"Applying regression correction to predictions for '{test_set_name}'")
+                alpha = correction_params['alpha']
+                beta = correction_params['beta']
+                preds_corrected = (preds_uncorrected - beta) / alpha
+                correction_applied = True
+                
+                # Calculate metrics AFTER correction
+                metrics_corrected = calculate_metrics_with_ci(
+                    preds_corrected, true_ages, mods, sxs, hmotions,
+                    n_boot=cfg.get("n_bootstrap", 1000),
+                    seed=cfg.get("bootstrap_seed", 42)
+                )
+                
+                uncertainty_corrected = compute_uncertainty_and_tests(
+                    true_ages, preds_corrected,
+                    n_boot=cfg.get("n_bootstrap", 1000),
+                    seed=cfg.get("bootstrap_seed", 42),
+                )
+                metrics_corrected['uncertainty'] = uncertainty_corrected
+            else:
+                # If no correction, corrected metrics are the same as uncorrected
+                metrics_corrected = metrics_uncorrected.copy()
 
-            # save plots
+            # Save plots
             plots_subdir = log_dir / "plots" / _sanitize_name(model_name) / _sanitize_name(test_set_name)
-            save_eval_plots(true_ages, preds, plots_subdir, model_name, test_set_name)
+            
+            # Save individual plots (for backward compatibility)
+            save_eval_plots(true_ages, preds_uncorrected, plots_subdir, model_name, f"{test_set_name} (Uncorrected)")
+            if correction_applied:
+                save_eval_plots(true_ages, preds_corrected, plots_subdir, model_name, f"{test_set_name} (Corrected)")
+                
+                # Save comparison plots
+                save_comparison_plots(true_ages, preds_uncorrected, preds_corrected, plots_subdir, model_name, test_set_name)
 
-            evaluation_results[model_name][test_set_name] = metrics
+            # Store results (use corrected metrics as primary, but include uncorrected for comparison)
+            evaluation_results[model_name][test_set_name] = {
+                'corrected': metrics_corrected,
+                'uncorrected': metrics_uncorrected,
+                'correction_applied': correction_applied
+            }
+            
+            # Print comparison summary
+            if correction_applied:
+                print_comparison_summary(model_name, test_set_name, metrics_uncorrected, metrics_corrected)
+            
+            # Print main summary (use corrected metrics)
+            print_summary_table(model_name, test_set_name, metrics_corrected)
             
             # Log to W&B
             if use_wandb:
                 log_prefix = f"{model_name}_{test_set_name}"
+                
+                # Log uncorrected metrics
                 wandb.log({
-                    f"{log_prefix}/overall_mae": metrics['overall_mae'],
-                    f"{log_prefix}/overall_mse": metrics['overall_mse'], 
-                    f"{log_prefix}/overall_r2": metrics['overall_r2'],
-                    f"{log_prefix}/overall_correlation": metrics['overall_correlation'],
-                    f"{log_prefix}/overall_bad_mean": metrics['overall_bad_mean'],
-                    f"{log_prefix}/count": metrics['count']
+                    f"{log_prefix}/uncorrected_mae": metrics_uncorrected['overall_mae'],
+                    f"{log_prefix}/uncorrected_mse": metrics_uncorrected['overall_mse'], 
+                    f"{log_prefix}/uncorrected_r2": metrics_uncorrected['overall_r2'],
+                    f"{log_prefix}/uncorrected_correlation": metrics_uncorrected['overall_correlation'],
+                    f"{log_prefix}/uncorrected_bad_mean": metrics_uncorrected['overall_bad_mean'],
                 })
                 
-                # Log modality-specific metrics
-                if metrics.get('modality_metrics'):
-                    for modality, mod_metrics in metrics['modality_metrics'].items():
+                # Log corrected metrics (primary)
+                wandb.log({
+                    f"{log_prefix}/overall_mae": metrics_corrected['overall_mae'],
+                    f"{log_prefix}/overall_mse": metrics_corrected['overall_mse'], 
+                    f"{log_prefix}/overall_r2": metrics_corrected['overall_r2'],
+                    f"{log_prefix}/overall_correlation": metrics_corrected['overall_correlation'],
+                    f"{log_prefix}/overall_bad_mean": metrics_corrected['overall_bad_mean'],
+                    f"{log_prefix}/count": metrics_corrected['count'],
+                    f"{log_prefix}/correction_applied": correction_applied
+                })
+                
+                # Log modality-specific corrected metrics
+                if metrics_corrected.get('modality_metrics'):
+                    for modality, mod_metrics in metrics_corrected['modality_metrics'].items():
                         wandb.log({
                             f"{log_prefix}/{modality}_mae": mod_metrics['mae'],
                             f"{log_prefix}/{modality}_mse": mod_metrics['mse'],
@@ -940,9 +1125,9 @@ def main():
                             f"{log_prefix}/{modality}_count": mod_metrics['count']
                         })
                 
-                # Log sex-specific metrics
-                if metrics.get('sex_metrics'):
-                    for sex, sex_metrics_data in metrics['sex_metrics'].items():
+                # Log sex-specific corrected metrics
+                if metrics_corrected.get('sex_metrics'):
+                    for sex, sex_metrics_data in metrics_corrected['sex_metrics'].items():
                         wandb.log({
                             f"{log_prefix}/{sex}_mae": sex_metrics_data['mae'],
                             f"{log_prefix}/{sex}_mse": sex_metrics_data['mse'],
@@ -952,14 +1137,20 @@ def main():
                             f"{log_prefix}/{sex}_count": sex_metrics_data['count']
                         })
                 
-                if use_wandb:
-                    wandb.log({
-                        f"{log_prefix}/pred_vs_age": wandb.Image(str(plots_subdir / "pred_vs_age.png")),
-                        f"{log_prefix}/bad_vs_age": wandb.Image(str(plots_subdir / "bad_vs_age.png")),
+                # Log plots
+                plot_logs = {
+                    f"{log_prefix}/pred_vs_age_uncorrected": wandb.Image(str(plots_subdir / "pred_vs_age.png")),
+                    f"{log_prefix}/bad_vs_age_uncorrected": wandb.Image(str(plots_subdir / "bad_vs_age.png")),
+                }
+                
+                if correction_applied:
+                    plot_logs.update({
+                        f"{log_prefix}/pred_vs_age_comparison": wandb.Image(str(plots_subdir / "pred_vs_age_comparison.png")),
+                        f"{log_prefix}/bad_vs_age_comparison": wandb.Image(str(plots_subdir / "bad_vs_age_comparison.png")),
+                        f"{log_prefix}/bad_distribution_comparison": wandb.Image(str(plots_subdir / "bad_distribution_comparison.png")),
                     })
-
-            # Print summary
-            print_summary_table(model_name, test_set_name, metrics)
+                
+                wandb.log(plot_logs)
 
     # 5. --- Final Summary and W&B Table ---
     print_final_summary(evaluation_results)

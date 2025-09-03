@@ -34,7 +34,7 @@ model:
 # -------------------------------------------------------------------------
 # Domain-randomisation settings
 # Every key here maps 1-to-1 to a keyword argument or probability override
-# accepted by the new DomainRandomizer class.
+# accepted by the new AugmentationPipeline class.
 # -------------------------------------------------------------------------
 domain_randomization:
   use_domain_randomization: false

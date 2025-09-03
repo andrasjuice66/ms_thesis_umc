@@ -18,7 +18,7 @@ wandb:
   use_wandb: true
   project: "brain-age-evaluation"
   entity: null
-  experiment_name: "evaluation-final-datasets-with-stats"  # optional, auto-generated if not provided
+  experiment_name: "evaluation-final-datasets-with-stats-before-after-correction"  # optional, auto-generated if not provided
 
 # --- Models to Evaluate ---
 # List of models, each with a name, checkpoint path, and parameters.
