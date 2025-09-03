@@ -38,7 +38,7 @@ sys.path.insert(0, str(project_root))
 
 # Import project modules
 from brain_age_pred.dataset.dataset import BADataset
-from brain_age_pred.dataset.domain_randomization import DomainRandomizer
+from brain_age_pred.dataset.augmentation import AugmentationPipeline
 from brain_age_pred.utils.utils import read_csv, load_checkpoint
 from brain_age_pred.training.metrics import calculate_metrics
 
@@ -173,7 +173,7 @@ def create_eval_transforms(device, config, use_domain_rand=False, use_tumor=Fals
     if not use_domain_rand:
         return None
     
-    eval_transform = DomainRandomizer(
+    eval_transform = AugmentationPipeline(
         device=device,
         use_tumor_simulation=use_tumor,
         **config['domain_randomization'],

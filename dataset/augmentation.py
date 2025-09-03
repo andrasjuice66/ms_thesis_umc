@@ -7,7 +7,7 @@ GPU-aware domain-randomisation pipeline for 3-D brain MR images.
 
 Typical use
 -----------
-dr = DomainRandomizer(device=torch.device("cuda"), **cfg["domain_randomization"])
+dr = AugmentationPipeline(device=torch.device("cuda"), **cfg["domain_randomization"])
 train_ds = BADataset(..., transform=dr, mode="train")
 """
 from __future__ import annotations
@@ -45,7 +45,7 @@ from brain_age_pred.dataset.custom_transformations import (
 # Import tumor simulator
 from brain_age_pred.dataset.tumor_simulation import TumorSimulationModule
 
-class DomainRandomizer:
+class AugmentationPipeline:
     """
     Random geometric, intensity and artefact transforms for 3-D MRI volumes.
     """
@@ -285,7 +285,7 @@ class DomainRandomizer:
         self.augmentation_strength = params["augmentation_strength"]
 
         # merge / override probabilities
-        self.prob = {**DomainRandomizer._DEFAULT_PROBS}
+        self.prob = {**AugmentationPipeline._DEFAULT_PROBS}
         if transform_probs:
             self.prob.update(transform_probs)
 
@@ -519,14 +519,14 @@ class DomainRandomizer:
             
             # Check if result is None or if image key is missing
             if result is None:
-                raise RuntimeError("DomainRandomizer: MONAI pipeline returned None")
+                raise RuntimeError("AugmentationPipeline: MONAI pipeline returned None")
             
             if self.image_key not in result:
-                raise RuntimeError(f"DomainRandomizer: Image key '{self.image_key}' missing after transforms")
+                raise RuntimeError(f"AugmentationPipeline: Image key '{self.image_key}' missing after transforms")
             
             img = result[self.image_key]
             if img is None:
-                raise RuntimeError(f"DomainRandomizer: Image is None after transforms")
+                raise RuntimeError(f"AugmentationPipeline: Image is None after transforms")
 
             # Update sample with transformed image
             sample[self.image_key] = img

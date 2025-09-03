@@ -4,7 +4,7 @@ Test script for domain randomization, showing which transformations were applied
 This script:
 1. Loads configuration from a YAML file
 2. Loads a sample 3D brain MRI image
-3. Creates a modified DomainRandomizer that tracks which transforms were applied
+3. Creates a modified AugmentationPipeline that tracks which transforms were applied
 4. Applies the randomizer multiple times to the same image
 5. Logs and displays which transformations were used each time
 """
@@ -28,7 +28,7 @@ import torchio as tio
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from brain_age_pred.dataset.domain_randomization import DomainRandomizer
+from brain_age_pred.dataset.augmentation import AugmentationPipeline
 from brain_age_pred.dataset.custom_transformations import RandomResolutionD, RandGammaD
 
 # Set up logging
@@ -60,8 +60,8 @@ class TrackedTransform:
         
         return result
 
-class TrackingDomainRandomizer(DomainRandomizer):
-    """Extension of DomainRandomizer that tracks which transforms were applied."""
+class TrackingAugmentationPipeline(AugmentationPipeline):
+    """Extension of AugmentationPipeline that tracks which transforms were applied."""
     
     def _build_monai_pipeline(self) -> None:
         """Override to add tracking wrappers around transforms."""
@@ -308,14 +308,14 @@ class TrackingDomainRandomizer(DomainRandomizer):
         
         # Update the sample with the transformed image
         if result is None:
-            raise RuntimeError("DomainRandomizer: MONAI pipeline returned None")
+            raise RuntimeError("AugmentationPipeline: MONAI pipeline returned None")
         
         if self.image_key not in result:
-            raise RuntimeError(f"DomainRandomizer: Image key '{self.image_key}' missing after transforms")
+            raise RuntimeError(f"AugmentationPipeline: Image key '{self.image_key}' missing after transforms")
         
         img = result[self.image_key]
         if img is None:
-            raise RuntimeError(f"DomainRandomizer: Image is None after transforms")
+            raise RuntimeError(f"AugmentationPipeline: Image is None after transforms")
         
         # Keep tensors on the same device
         sample[self.image_key] = img
@@ -509,7 +509,7 @@ def test_domain_randomization(config_path, num_iterations=10, image_path=None):
     image_key = domain_rand_config.get("image_key", "image")
     
     # Create the tracking domain randomizer
-    randomizer = TrackingDomainRandomizer(
+    randomizer = TrackingAugmentationPipeline(
         device=device,
         **domain_rand_config  # Pass all domain randomization config parameters
     )

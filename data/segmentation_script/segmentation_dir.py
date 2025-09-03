@@ -267,21 +267,24 @@ def main(input_dir, output_dir) -> None:
 
 
 if __name__ == "__main__":
-    # input_dir = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed/CoRR")
-    # output_dir = Path("/mnt/c/Projects/thesis_project/Data/brain_age_segmented/CoRR")
-    # main(input_dir, output_dir)
-    input_dir = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed/MovementRelated")
-    output_dir = Path("/mnt/c/Projects/thesis_project/Data/brain_age_segmented/MovementRelated")
+    input_dir = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed_no_csf/GSP")
+    output_dir = Path("/mnt/c/Projects/thesis_project/Data/brain_age_segmented/GSP")
     main(input_dir, output_dir)
-    # input_dir = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed/SALD")
-    # output_dir = Path("/mnt/c/Projects/thesis_project/Data/brain_age_segmented/SALD")
-    # main(input_dir, output_dir)
 
-    # input_dir = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed/AOMIC_ID1000")
-    # output_dir = Path("/mnt/c/Projects/thesis_project/Data/brain_age_segmented/AOMIC_ID1000")
-    # main(input_dir, output_dir)
+    input_dir = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed_no_csf/ATAG")
+    out_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed_no_csf/ATAG")
+    main(input_dir, out_root)
 
 
-"""
-python3 segmentation_dir.py "/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed/" "/mnt/c/Projects/thesis_project/Data/brain_age_pred/brain_age_segmented/" --threads 6 --wandb-project "thesis_preprocess"
-"""
+    input_dir = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed_no_csf/CEREBRUM-7T")
+    out_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed_no_csf/CEREBRUM-7T")
+    main(input_dir, out_root)
+
+    input_dir = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed_no_csf/CBS")
+    out_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed_no_csf/CBS")
+    main(input_dir, out_root)
+
+    input_dir = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed_no_csf/CFMM-7T")
+    out_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed_no_csf/CFMM-7T")
+    main(input_dir, out_root)
+    

@@ -1,7 +1,7 @@
 # ────────────────────────────  DATA  ──────────────────────────── #
 data:
   train_csv: "/home/ajoos/brain_age_pred/data/labels/train_synth.csv"
-  val_csv:   "/home/ajoos/brain_age_pred/data/labels/val.csv"
+  val_csv:   "/home/ajoos/brain_age_pred/data/labels/test_balanced.csv"
   test_csv:  "/home/ajoos/brain_age_pred/data/labels/test_balanced.csv"
   segmented_data_dir: "/scratch-shared/ajoos/brain_age_segmented_converted/"   
   real_data_dir: "/scratch-shared/ajoos/brain_age_segmented_converted/"   
@@ -31,7 +31,7 @@ model:
   in_channels: 15
   dropout_rate: 0.2
   use_attention: false                   
-  checkpoint: null #"/home/ajoos/brain_age_pred/output/checkpoints/sfcn_20250522_104159/sfcn_20250522_104159_epoch057.pt"
+  checkpoint: "/home/ajoos/brain_age_pred/output/checkpoints/brainagenext_seg_map/brainagenext_seg_map_best_mae.pt"
 
 # ──────────────────────────  TRAINING  ────────────────────────── #
 training:
@@ -39,7 +39,7 @@ training:
   epochs: 150
 
   # optimiser & LR
-  learning_rate: 0.001 #0.002193
+  learning_rate: 0.0005 #0.002193
   weight_decay:  0.0
   optimizer: "adamw"                       # adam | adamw | sgd | rmsprop | radam | novograd
   scheduler: "step"                      # cosine | plateau | onecycle | step | none
@@ -68,7 +68,7 @@ output:
   output_dir: "/home/ajoos/brain_age_pred/output"
   checkpoint_dir: "checkpoints"
   log_dir: "logs"
-  experiment_name: brainagenext_seg_map #"brain_age_with_tumors"                   # auto-generate if left null
+  experiment_name: brainagenext_seg_map_finetune        # auto-generate if left null
 
 # ─────────────────────────────  W&B  ──────────────────────────── #
 wandb:

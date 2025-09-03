@@ -1,18 +1,6 @@
 #!/usr/bin/env python
 """
 Evaluation script for original SFCN paper weights using the standardized testing regime.
-
-This script uses the original SFCN model architecture and weight loading approach
-from the inference_sfcn.py script, but applies the comprehensive testing regime
-from the evaluate.py script, including:
-- Overall metrics (MAE, MSE, R², Correlation)
-- Per-modality metrics 
-- Per-sex metrics
-- Per-headmotion metrics
-- W&B logging with detailed tables
-
-The SFCN model expects age-bin classification output and converts to age predictions
-using the same bin centers and prediction logic as the original script.
 """
 
 import os, sys, json
@@ -27,6 +15,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import wandb
 from torch.utils.data import DataLoader
+import csv
 
 # Set multiprocessing start method BEFORE other imports
 import torch.multiprocessing as mp
@@ -45,18 +34,58 @@ from brain_age_pred.utils.utils import read_csv
 from brain_age_pred.utils.logger import setup_logger
 from brain_age_pred.configs.config import Config
 
+from scipy.stats import norm
 
-# Bin settings - MUST match training
-BIN_RANGE = (42, 82)   # inclusive range used to build bins
-BIN_STEP = 1
-bin_centres = np.arange(BIN_RANGE[0] + BIN_STEP / 2,
-                        BIN_RANGE[1] + BIN_STEP / 2,
-                        BIN_STEP, dtype=np.float32)
-N_BINS = len(bin_centres)
+def num2vect(x, bin_range, bin_step, sigma):
+    bin_start = bin_range[0]
+    bin_end = bin_range[1]
+    bin_length = bin_end - bin_start
+    if not bin_length % bin_step == 0:
+        print("bin's range should be divisible by bin_step!")
+        return -1
+    bin_number = int(bin_length / bin_step)
+    bin_centers = bin_start + float(bin_step) / 2 + bin_step * np.arange(bin_number)
 
+    if sigma == 0:
+        x = np.array(x)
+        i = np.floor((x - bin_start) / bin_step)
+        i = i.astype(int)
+        return i, bin_centers
+    elif sigma > 0:
+        if np.isscalar(x):
+            v = np.zeros((bin_number,))
+            for i in range(bin_number):
+                x1 = bin_centers[i] - float(bin_step) / 2
+                x2 = bin_centers[i] + float(bin_step) / 2
+                cdfs = norm.cdf([x1, x2], loc=x, scale=sigma)
+                v[i] = cdfs[1] - cdfs[0]
+            return v, bin_centers
+        else:
+            v = np.zeros((len(x), bin_number))
+            for j in range(len(x)):
+                for i in range(bin_number):
+                    x1 = bin_centers[i] - float(bin_step) / 2
+                    x2 = bin_centers[i] + float(bin_step) / 2
+                    cdfs = norm.cdf([x1, x2], loc=x[j], scale=sigma)
+                    v[j, i] = cdfs[1] - cdfs[0]
+            return v, bin_centers
 
+def crop_center(data, out_sp):
+    in_sp = data.shape
+    nd = np.ndim(data)
+    x_crop = int((in_sp[-1] - out_sp[-1]) / 2)
+    y_crop = int((in_sp[-2] - out_sp[-2]) / 2)
+    z_crop = int((in_sp[-3] - out_sp[-3]) / 2)
+    if nd == 3:
+        data_crop = data[x_crop:-x_crop, y_crop:-y_crop, z_crop:-z_crop]
+    elif nd == 4:
+        data_crop = data[:, x_crop:-x_crop, y_crop:-y_crop, z_crop:-z_crop]
+    else:
+        raise ValueError(f"Wrong dimension! dim={nd}.")
+    return data_crop
+
+# 1) Original SFCN (unchanged)
 class SFCN(nn.Module):
-    """Original SFCN model architecture from the paper"""
     def __init__(self, channel_number=[32, 64, 128, 256, 256, 64], output_dim=40, dropout=True):
         super(SFCN, self).__init__()
         n_layer = len(channel_number)
@@ -117,30 +146,79 @@ class SFCN(nn.Module):
         out.append(x)
         return out
 
-
-def predict_age_from_probabilities(log_probs, bin_centres):
-    """
-    Convert log probabilities to predicted age using weighted sum.
-    
-    Args:
-        log_probs: Log probabilities from model output [batch_size, n_bins] or [n_bins]
-        bin_centres: Age bin centers [n_bins]
-    
-    Returns:
-        Predicted ages [batch_size] or scalar
-    """
-    probs = torch.exp(log_probs)  # Convert log probs to probs
-    
-    # Handle both batched and single sample cases
-    if len(probs.shape) == 1:
-        # Single sample case: [n_bins]
-        predicted_ages = torch.sum(probs * bin_centres)
+# 2) Minimal re-implement of dp_utils bits we need (exact behavior)
+def crop_center(data, out_sp):
+    in_sp = data.shape
+    nd = np.ndim(data)
+    x_crop = int((in_sp[-1] - out_sp[-1]) / 2)
+    y_crop = int((in_sp[-2] - out_sp[-2]) / 2)
+    z_crop = int((in_sp[-3] - out_sp[-3]) / 2)
+    if nd == 3:
+        data_crop = data[x_crop:-x_crop, y_crop:-y_crop, z_crop:-z_crop]
+    elif nd == 4:
+        data_crop = data[:, x_crop:-x_crop, y_crop:-y_crop, z_crop:-z_crop]
     else:
-        # Batch case: [batch_size, n_bins]
-        predicted_ages = torch.sum(probs * bin_centres, dim=1)
-    
-    return predicted_ages
+        raise ValueError(f"Wrong dimension! dim={nd}.")
+    return data_crop
 
+# Bin settings - MUST match training (use original num2vect to get bin centers)
+BIN_RANGE = (42, 82)
+BIN_STEP = 1
+_, bin_centres = num2vect(50.0, BIN_RANGE, BIN_STEP, sigma=1)  # x is arbitrary; only bc is used
+bin_centres = bin_centres.astype(np.float32)
+N_BINS = len(bin_centres)
+
+# 3) I/O: load nii or npy, apply exact preprocessing
+def load_and_preprocess(path):
+    # Load ndarray from file
+    if path.endswith(".npy"):
+        arr = np.load(path).astype(np.float32)
+    else:
+        import nibabel as nib
+        arr = nib.load(path).get_fdata().astype(np.float32)
+
+    # Mean-normalization then center crop to (160, 192, 160)
+    mean = float(arr.mean()) if arr.size > 0 else 1.0
+    arr = arr / (mean + 1e-8)
+    if arr.ndim == 3:
+        arr = crop_center(arr, (160, 192, 160))
+        arr = arr[np.newaxis, ...]  # add channel: (1, D, H, W)
+    elif arr.ndim == 4 and arr.shape[0] == 1:
+        arr = crop_center(arr, (1, 160, 192, 160))
+    else:
+        raise ValueError(f"Unexpected array shape {arr.shape}. Expect (D,H,W) or (1,D,H,W).")
+    return arr  # (1,160,192,160)
+
+# 4) Batch predict using original forward and prob@bc
+def predict_batch(model, batch_tensor, bc, device):
+    # batch_tensor: (B,1,D,H,W) float32
+    model.eval()
+    with torch.no_grad():
+        out_list = model(batch_tensor.to(device))          # list with one tensor
+        logp = out_list[0].squeeze(-1).squeeze(-1).squeeze(-1)  # (B, 40)
+        probs = torch.exp(logp).cpu().numpy()              # (B, 40)
+    preds = probs @ bc                                     # dot along bins
+    return preds  # (B,)
+
+# 5) CSV reader: expects 'image_path' and optional 'age' columns; filters to valid files
+def read_csv_list(csv_path, data_root=None, modality_filter="t1"):
+    rows = []
+    with open(csv_path, newline="") as f:
+        reader = csv.DictReader(f)
+        for r in reader:
+            p = r.get("image_path") or r.get("path") or r.get("image")
+            if not p:
+                continue
+            if data_root and not os.path.isabs(p):
+                p = os.path.join(data_root, p)
+            if not os.path.exists(p):
+                continue
+            mod = (r.get("modality") or "").lower()
+            if modality_filter and mod and mod != modality_filter:
+                continue
+            age = r.get("age")
+            rows.append((p, float(age) if age not in (None, "", "nan") else None))
+    return rows
 
 def load_test_data_with_headmotion(csv_path, data_root):
     """Load test dataset from CSV with headmotion support and filter by age range."""
@@ -158,7 +236,7 @@ def load_test_data_with_headmotion(csv_path, data_root):
         if col not in df.columns:
             raise ValueError(f"Required column '{col}' not found in CSV")
     
-    # Filter by age range (42 to 82, inclusive)
+    # Filter by age range (42 to 82, inclusive) 
     print(f"Filtering samples to age range: {BIN_RANGE[0]} to {BIN_RANGE[1]} years")
     age_mask = (df['age'] >= BIN_RANGE[0]) & (df['age'] <= BIN_RANGE[1])
     df_filtered = df[age_mask].copy()
@@ -217,140 +295,40 @@ def load_test_data_with_headmotion(csv_path, data_root):
     return valid_file_paths, valid_ages, modalities, sexes, headmotions
 
 
+class MeanNormalizeD:
+    """Mean normalization transform for SFCN"""
+    def __init__(self, keys=["image"]):
+        self.keys = keys
+    
+    def __call__(self, data):
+        d = dict(data)
+        for key in self.keys:
+            if key in d:
+                img = d[key]
+                d[key] = img / (img.mean() + 1e-8)
+        return d
+
+
 def load_sfcn_model(model_path, device):
-    """Load SFCN model from checkpoint using original loading approach with enhanced error handling"""
+    """Load SFCN model exactly like the working version"""
     print(f"Loading SFCN model from {model_path}")
     
-    # Initialize model
-    model = SFCN(output_dim=N_BINS, dropout=True)
-    
-    # Load checkpoint
     if not os.path.exists(model_path):
         raise FileNotFoundError(f"Model checkpoint not found: {model_path}")
     
-    # Try multiple loading approaches for problematic checkpoints
-    checkpoint = None
-    loading_error = None
-    
-    # Method 1: Standard loading
-    try:
-        checkpoint = torch.load(model_path, map_location=device, weights_only=False)
-        print("✓ Loaded using standard method")
-    except Exception as e:
-        loading_error = str(e)
-        print(f"✗ Standard loading failed: {e}")
-        
-        # Method 2: Try with different pickle settings
-        try:
-            import pickle
-            checkpoint = torch.load(
-                model_path, 
-                map_location=device, 
-                weights_only=False, 
-                pickle_module=pickle
-            )
-            print("✓ Loaded using custom pickle module")
-        except Exception as e2:
-            print(f"✗ Custom pickle loading failed: {e2}")
-            
-            # Method 3: Try loading with BOM handling
-            try:
-                with open(model_path, 'rb') as f:
-                    data = f.read()
-                    
-                # Check for UTF-8 BOM and remove if present
-                if data.startswith(b'\xef\xbb\xbf'):
-                    print("Detected UTF-8 BOM, removing...")
-                    data = data[3:]
-                elif data.startswith(b'\xef'):
-                    print("Detected potential BOM corruption, removing first byte...")
-                    data = data[1:]
-                
-                # Save to temporary file and reload
-                import tempfile
-                with tempfile.NamedTemporaryFile(delete=False, suffix='.pt') as tmp_f:
-                    tmp_f.write(data)
-                    tmp_path = tmp_f.name
-                
-                checkpoint = torch.load(tmp_path, map_location=device, weights_only=False)
-                os.unlink(tmp_path)  # Clean up
-                print("✓ Loaded after BOM/corruption removal")
-                
-            except Exception as e3:
-                print(f"✗ BOM removal loading failed: {e3}")
-                
-                # Method 4: Try pure Python pickle with encoding handling
-                try:
-                    import pickle
-                    with open(model_path, 'rb') as f:
-                        # Try to skip problematic bytes
-                        f.seek(1)  # Skip first byte
-                        checkpoint = pickle.load(f)
-                    print("✓ Loaded using pure pickle with byte skip")
-                except Exception as e4:
-                    print(f"✗ Pure pickle with skip failed: {e4}")
-                    
-                    # Method 5: Last resort - try different encodings
-                    try:
-                        # This is a very specific fix for certain corrupted pickle files
-                        with open(model_path, 'rb') as f:
-                            data = f.read()
-                        
-                        # Try to find the actual pickle data start
-                        for i in range(min(10, len(data))):
-                            try:
-                                import io
-                                stream = io.BytesIO(data[i:])
-                                checkpoint = torch.load(stream, map_location=device, weights_only=False)
-                                print(f"✓ Loaded by skipping {i} bytes at start")
-                                break
-                            except:
-                                continue
-                        
-                        if checkpoint is None:
-                            raise Exception("Could not find valid pickle data")
-                            
-                    except Exception as e5:
-                        print(f"✗ All methods failed: {e5}")
-                        raise RuntimeError(f"All loading methods failed. Original error: {loading_error}")
-    
-    if checkpoint is None:
-        raise RuntimeError(f"Failed to load checkpoint. Error: {loading_error}")
-    
-    # Handle different checkpoint formats
-    if isinstance(checkpoint, dict):
-        if 'state_dict' in checkpoint:
-            state_dict = checkpoint['state_dict']
-            print("Using 'state_dict' key from checkpoint")
-        elif 'model_state_dict' in checkpoint:
-            state_dict = checkpoint['model_state_dict']
-            print("Using 'model_state_dict' key from checkpoint")
-        else:
-            state_dict = checkpoint
-            print("Using checkpoint directly as state_dict")
-    else:
-        # Assume the checkpoint is the state dict itself
-        state_dict = checkpoint
-        print("Checkpoint is a direct state_dict")
-    
-    # Remove 'module.' prefix if present (from DataParallel)
-    new_state_dict = {}
-    for k, v in state_dict.items():
-        name = k[7:] if k.startswith('module.') else k
-        new_state_dict[name] = v
-    
-    print(f"Loading {len(new_state_dict)} parameters into model")
-    
-    # Load with strict=False to handle potential parameter mismatches
-    missing_keys, unexpected_keys = model.load_state_dict(new_state_dict, strict=False)
-    
-    if missing_keys:
-        print(f"Warning: Missing keys in checkpoint: {missing_keys}")
-    if unexpected_keys:
-        print(f"Warning: Unexpected keys in checkpoint: {unexpected_keys}")
-    
+    # Load model exactly like the working example
+    model = SFCN()
+    model = torch.nn.DataParallel(model)
+    state = torch.load(model_path, map_location=device)
+    model.load_state_dict(state)
     model.to(device)
-    model.eval()
+    
+    # Validate bins match
+    core = model.module if hasattr(model, "module") else model
+    final_key = [k for k in core.classifier._modules.keys() if k.startswith("conv_")][-1]
+    out_bins = core.classifier._modules[final_key].weight.shape[0]
+    print(f"Final conv out_channels: {out_bins}, N_BINS: {N_BINS}")
+    assert out_bins == N_BINS, f"Checkpoint bins ({out_bins}) != N_BINS ({N_BINS})"
     
     print(f"SFCN model loaded successfully on {device}")
     return model
@@ -375,22 +353,14 @@ def evaluate_model_sfcn(model, test_loader, device, headmotions=None):
             modality = batch.get('modality', [None] * len(age))
             sex = batch.get('sex', [None] * len(age))
             
-            # Model inference
-            outputs = model(image)
-            log_probs = outputs[0]  # [batch_size, n_bins, 1, 1, 1]
-            
-            # Remove spatial dimensions but keep batch dimension
-            log_probs = log_probs.squeeze(-1).squeeze(-1).squeeze(-1)  # [batch_size, n_bins]
-            
-            # Convert to predicted ages
-            pred_ages = predict_age_from_probabilities(log_probs, torch.tensor(bin_centres).to(device))
-            
-            # Ensure pred_ages is always a tensor with batch dimension
-            if len(pred_ages.shape) == 0:  # scalar
-                pred_ages = pred_ages.unsqueeze(0)
+            # Model inference using the working prediction logic
+            out_list = model(image)
+            log_probs = out_list[0].squeeze(-1).squeeze(-1).squeeze(-1)  # [batch_size, n_bins]
+            probs = torch.exp(log_probs).cpu().numpy()  # [batch_size, n_bins]
+            pred_ages = probs @ bin_centres  # dot product for age prediction
             
             # Store results
-            all_preds.extend(pred_ages.cpu().numpy())
+            all_preds.extend(pred_ages.tolist())
             all_ages.extend(age.cpu().numpy())
             all_modalities.extend(modality)
             all_sexes.extend(sex)
@@ -742,13 +712,14 @@ def main():
             # Load test data with filtering for SFCN age range
             file_paths, ages, modalities, sexes, headmotions = load_test_data_with_headmotion(test_csv, data_dir)
             
-            # Create dataset (no transforms for SFCN original - raw data)
+            # Create dataset with mean normalization
+            test_transform = MeanNormalizeD(keys=["image"])
             test_dataset = BADataset(
                 file_paths=file_paths,
                 age_labels=ages,
                 modalities=modalities,
                 sexes=sexes,
-                transform=None,  # No augmentation for original weights
+                transform=test_transform,
                 mode='test'
             )
             

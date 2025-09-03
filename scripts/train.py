@@ -23,7 +23,7 @@ sys.path.insert(0, str(project_root))
 
 from brain_age_pred.configs.config import Config
 from brain_age_pred.dataset.dataset import BADataset          
-from brain_age_pred.dataset.domain_randomization import DomainRandomizer
+from brain_age_pred.dataset.augmentation import AugmentationPipeline
 from brain_age_pred.models.sfcn import SFCN
 from brain_age_pred.models.sfcn_class import SFCNClass
 from brain_age_pred.models.brainagenext import BrainAgeNeXt
@@ -81,7 +81,7 @@ def main() -> None:
     logger.info("Initializing domain randomization transforms...")
     rand_cfg = cfg.get("domain_randomization", {})
     if rand_cfg.get("use_domain_randomization", False):
-        transform = DomainRandomizer(
+        transform = AugmentationPipeline(
             **rand_cfg,
         )
         
@@ -360,7 +360,7 @@ def main() -> None:
         eval_rand_cfg.pop("use_tumor_simulation", None)
         eval_rand_cfg.pop("tumor_config", None)
         
-        eval_transform = DomainRandomizer(
+        eval_transform = AugmentationPipeline(
             device=device,
             use_domain_randomization=True,
             use_tumor_simulation=use_tumor,

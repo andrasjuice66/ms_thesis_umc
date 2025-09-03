@@ -25,7 +25,7 @@ warnings.filterwarnings("ignore")
 project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
-from brain_age_pred.dataset.domain_randomization import DomainRandomizer
+from brain_age_pred.dataset.augmentation import AugmentationPipeline
 from brain_age_pred.dataset.custom_transformations import RandomResolutionD, RandGammaD
 
 # Individual transform imports
@@ -135,7 +135,7 @@ class DomainRandomizationVisualizer:
         
         return slice_img.cpu().numpy()
     
-    def _create_domain_randomizer(self, **override_params) -> DomainRandomizer:
+    def _create_domain_randomizer(self, **override_params) -> AugmentationPipeline:
         """Create a domain randomizer with optional parameter overrides."""
         dr_params = {**self.dr_config}
         dr_params.update(override_params)
@@ -143,7 +143,7 @@ class DomainRandomizationVisualizer:
         dr_params['device'] = self.device
         dr_params['image_key'] = self.image_key
         
-        return DomainRandomizer(**dr_params)
+        return AugmentationPipeline(**dr_params)
     
     def _apply_individual_transform(self, transform, title: str) -> Tuple[torch.Tensor, np.ndarray]:
         """Apply a single transform and return result with difference map."""

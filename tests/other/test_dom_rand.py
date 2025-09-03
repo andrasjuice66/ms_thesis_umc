@@ -5,7 +5,7 @@ Domain-Randomizer showcase
 Run this file (`python test_domain_randomizer.py`) and it will:
 
 1. Load the reference T1 volume (hard-coded path below)
-2. Loop over every transform supported by `DomainRandomizer`
+2. Loop over every transform supported by `AugmentationPipeline`
 3. Turn that transform **on** (p=1) and every other one **off** (p=0)
 4. Apply the augmentation once
 5. Write a PNG of the central axial slice to:
@@ -25,7 +25,7 @@ import torch
 # ------------------------------------------------------------------ #
 #  EDIT HERE if your project import path is different
 # ------------------------------------------------------------------ #
-from brain_age_pred.dataset.domain_randomization import DomainRandomizer
+from brain_age_pred.dataset.augmentation import AugmentationPipeline
 
 # ------------------------------------------------------------------ #
 #  HARD-CODED INPUT VOLUME (edit if you move the file)
@@ -61,14 +61,14 @@ def main() -> None:
     data  = (data - data.min()) / (data.ptp() + 1e-8)          # 0–1
     tensor = torch.from_numpy(data).unsqueeze(0)               # (1,D,H,W)
 
-    for tname in DomainRandomizer._DEFAULT_PROBS.keys():
+    for tname in AugmentationPipeline._DEFAULT_PROBS.keys():
         print(f"▶  Applying: {tname:<10s}", end=" ... ")
 
         # enable *only* this transform
-        probs = {k: 0.0 for k in DomainRandomizer._DEFAULT_PROBS}
+        probs = {k: 0.0 for k in AugmentationPipeline._DEFAULT_PROBS}
         probs[tname] = 1.0
 
-        dr = DomainRandomizer(
+        dr = AugmentationPipeline(
             device=torch.device("cpu"),
             transform_probs=probs,
             output_shape=None,      # skip random crop to keep size

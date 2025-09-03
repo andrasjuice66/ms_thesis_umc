@@ -47,7 +47,7 @@ from monai.transforms import (
 # project imports – keep identical to your existing tree
 
 from brain_age_pred.dataset.dataset import BADataset
-from brain_age_pred.dataset.domain_randomization import DomainRandomizer
+from brain_age_pred.dataset.augmentation import AugmentationPipeline
 from brain_age_pred.training.metrics import calculate_metrics
 from brain_age_pred.utils.utils import read_csv
 from brain_age_pred.configs.config import Config
@@ -329,7 +329,7 @@ def create_domain_randomizer(config, use_tumor=False):
     if use_tumor and 'tumor_config' in dr_config_from_file:
         dr_config['tumor_config'] = dr_config_from_file['tumor_config']
     
-    return DomainRandomizer(**dr_config)
+    return AugmentationPipeline(**dr_config)
 
 
 def evaluate_regime(model, dataset, dataloader, regime_name, fold_idx=None):
