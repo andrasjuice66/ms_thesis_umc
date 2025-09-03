@@ -444,6 +444,13 @@ class DomainRandomizer:
                 axes=(0, 1, 2),
                 p=self.prob["ghost"],
             ),
+            tio.RandomMotion(
+                degrees=15,
+                translation=5,
+                p=self.prob["motion"],
+            ),
+            tio.RandomBiasField(p=self.prob["bias"]),
+            tio.RandomBlur(sigma=(0.5, 1.5)),
         ])
 
     def _update_progressive_probs(self) -> None:
