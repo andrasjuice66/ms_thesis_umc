@@ -1,17 +1,5 @@
-"""
-GPU-aware domain-randomisation pipeline for 3-D brain MR images.
-
-• Fast, GPU-ready MONAI transforms + optional heavy TorchIO artefacts
-• All probabilities are configurable (override via `transform_probs`)
-• Can be instantiated once and reused safely across workers
-
-Typical use
------------
-dr = AugmentationPipeline(device=torch.device("cuda"), **cfg["domain_randomization"])
-train_ds = BADataset(..., transform=dr, mode="train")
-"""
 from __future__ import annotations
-from typing import Dict, Tuple, Optional, Any, Union, List
+from typing import Dict, Tuple, Optional, Union, List
 
 import numpy as np
 import torch
@@ -30,10 +18,7 @@ from monai.transforms import (
     RandHistogramShiftd,
     RandGibbsNoised,
     RandCoarseDropoutd,
-    RandSpatialCropd,
     ToTensord,
-    LoadImaged,
-    EnsureChannelFirstd,
 )
 
 # custom project transforms
@@ -42,43 +27,44 @@ from brain_age_pred.dataset.custom_transformations import (
     RandGammaD,
 )
 
-# Import tumor simulator
-from brain_age_pred.dataset.tumor_simulation import TumorSimulationModule
 
 class AugmentationPipeline:
     """
-    Random geometric, intensity and artefact transforms for 3-D MRI volumes.
+    Random geometric and non-spatial transforms for 3-D MRI volumes.
+
+    Switches:
+      - use_spatial_transforms: controls only flips/affine
+      - use_intensity_transforms: controls everything else (intensity, noise/artifacts,
+        resolution, dropout, and TorchIO transforms)
     """
 
     _DEFAULT_PROBS: Dict[str, float] = {
-        # geometric
-        "flip"      : 0.5,
-        "affine"    : 0.8,
-        # intensity
-        "contrast"  : 0.6,
-        "gamma"     : 0.5,
-        "blur"      : 0.4,
-        "bias"      : 0.5,
-        "scale_int" : 0.4,
-        "shift_int" : 0.4,
+        # spatial
+        "flip": 0.5,
+        "affine": 0.5,
+        # non-spatial (intensity + artifacts)
+        "contrast": 0.5,
+        "gamma": 0.5,
+        "blur": 0.3,
+        "bias": 0.3,
+        "scale_int": 0.4,
+        "shift_int": 0.4,
         "hist_shift": 0.3,
-        "noise"     : 0.4,
-        "rician"    : 0.3,
-        "gibbs"     : 0.3,
+        "noise": 0.4,
+        "rician": 0.3,
+        "gibbs": 0.3,
         # resolution / dropout
         "resolution": 0.5,
-        "coarse_do" : 0.3,
-        # heavy artefacts
-
-        # misc
-        "crop"      : 1.0,
-        # tumor
-        "tumor"     : 0.3,
+        "coarse_do": 0.3,
+        # torchio
+        "spike": 0.5,
+        "ghost": 0.5,
+        "motion": 0.5,
+        "swap": 0.5,
     }
     
-    # Default values for transform parameters
     _DEFAULT_PARAMS = {
-        # geometric ranges
+        # spatial ranges
         "scaling_range": (0.9, 1.1),
         "rotation_range": 10.0,  # degrees
         "shearing_bounds": 0.2,
@@ -102,34 +88,34 @@ class AugmentationPipeline:
         # dropout
         "coarse_dropout_size": (20, 20, 20),
         "coarse_dropout_holes": 8,
-        # spatial crop
-        "output_shape": (160, 192, 160),
+        # spatial crop parameters
+        "output_shape": None,
         "random_center": True,
-        # torchio
-        "elastic_control_points": 7,
-        "elastic_max_displacement": 5.0,
+        # torchio params
         "spike_num": (1, 6),
         "spike_intensity": (0.1, 0.6),
-        "ghost_num": (2, 10),
-        # progressive randomization
-        "progressive_epochs": 50,
-        "progressive_start": 0.2,
-        "augmentation_strength": 0.5,
+        "ghost_num": (1, 4),
+        "ghost_intensity": (0.1, 0.6),
+        "motion_degrees": 3.0,
+        "motion_translation": 5.0,
+        "motion_transforms": 4,
+        "tio_gamma_log": 0.8,
+        "tio_noise_std": (0.0, 0.5),
     }
 
-    # ------------------------------------------------------------------ #
     def __init__(
         self,
         *,
-        device=torch.device("cuda"), 
+        device=torch.device("cuda"),
         image_key: str = "image",
-        use_domain_randomization: bool = True,
+        use_spatial_transforms: bool = True,
+        use_intensity_transforms: bool = True,  # BIG switch for all non-spatial
+        # Augmentation control parameters
+        use_augmentation: bool = True,  # Master switch for augmentation
+        augmentation_strength: float = 1.0,  # Overall augmentation strength multiplier
         # probability overrides
         transform_probs: Optional[Dict[str, float]] = None,
-        # Add new parameters for progressive randomization
-        progressive_epochs: Optional[int] = None,  
-        progressive_start: Optional[float] = None,  
-        # geometric ranges
+        # spatial ranges
         scaling_range: Optional[Union[Tuple[float, float], List[float]]] = None,
         rotation_range: Optional[float] = None,
         shearing_bounds: Optional[float] = None,
@@ -153,287 +139,205 @@ class AugmentationPipeline:
         # dropout
         coarse_dropout_size: Optional[Union[Tuple[int, int, int], List[int]]] = None,
         coarse_dropout_holes: Optional[int] = None,
-        # spatial crop
+        # spatial crop parameters
         output_shape: Optional[Union[Tuple[int, int, int], List[int]]] = None,
-        random_center: Optional[bool] = None,
-        # torchio
-        use_torchio: bool = False,
-        elastic_control_points: Optional[int] = None,
-        elastic_max_displacement: Optional[float] = None,
+        random_center: bool = True,
+        # torchio parameters
         spike_num: Optional[Union[Tuple[int, int], List[int]]] = None,
         spike_intensity: Optional[Union[Tuple[float, float], List[float]]] = None,
         ghost_num: Optional[Union[Tuple[int, int], List[int]]] = None,
-        # Extra params handling
-        use_tumor_simulation: Optional[bool] = None,
-        tumor_config: Optional[Dict] = None,
+        ghost_intensity: Optional[Union[Tuple[float, float], List[float]]] = None,
+        motion_degrees: Optional[float] = None,
+        motion_translation: Optional[float] = None,
+        motion_transforms: Optional[int] = None,
+        tio_gamma_log: Optional[float] = None,
+        tio_noise_std: Optional[Union[Tuple[float, float], List[float]]] = None,
         **unused,
     ):
         self.image_key = image_key
-        self.use_domain_randomization = use_domain_randomization
-        # Convert string device to torch.device object if needed
+        self.use_spatial_transforms = use_spatial_transforms and use_augmentation
+        self.use_intensity_transforms = use_intensity_transforms and use_augmentation
+        self.use_augmentation = use_augmentation
+        self.augmentation_strength = augmentation_strength
         self.device = torch.device(device) if isinstance(device, str) else device
-        self.use_tio = use_torchio
         
-        # Store tumor-related parameters
-        self.use_tumor_simulation = use_tumor_simulation
-        self.tumor_config = tumor_config if tumor_config else {}
-        self.tumor_simulator = None
-        
-        # Initialize parameters with defaults, then override with provided values
+        # Initialize params with defaults and override with provided values
         params = {**self._DEFAULT_PARAMS}
-        
-        # Override default parameters with provided values if not None
-        # Progressive randomization parameters
-        if progressive_epochs is not None:
-            params["progressive_epochs"] = progressive_epochs
-        if progressive_start is not None:
-            params["progressive_start"] = progressive_start
-            
-        # Geometric parameters
-        if scaling_range is not None:
-            params["scaling_range"] = tuple(scaling_range) if isinstance(scaling_range, list) else scaling_range
-        if rotation_range is not None:
-            params["rotation_range"] = rotation_range
-        if shearing_bounds is not None:
-            params["shearing_bounds"] = shearing_bounds
-            
-        # Intensity parameters
-        if contrast_range is not None:
-            params["contrast_range"] = tuple(contrast_range) if isinstance(contrast_range, list) else contrast_range
-        if log_gamma_std is not None:
-            params["log_gamma_std"] = log_gamma_std
-        if bias_field_range is not None:
-            params["bias_field_range"] = tuple(bias_field_range) if isinstance(bias_field_range, list) else bias_field_range
-            
-        # Noise parameters
-        if noise_mean is not None:
-            params["noise_mean"] = noise_mean
-        if noise_std is not None:
-            params["noise_std"] = noise_std
-        if rician_std is not None:
-            params["rician_std"] = rician_std
-        if gibbs_alpha is not None:
-            params["gibbs_alpha"] = tuple(gibbs_alpha) if isinstance(gibbs_alpha, list) else gibbs_alpha
-            
-        # Blur parameters
-        if blur_sigma is not None:
-            params["blur_sigma"] = tuple(blur_sigma) if isinstance(blur_sigma, list) else blur_sigma
-            
-        # Intensity shift parameters
-        if shift_offset is not None:
-            params["shift_offset"] = tuple(shift_offset) if isinstance(shift_offset, list) else shift_offset
-        if hist_control_points is not None:
-            params["hist_control_points"] = tuple(hist_control_points) if isinstance(hist_control_points, list) else hist_control_points
-            
-        # Resolution parameters
-        if max_res_iso is not None:
-            params["max_res_iso"] = max_res_iso
-        if min_res is not None:
-            params["min_res"] = min_res
-            
-        # Dropout parameters
-        if coarse_dropout_size is not None:
-            params["coarse_dropout_size"] = tuple(coarse_dropout_size) if isinstance(coarse_dropout_size, list) else coarse_dropout_size
-        if coarse_dropout_holes is not None:
-            params["coarse_dropout_holes"] = coarse_dropout_holes
-            
-        # Spatial crop parameters
-        if output_shape is not None:
-            params["output_shape"] = tuple(output_shape) if isinstance(output_shape, list) else output_shape
-        if random_center is not None:
-            params["random_center"] = random_center
-            
-        # TorchIO parameters
-        if elastic_control_points is not None:
-            params["elastic_control_points"] = elastic_control_points
-        if elastic_max_displacement is not None:
-            params["elastic_max_displacement"] = elastic_max_displacement
-        if spike_num is not None:
-            params["spike_num"] = tuple(spike_num) if isinstance(spike_num, list) else spike_num
-        if spike_intensity is not None:
-            params["spike_intensity"] = tuple(spike_intensity) if isinstance(spike_intensity, list) else spike_intensity
-        if ghost_num is not None:
-            params["ghost_num"] = tuple(ghost_num) if isinstance(ghost_num, list) else ghost_num
-            
-        # Store all parameters as instance attributes
-        self.scaling_range = params["scaling_range"]
-        self.rotation_range = params["rotation_range"]
-        self.shearing_bounds = params["shearing_bounds"]
-        self.contrast_range = params["contrast_range"]
-        self.log_gamma_std = params["log_gamma_std"]
-        self.bias_field_rng = params["bias_field_range"]
-        self.noise_mean = params["noise_mean"]
-        self.noise_std = params["noise_std"]
-        self.rician_std = params["rician_std"]
-        self.gibbs_alpha = params["gibbs_alpha"]
-        self.blur_sigma = params["blur_sigma"]
-        self.shift_offset = params["shift_offset"]
-        self.hist_control_points = params["hist_control_points"]
-        self.max_res_iso = params["max_res_iso"]
-        self.min_res = params["min_res"]
-        self.coarse_size = params["coarse_dropout_size"]
-        self.coarse_holes = params["coarse_dropout_holes"]
-        self.output_shape = params["output_shape"]
-        self.random_center = params["random_center"]
-        self.elastic_control_points = params["elastic_control_points"]
-        self.elastic_max_displacement = params["elastic_max_displacement"]
-        self.spike_num = params["spike_num"]
-        self.spike_intensity = params["spike_intensity"]
-        self.ghost_num = params["ghost_num"]
-        self.progressive_epochs = params["progressive_epochs"]
-        self.progressive_start = params["progressive_start"]
-        self.augmentation_strength = params["augmentation_strength"]
+        param_mapping = {
+            'scaling_range': scaling_range,
+            'rotation_range': rotation_range,
+            'shearing_bounds': shearing_bounds,
+            'contrast_range': contrast_range,
+            'log_gamma_std': log_gamma_std,
+            'bias_field_range': bias_field_range,
+            'noise_mean': noise_mean,
+            'noise_std': noise_std,
+            'rician_std': rician_std,
+            'gibbs_alpha': gibbs_alpha,
+            'blur_sigma': blur_sigma,
+            'shift_offset': shift_offset,
+            'hist_control_points': hist_control_points,
+            'max_res_iso': max_res_iso,
+            'min_res': min_res,
+            'coarse_dropout_size': coarse_dropout_size,
+            'coarse_dropout_holes': coarse_dropout_holes,
+            'output_shape': output_shape,
+            'random_center': random_center,
+            'spike_num': spike_num,
+            'spike_intensity': spike_intensity,
+            'ghost_num': ghost_num,
+            'ghost_intensity': ghost_intensity,
+            'motion_degrees': motion_degrees,
+            'motion_translation': motion_translation,
+            'motion_transforms': motion_transforms,
+            'tio_gamma_log': tio_gamma_log,
+            'tio_noise_std': tio_noise_std,
+        }
+        for param_name, param_value in param_mapping.items():
+            if param_value is not None:
+                if isinstance(param_value, list) and param_name in [
+                    'scaling_range', 'contrast_range', 'bias_field_range',
+                    'gibbs_alpha', 'blur_sigma', 'shift_offset', 'hist_control_points',
+                    'coarse_dropout_size', 'spike_num', 'spike_intensity',
+                    'ghost_num', 'ghost_intensity', 'tio_noise_std', 'output_shape'
+                ]:
+                    params[param_name] = tuple(param_value)
+                else:
+                    params[param_name] = param_value
+        for k, v in params.items():
+            setattr(self, k, v)
 
-        # merge / override probabilities
+        # probabilities - apply augmentation strength multiplier
         self.prob = {**AugmentationPipeline._DEFAULT_PROBS}
         if transform_probs:
-            self.prob.update(transform_probs)
+            # Apply augmentation strength to all probabilities
+            scaled_probs = {}
+            for key, value in transform_probs.items():
+                scaled_probs[key] = min(1.0, value * self.augmentation_strength)
+            self.prob.update(scaled_probs)
 
-        # Store original probabilities for reference
-        self.original_probs = {**self.prob}
-        
-        # Initialize with starting probabilities
-        self.current_epoch = 0
-        self._update_progressive_probs()
+        # build pipelines
+        if self.use_augmentation:
+            self._build_monai_pipeline()
+            if self.use_intensity_transforms:
+                self._build_torchio_pipeline()
+            else:
+                self.tio = None
+        else:
+            self.monai = None
+            self.tio = None
 
-        # build transform pipelines
-        self._build_monai_pipeline()
-        self._build_torchio_pipeline()
-        self._setup_tumor_simulator()
-
-
-    # ------------------------------------------------------------------ #
-    #                          MONAI pipeline                             #
-    # ------------------------------------------------------------------ #
     def _build_monai_pipeline(self) -> None:
+        """Build MONAI transformation pipeline."""
         deg2rad = np.pi / 180
         tfms = []
 
-        # 1. flips & affine
-        tfms.extend([
-            RandFlipd(
-                keys=[self.image_key],
-                prob=self.prob["flip"],
-                spatial_axis=(0, 1, 2),
-            ),
-            RandAffined(
-                keys=[self.image_key],
-                prob=self.prob["affine"],
-                rotate_range=(deg2rad * self.rotation_range,) * 3,
-                scale_range=(self.scaling_range[1] - 1,) * 3,
-                shear_range=(self.shearing_bounds,) * 3,
-                mode="bilinear",
-            ),
-        ])
+        # Spatial only
+        if self.use_spatial_transforms:
+            tfms.extend([
+                RandFlipd(
+                    keys=[self.image_key],
+                    prob=self.prob["flip"],
+                    spatial_axis=2,
+                ),
+                RandAffined(
+                    keys=[self.image_key],
+                    prob=self.prob["affine"],
+                    rotate_range=(deg2rad * self.rotation_range,) * 3,
+                    scale_range=(self.scaling_range[1] - 1,) * 3,
+                    shear_range=(self.shearing_bounds,) * 3,
+                    mode="bilinear",
+                ),
+            ])
 
-        # 2. basic intensity
-        tfms.extend([
-            RandAdjustContrastd(
-                keys=[self.image_key],
-                prob=self.prob["contrast"],
-                gamma=self.contrast_range,
-            ),
-            RandGammaD(
-                keys=[self.image_key],
-                log_gamma_std=self.log_gamma_std,
-                prob=self.prob["gamma"],
-            ),
-            RandScaleIntensityd(
-                keys=[self.image_key],
-                prob=self.prob["scale_int"],
-                factors=self.contrast_range,
-            ),
-            RandShiftIntensityd(
-                keys=[self.image_key],
-                prob=self.prob["shift_int"],
-                offsets=self.shift_offset,
-            ),
-            RandHistogramShiftd(
-                keys=[self.image_key],
-                prob=self.prob["hist_shift"],
-                num_control_points=self.hist_control_points,
-            ),
-        ])
+        # Everything non-spatial under the single switch
+        if self.use_intensity_transforms:
+            # Intensity family
+            tfms.extend([
+                RandAdjustContrastd(
+                    keys=[self.image_key],
+                    prob=self.prob["contrast"],
+                    gamma=self.contrast_range,
+                ),
+                RandGammaD(
+                    keys=[self.image_key],
+                    log_gamma_std=self.log_gamma_std,
+                    prob=self.prob["gamma"],
+                ),
+                RandScaleIntensityd(
+                    keys=[self.image_key],
+                    prob=self.prob["scale_int"],
+                    factors=self.contrast_range,
+                ),
+                RandShiftIntensityd(
+                    keys=[self.image_key],
+                    prob=self.prob["shift_int"],
+                    offsets=self.shift_offset,
+                ),
+                RandHistogramShiftd(
+                    keys=[self.image_key],
+                    prob=self.prob["hist_shift"],
+                    num_control_points=self.hist_control_points,
+                ),
+            ])
 
-        # 3. noise / artefacts
-        tfms.extend([
-            RandGaussianNoised(
-                keys=[self.image_key],
-                prob=self.prob["noise"],
-                mean=self.noise_mean,
-                std=self.noise_std,
-            ),
-            RandRicianNoised(
-                keys=[self.image_key],
-                prob=self.prob["rician"],
-                std=self.rician_std,
-            ),
-            RandGibbsNoised(
-                keys=[self.image_key],
-                prob=self.prob["gibbs"],
-                alpha=self.gibbs_alpha,
-            ),
-            RandGaussianSmoothd(
-                keys=[self.image_key],
-                prob=self.prob["blur"],
-                sigma_x=self.blur_sigma,
-                sigma_y=self.blur_sigma,
-                sigma_z=self.blur_sigma,
-            ),
-            RandBiasFieldd(
-                keys=[self.image_key],
-                prob=self.prob["bias"],
-                coeff_range=self.bias_field_rng,
-            ),
-            RandomResolutionD(
-                keys=[self.image_key],
-                min_res=self.min_res,
-                max_res_iso=self.max_res_iso,
-                prob=self.prob["resolution"],
-            ),
-            RandCoarseDropoutd(
-                keys=[self.image_key],
-                prob=self.prob["coarse_do"],
-                holes=self.coarse_holes,
-                spatial_size=self.coarse_size,
-                fill_value=0.0,
-            ),
-        ])
+            # Noise / artefacts
+            tfms.extend([
+                RandGaussianNoised(
+                    keys=[self.image_key],
+                    prob=self.prob["noise"],
+                    mean=self.noise_mean,
+                    std=self.noise_std,
+                ),
+                RandRicianNoised(
+                    keys=[self.image_key],
+                    prob=self.prob["rician"],
+                    std=self.rician_std,
+                ),
+                RandGibbsNoised(
+                    keys=[self.image_key],
+                    prob=self.prob["gibbs"],
+                    alpha=self.gibbs_alpha,
+                ),
+                RandGaussianSmoothd(
+                    keys=[self.image_key],
+                    prob=self.prob["blur"],
+                    sigma_x=self.blur_sigma,
+                    sigma_y=self.blur_sigma,
+                    sigma_z=self.blur_sigma,
+                ),
+                RandBiasFieldd(
+                    keys=[self.image_key],
+                    prob=self.prob["bias"],
+                    coeff_range=self.bias_field_range,
+                ),
+                RandomResolutionD(
+                    keys=[self.image_key],
+                    min_res=self.min_res,
+                    max_res_iso=self.max_res_iso,
+                    prob=self.prob["resolution"],
+                ),
+                RandCoarseDropoutd(
+                    keys=[self.image_key],
+                    prob=self.prob["coarse_do"],
+                    holes=self.coarse_dropout_holes,
+                    spatial_size=self.coarse_dropout_size,
+                    fill_value=0.0,
+                ),
+            ])
 
-        # # 4. optional crop to ROI
-        # if self.output_shape is not None:
-        #     tfms.append(
-        #         RandSpatialCropd(
-        #             keys=[self.image_key],
-        #             roi_size=self.output_shape,
-        #             random_center=self.random_center,
-        #             random_size=False,
-        #         )
-        #     )
-
-        # 5. tensor conversion
+        # Always end with tensor conversion to normalize output type
         tfms.append(ToTensord(keys=[self.image_key]))
 
-        # compose & push to GPU if possible
         self.monai = Compose(tfms)
-        if self.device.type == "cuda": #I was getting OOM errors when pushing to GPU
+        if self.device.type == "cuda":
             for t in self.monai.transforms:
                 if hasattr(t, "set_device"):
                     t.set_device(self.device)
 
-   
     def _build_torchio_pipeline(self) -> None:
-        if not self.use_tio:
-            self.tio = None
-            return
-
-        self.tio = tio.Compose([
-            tio.RandomElasticDeformation(
-                num_control_points=self.elastic_control_points,
-                max_displacement=self.elastic_max_displacement,
-                locked_borders=2,
-                p=self.prob["elastic"],
-            ),
+        """Build TorchIO pipeline (all considered non-spatial under the big switch)."""
+        tfms = [
             tio.RandomSpike(
                 num_spikes=self.spike_num,
                 intensity=self.spike_intensity,
@@ -441,109 +345,73 @@ class AugmentationPipeline:
             ),
             tio.RandomGhosting(
                 num_ghosts=self.ghost_num,
-                axes=(0, 1, 2),
+                intensity=self.ghost_intensity,
                 p=self.prob["ghost"],
             ),
             tio.RandomMotion(
-                degrees=15,
-                translation=5,
+                degrees=self.motion_degrees,
+                translation=self.motion_translation,
+                num_transforms=self.motion_transforms,
                 p=self.prob["motion"],
             ),
-            tio.RandomBiasField(p=self.prob["bias"]),
-            tio.RandomBlur(sigma=(0.5, 1.5)),
-        ])
+            tio.RandomSwap(
+                patch_size=15,
+                num_iterations=100,
+                p=self.prob["swap"],
+            ),
+        ]
+        self.tio = tio.Compose(tfms)
 
-    def _update_progressive_probs(self) -> None:
-        """Update transform probabilities based on current epoch"""
-        if self.progressive_epochs <= 0:
-            return
-            
-        progress = min(1.0, self.current_epoch / self.progressive_epochs)
-        
-        for key in self.original_probs:
-            start_prob = self.original_probs[key] * self.progressive_start
-            final_prob = self.original_probs[key] * self.augmentation_strength
-            self.prob[key] = start_prob + (final_prob - start_prob) * progress
-
-    @property
-    def current_epoch(self) -> int:
-        return self._current_epoch
-
-    @current_epoch.setter
-    def current_epoch(self, epoch: int) -> None:
-        """Update current epoch and adjust probabilities accordingly."""
-        self._current_epoch = epoch
-        self._update_progressive_probs()
-
-    def _setup_tumor_simulator(self) -> None:
-        """Initialize the tumor simulator if enabled"""
-        if not self.use_tumor_simulation:
-            return
-        
+    def _apply_monai(self, img: torch.Tensor) -> torch.Tensor:
+        """Apply MONAI transforms with uniform validation."""
+        if self.monai is None:
+            return img
         try:
-            tumor_prob = self.prob.get("tumor", 0.3)
-            if not self.tumor_config:
-                print("Warning: No tumor configuration provided, using defaults")
-            
-            self.tumor_simulator = TumorSimulationModule(
-                keys=self.image_key,
-                device=self.device,
-                prob=tumor_prob,
-                **self.tumor_config or {}
-            )
-            print(f"Tumor simulator initialized with probability: {tumor_prob}")
-            if self.tumor_config:
-                print(f"Tumor configuration: {self.tumor_config}")
+            out = self.monai({self.image_key: img})
         except Exception as e:
-            print(f"Warning: Failed to initialize tumor simulator: {str(e)}")
-            print("Tumor simulation will be disabled")
-            self.tumor_simulator = None
-            self.use_tumor_simulation = False
+            raise RuntimeError(f"MONAI transforms failed: {e}") from e
+
+        if out is None or self.image_key not in out:
+            raise RuntimeError("MONAI pipeline returned invalid output (missing image key).")
+        new_img = out[self.image_key]
+        if new_img is None:
+            raise RuntimeError("MONAI pipeline produced None image.")
+        return new_img
+
+    def _apply_torchio(self, img: torch.Tensor) -> torch.Tensor:
+        """Apply TorchIO transforms with device consistency."""
+        if not (self.use_intensity_transforms and self.tio is not None):
+            return img
+
+        orig_device = img.device
+        try:
+            subject = tio.Subject(img=tio.ScalarImage(tensor=img))
+            transformed = self.tio(subject)
+            new_img = transformed.img.data
+        except Exception as e:
+            raise RuntimeError(f"TorchIO transforms failed: {e}") from e
+
+        if new_img.device != orig_device:
+            new_img = new_img.to(orig_device)
+        return new_img
 
     def __call__(self, sample: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
-        """Apply domain randomization and tumor simulation to sample"""
+        """Uniformly apply transforms and keep sample tensors on same device as image."""
         if sample is None:
             raise RuntimeError("Input sample is None")
-        
         if self.image_key not in sample:
             raise RuntimeError(f"Image key '{self.image_key}' not found in sample")
-        
         if sample[self.image_key] is None:
             raise RuntimeError("Image is None in sample")
 
-        # Apply domain randomization transforms
-        if self.use_domain_randomization and self.monai is not None:
-            img = sample[self.image_key]
-            transform_input = {self.image_key: img}
-            result = self.monai(transform_input)
-            
-            # Check if result is None or if image key is missing
-            if result is None:
-                raise RuntimeError("AugmentationPipeline: MONAI pipeline returned None")
-            
-            if self.image_key not in result:
-                raise RuntimeError(f"AugmentationPipeline: Image key '{self.image_key}' missing after transforms")
-            
-            img = result[self.image_key]
-            if img is None:
-                raise RuntimeError(f"AugmentationPipeline: Image is None after transforms")
-
-            # Update sample with transformed image
-            sample[self.image_key] = img
-        
-        # Apply tumor simulation
-        if self.use_tumor_simulation and self.tumor_simulator is not None:
-            try:
-                sample = self.tumor_simulator(sample)
-            except Exception as e:
-                print(f"Warning: Tumor simulation failed: {e}")
-                sample['has_tumor'] = torch.tensor(False, dtype=torch.bool)
-
-        # Ensure tensor consistency
         img = sample[self.image_key]
-        for k in ("age", "weight"):
-            if k in sample and sample[k].device != img.device:
-                sample[k] = sample[k].to(img.device)
+        img = self._apply_monai(img)
+        img = self._apply_torchio(img)
+        sample[self.image_key] = img
+
+        # Keep auxiliary tensors on same device as image
+        for k, v in list(sample.items()):
+            if k != self.image_key and torch.is_tensor(v) and v.device != img.device:
+                sample[k] = v.to(img.device)
 
         return sample
-

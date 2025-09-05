@@ -32,28 +32,19 @@ model:
   use_attention: false                   
   checkpoint: "/home/ajoos/brain_age_pred/output/checkpoints/brainagenext_baseline/brainagenext_baseline_best_mae.pt"
 
-# ────────────────  DOMAIN-RANDOMISATION / AUGS  ───────────────── #
+# ─────────────────────────  AUGMENTATION  ─────────────────────── #
 # -------------------------------------------------------------------------
-# Domain-randomisation settings
+# Augmentation settings
 # Every key here maps 1-to-1 to a keyword argument or probability override
-# accepted by the new DomainRandomizer class.
+# accepted by the AugmentationPipeline class.
 # -------------------------------------------------------------------------
-domain_randomization:
-  use_domain_randomization: false
-  use_tumor_simulation: false
-
-  # Progressive randomization parameters
-  progressive_epochs: 50  # Number of epochs for progressive randomization
-  progressive_start: 0.2  # Initial probability scaling factor
-
+augmentation:
+  use_augmentation: false
 
   image_key: "image"  # Key for the image in the data dictionary
     
   # Transform probabilities
   transform_probs:
-  
-    tumor: 0.3
-
     # Geometric transforms
     flip: 0.5
     affine: 0.7
@@ -76,10 +67,12 @@ domain_randomization:
     resolution: 0.1
     coarse_do: 0.0
     
-    
+    # TorchIO transforms (controlled by probabilities)
+    spike: 0.0
+    ghost: 0.0
+    motion: 0.0
+    swap: 0.0
 
-  
-  
   # Geometric transform parameters
   scaling_range: [0.85, 1.15]  # Range for scaling transformations
   rotation_range: 15.0  # Maximum rotation in degrees
@@ -116,13 +109,9 @@ domain_randomization:
   random_center: true  # Use random center for spatial crop
   
   # TorchIO specific parameters
-  use_torchio: false  # Whether to use TorchIO transforms
-  elastic_control_points: 7  # Control points for elastic deformation
-  elastic_max_displacement: 5.0  # Maximum displacement for elastic deformation
   spike_num: [1, 6]  # Number of spikes
   spike_intensity: [0.1, 0.6]  # Intensity of spikes
   ghost_num: [2, 10]  # Number of ghosts
-  
 
 # ──────────────────────────  TRAINING  ────────────────────────── #
 training:

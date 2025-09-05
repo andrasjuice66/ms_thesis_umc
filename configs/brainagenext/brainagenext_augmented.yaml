@@ -33,20 +33,15 @@ model:
   use_attention: false                   
   checkpoint: "/home/ajoos/brain_age_pred/output/checkpoints/brainagenext_dom_rand/brainagenext_dom_rand_best_mae.pt"
 
-# ────────────────  DOMAIN-RANDOMISATION / AUGS  ───────────────── #
+# ─────────────────────────  AUGMENTATION  ─────────────────────── #
 # -------------------------------------------------------------------------
-# Domain-randomisation settings
+# Augmentation settings
 # Every key here maps 1-to-1 to a keyword argument or probability override
-# accepted by the new AugmentationPipeline class.
+# accepted by the AugmentationPipeline class.
 # -------------------------------------------------------------------------
-domain_randomization:
-  use_domain_randomization: true
-
-  # Progressive randomization parameters
-  progressive_epochs: 0  # Number of epochs for progressive randomization
-  progressive_start: 0.2  # Initial probability scaling factor
-  augmentation_strength: 1.2  # Increase to 1.2 instead of 0.5
-
+augmentation:
+  use_augmentation: true
+  augmentation_strength: 1.2  # Overall augmentation strength multiplier
 
   image_key: "image"  # Key for the image in the data dictionary
     
@@ -74,10 +69,12 @@ domain_randomization:
     resolution: 0.4     # Up from 0.2
     coarse_do: 0.2      # Up from 0.0
     
-    
+    # TorchIO transforms (controlled by probabilities)
+    spike: 0.2
+    ghost: 0.3
+    motion: 0.1
+    swap: 0.1
 
-  
-  
   # Geometric transform parameters
   scaling_range: [0.9, 1.1]      # More conservative
   rotation_range: 10.0  # Maximum rotation in degrees
@@ -114,14 +111,9 @@ domain_randomization:
   random_center: true  # Use random center for spatial crop
   
   # TorchIO specific parameters
-  use_torchio: false  # Whether to use TorchIO transforms
-  elastic_control_points: 7  # Control points for elastic deformation
-  elastic_max_displacement: 5.0  # Maximum displacement for elastic deformation
   spike_num: [1, 6]  # Number of spikes
   spike_intensity: [0.1, 0.6]  # Intensity of spikes
   ghost_num: [2, 10]  # Number of ghosts
-  
- 
 
 # ──────────────────────────  TRAINING  ────────────────────────── #
 training:
@@ -158,7 +150,7 @@ output:
   output_dir: "/home/ajoos/brain_age_pred/output"
   checkpoint_dir: "checkpoints"
   log_dir: "logs"
-  experiment_name: brainagenext_dom_rand #"brain_age_with_tumors"                   # auto-generate if left null
+  experiment_name: brainagenext_augmented #"brain_age_with_tumors"                   # auto-generate if left null
 
 # ─────────────────────────────  W&B  ──────────────────────────── #
 wandb:

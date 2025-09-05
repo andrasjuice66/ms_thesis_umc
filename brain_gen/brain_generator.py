@@ -246,7 +246,6 @@ class BABrainGenerator:
                                 offsets=self.shift_offset),
             RandHistogramShiftd(keys=[self.image_key], prob=self.prob["hist_shift"],
                                 num_control_points=self.hist_control_points),
-
             RandGaussianNoised(keys=[self.image_key], prob=self.prob["noise"],
                                mean=self.noise_mean, std=self.noise_std),
             RandRicianNoised(keys=[self.image_key], prob=self.prob["rician"],

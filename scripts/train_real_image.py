@@ -7,7 +7,7 @@ and launches training with weighted sampling + GPU transforms.
 import os, sys, time, json, random
 from datetime import datetime
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Tuple, Optional, Union, Dict
 import multiprocessing as mp
 
 import pandas as pd
@@ -78,52 +78,17 @@ def main() -> None:
     logger.info(f"Using device: {device}")
 
     # 5. ─── transforms (GPU-ready) with tumor simulation ─────── #
-    logger.info("Initializing domain randomization transforms...")
-    rand_cfg = cfg.get("domain_randomization", {})
-    if rand_cfg.get("use_domain_randomization", False):
+    logger.info("Initializing augmentation transforms...")
+    aug_cfg = cfg.get("augmentation", {})
+    if aug_cfg.get("use_augmentation", False):
         transform = AugmentationPipeline(
-            **rand_cfg,
+            **aug_cfg,
         )
-        
-        if rand_cfg.get("use_tumor_simulation", False):
-            tumor_cfg = rand_cfg.get("tumor_config", {})
-            logger.info(f"✓ Tumor simulation enabled with probability: {tumor_cfg.get('prob', 0.3)}")
-            
-            if tumor_cfg.get("use_age_based_segmentation", False):
-                logger.info("✓ Using age-based segmentation for tumor placement:")
-                seg_paths = tumor_cfg.get("segmentation_paths", {})
-                age_ranges = tumor_cfg.get("age_ranges", {})
-                
-                # Validate segmentation files exist
-                missing_files = []
-                for age_group, seg_path in seg_paths.items():
-                    if not Path(seg_path).exists():
-                        missing_files.append(f"{age_group}: {seg_path}")
-                    else:
-                        age_range = age_ranges.get(age_group, "unknown")
-                        logger.info(f"  • {age_group}: {seg_path} (ages {age_range})")
-                
-                if missing_files:
-                    logger.error("Missing segmentation files:")
-                    for missing in missing_files:
-                        logger.error(f"  ✗ {missing}")
-                    raise FileNotFoundError("Required segmentation files not found")
-                
-                logger.info("All segmentation files found and will be preloaded")
-            else:
-                logger.info("Using intensity-based brain mask for tumor placement")
-                
-            # Log tumor generation parameters
-            logger.info(f"Tumor parameters: perlin_res={tumor_cfg.get('perlin_res', [2,2,2])}, "
-                       f"size_range={tumor_cfg.get('tumor_size_factor_range', [0.5, 2.0])}, "
-                       f"fluid_dynamics={tumor_cfg.get('use_fluid_dynamics', True)}")
-        else:
-            logger.info("Tumor simulation disabled")
     else:
         transform = None
-        logger.info("Domain randomization disabled")
+        logger.info("Augmentation disabled")
     
-    logger.info(f"Domain randomizer initialized: {rand_cfg.get('use_domain_randomization', False)}")
+    logger.info(f"Augmentation pipeline initialized: {aug_cfg.get('use_augmentation', False)}")
 
     # 6. ─── CSV → dataset / sampler ─────────────────────────── #
     logger.info("Reading CSV files...")
@@ -341,31 +306,31 @@ def main() -> None:
         raise
 
     # 10. ─── 3-fold evaluation ─────────────────────────────────────── #
-    def create_eval_transforms(use_domain_rand=False, use_tumor=False):
+    def create_eval_transform(cfg, device, use_domain_rand=False, use_tumor=False):
         """Create evaluation-specific transforms"""
         if not use_domain_rand:
             return None
         
-        # Create domain randomization for evaluation using same config as training
-        eval_rand_cfg = cfg.get("domain_randomization", {}).copy()
-        eval_tumor_cfg = eval_rand_cfg.get("tumor_config", {}).copy() if use_tumor else {}
+        # Create augmentation for evaluation using same config as training
+        eval_aug_cfg = cfg.get("augmentation", {}).copy()
+        eval_tumor_cfg = eval_aug_cfg.get("tumor_config", {}).copy() if use_tumor else {}
         
         # IMPORTANT: For tumor evaluation, always set probability to 1.0 to ensure tumors are always added
         if use_tumor and eval_tumor_cfg:
             eval_tumor_cfg["prob"] = 1.0
-            logger.info(f"Overriding tumor probability to 1.0 for evaluation (was {cfg.get('domain_randomization', {}).get('tumor_config', {}).get('prob', 'unknown')})")
+            logger.info(f"Overriding tumor probability to 1.0 for evaluation (was {cfg.get('augmentation', {}).get('tumor_config', {}).get('prob', 'unknown')})")
         
         # Remove conflicting keys that we want to override
-        eval_rand_cfg.pop("use_domain_randomization", None)
-        eval_rand_cfg.pop("use_tumor_simulation", None)
-        eval_rand_cfg.pop("tumor_config", None)
+        eval_aug_cfg.pop("use_augmentation", None)
+        eval_aug_cfg.pop("use_tumor_simulation", None)
+        eval_aug_cfg.pop("tumor_config", None)
         
         eval_transform = AugmentationPipeline(
             device=device,
-            use_domain_randomization=True,
-            use_tumor_simulation=use_tumor,
+            use_spatial_transforms=True,
+            use_intensity_transforms=True,
             tumor_config=eval_tumor_cfg if use_tumor else None,
-            **eval_rand_cfg,
+            **eval_aug_cfg,
         )
         
         return eval_transform
@@ -517,14 +482,14 @@ def main() -> None:
         
         # 2. Domain randomized test evaluation (10 folds)
         logger.info("=== 2/3: Domain randomized test evaluation ===")
-        dom_rand_transform = create_eval_transforms(use_domain_rand=True, use_tumor=False)
+        dom_rand_transform = create_eval_transform(cfg, device, use_domain_rand=True, use_tumor=False)
         dom_rand_metrics = run_multi_fold_evaluation(
             dom_rand_transform, n_folds=5, eval_name="domain_randomized"
         )
         
         # 3. Domain randomized + tumor simulation test evaluation (10 folds)
         logger.info("=== 3/3: Domain randomized + tumor simulation test evaluation ===")
-        dom_rand_tumor_transform = create_eval_transforms(use_domain_rand=True, use_tumor=True)
+        dom_rand_tumor_transform = create_eval_transform(cfg, device, use_domain_rand=True, use_tumor=True)
         dom_rand_tumor_metrics = run_multi_fold_evaluation(
             dom_rand_tumor_transform, n_folds=5, eval_name="domain_rand_tumor"
         )
