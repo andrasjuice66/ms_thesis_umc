@@ -252,9 +252,9 @@ def main(input_dir, output_dir) -> None:
         summary_table = wandb.Table(
             columns=["Metric", "Value"],
             data=[
-                ["Total Files", len(nifti_files)],
-                ["Successful", successful_files],
-                ["Failed", failed_files],
+                ["Total Files", str(len(nifti_files))],
+                ["Successful", str(successful_files)],
+                ["Failed", str(failed_files)],
                 ["Success Rate (%)", f"{success_rate:.1f}"],
                 ["Total Time (s)", f"{total_time:.1f}"],
                 ["Avg Time per File (s)", f"{total_time/len(nifti_files):.1f}" if nifti_files else "0"]
@@ -267,17 +267,14 @@ def main(input_dir, output_dir) -> None:
 
 
 if __name__ == "__main__":
-    input_dir = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed_no_csf/GSP")
-    output_dir = Path("/mnt/c/Projects/thesis_project/Data/brain_age_segmented/GSP")
-    main(input_dir, output_dir)
 
     input_dir = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed_no_csf/ATAG")
-    out_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed_no_csf/ATAG")
+    out_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_segmented/ATAG")
     main(input_dir, out_root)
 
 
     input_dir = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed_no_csf/CEREBRUM-7T")
-    out_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed_no_csf/CEREBRUM-7T")
+    out_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_segmented/CEREBRUM-7T")
     main(input_dir, out_root)
 
     input_dir = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed_no_csf/CBS")
@@ -285,6 +282,6 @@ if __name__ == "__main__":
     main(input_dir, out_root)
 
     input_dir = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed_no_csf/CFMM-7T")
-    out_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed_no_csf/CFMM-7T")
+    out_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_segmented/CFMM-7T")
     main(input_dir, out_root)
     
