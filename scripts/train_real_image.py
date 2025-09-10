@@ -165,13 +165,22 @@ def main() -> None:
     )
 
     logger.info("Setting up sampler...")
-
-    sampler = WeightedRandomSampler(
-        weights=train_w,
-        num_samples=len(train_w),
-        replacement=True,
-    )
-    logger.info("Weighted random sampler initialized")
+    
+    # Check if we should use weighted sampling or random sampling
+    use_weighted_sampling = cfg.get("data.use_weighted_sampling", True)
+    
+    if use_weighted_sampling:
+        sampler = WeightedRandomSampler(
+            weights=train_w,
+            num_samples=len(train_w),
+            replacement=True,
+        )
+        logger.info("Weighted random sampler initialized")
+        shuffle = False  # Don't shuffle when using sampler
+    else:
+        sampler = None
+        logger.info("Using random sampling (no weights)")
+        shuffle = True  # Shuffle when not using sampler
 
     logger.info("Setting up data loader parameters...")
     dl_kwargs = dict(
@@ -187,6 +196,7 @@ def main() -> None:
         train_ds,
         batch_size = cfg.get("training.batch_size", 8),
         sampler    = sampler,
+        shuffle    = shuffle,
         **dl_kwargs,
     )
 
@@ -305,241 +315,6 @@ def main() -> None:
         logger.error(f"Training failed")
         raise
 
-    # 10. ─── 3-fold evaluation ─────────────────────────────────────── #
-    def create_eval_transform(cfg, device, use_domain_rand=False, use_tumor=False):
-        """Create evaluation-specific transforms"""
-        if not use_domain_rand:
-            return None
-        
-        # Create augmentation for evaluation using same config as training
-        eval_aug_cfg = cfg.get("augmentation", {}).copy()
-        eval_tumor_cfg = eval_aug_cfg.get("tumor_config", {}).copy() if use_tumor else {}
-        
-        # IMPORTANT: For tumor evaluation, always set probability to 1.0 to ensure tumors are always added
-        if use_tumor and eval_tumor_cfg:
-            eval_tumor_cfg["prob"] = 1.0
-            logger.info(f"Overriding tumor probability to 1.0 for evaluation (was {cfg.get('augmentation', {}).get('tumor_config', {}).get('prob', 'unknown')})")
-        
-        # Remove conflicting keys that we want to override
-        eval_aug_cfg.pop("use_augmentation", None)
-        eval_aug_cfg.pop("use_tumor_simulation", None)
-        eval_aug_cfg.pop("tumor_config", None)
-        
-        eval_transform = AugmentationPipeline(
-            device=device,
-            use_spatial_transforms=True,
-            use_intensity_transforms=True,
-            tumor_config=eval_tumor_cfg if use_tumor else None,
-            **eval_aug_cfg,
-        )
-        
-        return eval_transform
-
-    def create_evaluation_tables(normal_metrics, dom_rand_metrics, dom_rand_tumor_metrics):
-        """Create wandb tables summarizing evaluation metrics by modality"""
-        
-        # Get unique modalities from the metrics keys
-        modalities = set()
-        for metrics in [normal_metrics, dom_rand_metrics, dom_rand_tumor_metrics]:
-            for key in metrics.keys():
-                if '_mae' in key and key != 'mae':
-                    modality = key.replace('_mae', '')
-                    if modality not in ['mae_std']:  # Skip std metrics
-                        modalities.add(modality)
-        
-        modalities = sorted(list(modalities))
-        
-        # Create table data
-        table_data = []
-        
-        # Add overall (average) row
-        table_data.append([
-            "Average",
-            f"{normal_metrics['mae']:.4f}",
-            f"{normal_metrics['mse']:.4f}",
-            f"{normal_metrics['r2']:.4f}",
-            f"{normal_metrics['correlation']:.4f}",
-            f"{dom_rand_metrics['mae']:.4f} ± {dom_rand_metrics.get('mae_std', 0):.4f}",
-            f"{dom_rand_metrics['mse']:.4f} ± {dom_rand_metrics.get('mse_std', 0):.4f}",
-            f"{dom_rand_metrics['r2']:.4f} ± {dom_rand_metrics.get('r2_std', 0):.4f}",
-            f"{dom_rand_metrics['correlation']:.4f} ± {dom_rand_metrics.get('correlation_std', 0):.4f}",
-            f"{dom_rand_tumor_metrics['mae']:.4f} ± {dom_rand_tumor_metrics.get('mae_std', 0):.4f}",
-            f"{dom_rand_tumor_metrics['mse']:.4f} ± {dom_rand_tumor_metrics.get('mse_std', 0):.4f}",
-            f"{dom_rand_tumor_metrics['r2']:.4f} ± {dom_rand_tumor_metrics.get('r2_std', 0):.4f}",
-            f"{dom_rand_tumor_metrics['correlation']:.4f} ± {dom_rand_tumor_metrics.get('correlation_std', 0):.4f}",
-        ])
-        
-        # Add modality-specific rows
-        for modality in modalities:
-            # Get metrics for this modality (with fallbacks)
-            normal_mae = normal_metrics.get(f"{modality}_mae", 0)
-            normal_mse = normal_metrics.get(f"{modality}_mse", 0)
-            normal_r2 = normal_metrics.get(f"{modality}_r2", 0)
-            normal_corr = normal_metrics.get(f"{modality}_correlation", 0)
-            
-            dom_rand_mae = dom_rand_metrics.get(f"{modality}_mae", 0)
-            dom_rand_mse = dom_rand_metrics.get(f"{modality}_mse", 0)
-            dom_rand_r2 = dom_rand_metrics.get(f"{modality}_r2", 0)
-            dom_rand_corr = dom_rand_metrics.get(f"{modality}_correlation", 0)
-            dom_rand_mae_std = dom_rand_metrics.get(f"{modality}_mae_std", 0)
-            dom_rand_mse_std = dom_rand_metrics.get(f"{modality}_mse_std", 0)
-            dom_rand_r2_std = dom_rand_metrics.get(f"{modality}_r2_std", 0)
-            dom_rand_corr_std = dom_rand_metrics.get(f"{modality}_correlation_std", 0)
-            
-            tumor_mae = dom_rand_tumor_metrics.get(f"{modality}_mae", 0)
-            tumor_mse = dom_rand_tumor_metrics.get(f"{modality}_mse", 0)
-            tumor_r2 = dom_rand_tumor_metrics.get(f"{modality}_r2", 0)
-            tumor_corr = dom_rand_tumor_metrics.get(f"{modality}_correlation", 0)
-            tumor_mae_std = dom_rand_tumor_metrics.get(f"{modality}_mae_std", 0)
-            tumor_mse_std = dom_rand_tumor_metrics.get(f"{modality}_mse_std", 0)
-            tumor_r2_std = dom_rand_tumor_metrics.get(f"{modality}_r2_std", 0)
-            tumor_corr_std = dom_rand_tumor_metrics.get(f"{modality}_correlation_std", 0)
-            
-            table_data.append([
-                modality,
-                f"{normal_mae:.4f}",
-                f"{normal_mse:.4f}",
-                f"{normal_r2:.4f}",
-                f"{normal_corr:.4f}",
-                f"{dom_rand_mae:.4f} ± {dom_rand_mae_std:.4f}",
-                f"{dom_rand_mse:.4f} ± {dom_rand_mse_std:.4f}",
-                f"{dom_rand_r2:.4f} ± {dom_rand_r2_std:.4f}",
-                f"{dom_rand_corr:.4f} ± {dom_rand_corr_std:.4f}",
-                f"{tumor_mae:.4f} ± {tumor_mae_std:.4f}",
-                f"{tumor_mse:.4f} ± {tumor_mse_std:.4f}",
-                f"{tumor_r2:.4f} ± {tumor_r2_std:.4f}",
-                f"{tumor_corr:.4f} ± {tumor_corr_std:.4f}",
-            ])
-        
-        # Create wandb table
-        table = wandb.Table(
-            columns=[
-                "Modality",
-                "Normal MAE", "Normal MSE", "Normal R²", "Normal Correlation",
-                "Dom Rand MAE", "Dom Rand MSE", "Dom Rand R²", "Dom Rand Correlation", 
-                "Dom Rand + Tumor MAE", "Dom Rand + Tumor MSE", "Dom Rand + Tumor R²", "Dom Rand + Tumor Correlation"
-            ],
-            data=table_data
-        )
-        
-        return table
-
-    def run_multi_fold_evaluation(transform, n_folds=10, eval_name="test"):
-        """Run evaluation multiple times with different augmentations and average results"""
-        logger.info(f"Running {n_folds}-fold {eval_name} evaluation...")
-        
-        all_metrics = []
-        
-        for fold in range(n_folds):
-            logger.info(f"{eval_name} evaluation fold {fold+1}/{n_folds}")
-            
-            # Create test dataset with transform
-            eval_test_ds = BADataset(
-                file_paths=test_p,
-                age_labels=test_a,
-                sexes=test_s,
-                modalities=test_m,
-                transform=transform,
-                mode="test",
-                cache_size=0,  # No caching for evaluation
-            )
-            
-            # Create data loader
-            eval_test_loader = torch.utils.data.DataLoader(
-                eval_test_ds,
-                batch_size=cfg.get("training.batch_size", 8),
-                shuffle=False,
-                **dl_kwargs,
-            )
-            
-            # Run evaluation
-            metrics = trainer.evaluate(eval_test_loader, checkpoint_path=best_mae_checkpoint)
-            all_metrics.append(metrics)
-        
-        # Average metrics across folds
-        avg_metrics = {}
-        for key in all_metrics[0].keys():
-            values = [m[key] for m in all_metrics]
-            avg_metrics[key] = np.mean(values)
-            avg_metrics[f"{key}_std"] = np.std(values)
-        
-        logger.info(f"{eval_name} evaluation results (averaged over {n_folds} folds):")
-        logger.info(f"MAE: {avg_metrics['mae']:.4f} ± {avg_metrics['mae_std']:.4f}")
-        logger.info(f"MSE: {avg_metrics['mse']:.4f} ± {avg_metrics['mse_std']:.4f}")
-        logger.info(f"R²: {avg_metrics['r2']:.4f} ± {avg_metrics['r2_std']:.4f}")
-        
-        return avg_metrics
-
-    try:
-        logger.info("Starting 3-fold evaluation using best MAE checkpoint...")
-        best_mae_checkpoint = best_mae_info["checkpoint_path"]
-        logger.info(f"Loading best checkpoint from epoch {best_mae_info['epoch']+1} with MAE {best_mae_info['value']:.4f}")
-        
-        # 1. Normal test evaluation
-        logger.info("=== 1/3: Normal test evaluation ===")
-        normal_metrics = trainer.evaluate(test_loader, checkpoint_path=best_mae_checkpoint)
-        logger.info(f"Normal test results: {normal_metrics}")
-        
-        # 2. Domain randomized test evaluation (10 folds)
-        logger.info("=== 2/3: Domain randomized test evaluation ===")
-        dom_rand_transform = create_eval_transform(cfg, device, use_domain_rand=True, use_tumor=False)
-        dom_rand_metrics = run_multi_fold_evaluation(
-            dom_rand_transform, n_folds=5, eval_name="domain_randomized"
-        )
-        
-        # 3. Domain randomized + tumor simulation test evaluation (10 folds)
-        logger.info("=== 3/3: Domain randomized + tumor simulation test evaluation ===")
-        dom_rand_tumor_transform = create_eval_transform(cfg, device, use_domain_rand=True, use_tumor=True)
-        dom_rand_tumor_metrics = run_multi_fold_evaluation(
-            dom_rand_tumor_transform, n_folds=5, eval_name="domain_rand_tumor"
-        )
-        
-        # Log all results to W&B with appropriate prefixes
-        if use_wandb:
-            # Normal test results
-            wandb.log({f"test/{k}": v for k, v in normal_metrics.items()})
-            
-            # Domain randomized results
-            wandb.log({f"test_dom_rand/{k}": v for k, v in dom_rand_metrics.items()})
-            
-            # Domain randomized + tumor results
-            wandb.log({f"test_dom_rand_tumor/{k}": v for k, v in dom_rand_tumor_metrics.items()})
-            
-            # Log summary comparison
-            wandb.log({
-                "evaluation_summary/normal_mae": normal_metrics["mae"],
-                "evaluation_summary/dom_rand_mae": dom_rand_metrics["mae"],
-                "evaluation_summary/dom_rand_tumor_mae": dom_rand_tumor_metrics["mae"],
-                "evaluation_summary/dom_rand_mae_std": dom_rand_metrics["mae_std"],
-                "evaluation_summary/dom_rand_tumor_mae_std": dom_rand_tumor_metrics["mae_std"],
-            })
-            
-            # Create and log wandb table
-            logger.info("Creating evaluation summary table for W&B...")
-            evaluation_table = create_evaluation_tables(normal_metrics, dom_rand_metrics, dom_rand_tumor_metrics)
-            wandb.log({"test_evaluation_summary": evaluation_table})
-        
-        # Save evaluation results
-        eval_results = {
-            "normal": normal_metrics,
-            "domain_randomized": dom_rand_metrics,
-            "domain_rand_tumor": dom_rand_tumor_metrics,
-        }
-        json.dump(eval_results, open(ckpt_dir/"evaluation_results.json","w"), indent=2)
-        
-        logger.info("=== Evaluation Summary ===")
-        logger.info(f"Normal test MAE: {normal_metrics['mae']:.4f}")
-        logger.info(f"Domain rand test MAE: {dom_rand_metrics['mae']:.4f} ± {dom_rand_metrics['mae_std']:.4f}")
-        logger.info(f"Domain rand + tumor test MAE: {dom_rand_tumor_metrics['mae']:.4f} ± {dom_rand_tumor_metrics['mae_std']:.4f}")
-        
-    except Exception as e:
-        logger.error(f"3-fold evaluation failed: {e}")
-        import traceback
-        traceback.print_exc()
-    finally:
-        if use_wandb: wandb.finish()
-        logger.info("All done.")
-        return float(best_val)
 
 if __name__ == "__main__":
     sys.exit(main())

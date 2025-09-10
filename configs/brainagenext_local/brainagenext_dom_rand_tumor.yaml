@@ -1,13 +1,13 @@
 # ────────────────────────────  DATA  ──────────────────────────── #
 data:
-  real_data_dir: "/scratch-shared/ajoos/brain_age_preprocessed_converted/"   
+  data_dir: "/scratch-shared/ajoos/"               # root that contains all images
   train_csv: "/home/ajoos/brain_age_pred/data/labels/train.csv"
   val_csv:   "/home/ajoos/brain_age_pred/data/labels/val.csv"
   test_csv:  "/home/ajoos/brain_age_pred/data/labels/test_balanced.csv"
 
   image_key:  "image_path"
   age_key:    "age"
-  weight_key: "age_modality_frequency"             
+  weight_key: "sample_weight"             
 
   # loading / caching
   cache_dir: "data/cache"
@@ -28,23 +28,33 @@ data:
 model:
   type: "brainagenext"                             # sfcn | resnet3d | efficientnet3d
   in_channels: 1
-  dropout_rate: 0.2 
+  dropout_rate: 0.0
   use_attention: false                   
-  checkpoint: "/home/ajoos/brain_age_pred/output/checkpoints/brainagenext_baseline/brainagenext_baseline_best_mae.pt"
+  checkpoint: null #"/home/ajoos/brain_age_pred/output/checkpoints/sfcn_20250522_104159/sfcn_20250522_104159_epoch057.pt"
 
-# ─────────────────────────  AUGMENTATION  ─────────────────────── #
+# ────────────────  DOMAIN-RANDOMISATION / AUGS  ───────────────── #
 # -------------------------------------------------------------------------
-# Augmentation settings
+# Domain-randomisation settings
 # Every key here maps 1-to-1 to a keyword argument or probability override
-# accepted by the AugmentationPipeline class.
+# accepted by the new AugmentationPipeline class.
 # -------------------------------------------------------------------------
-augmentation:
-  use_augmentation: false
+domain_randomization:
+  use_domain_randomization: true
+  use_tumor_simulation: true
+
+  # Progressive randomization parameters
+  progressive_epochs: 50  # Number of epochs for progressive randomization
+  progressive_start: 0.2  # Initial probability scaling factor
+  augmentation_strength: 0.5
+
 
   image_key: "image"  # Key for the image in the data dictionary
     
   # Transform probabilities
   transform_probs:
+  
+    tumor: 0.7
+
     # Geometric transforms
     flip: 0.5
     affine: 0.7
@@ -67,12 +77,10 @@ augmentation:
     resolution: 0.1
     coarse_do: 0.0
     
-    # TorchIO transforms (controlled by probabilities)
-    spike: 0.0
-    ghost: 0.0
-    motion: 0.0
-    swap: 0.0
+    
 
+  
+  
   # Geometric transform parameters
   scaling_range: [0.85, 1.15]  # Range for scaling transformations
   rotation_range: 15.0  # Maximum rotation in degrees
@@ -109,9 +117,49 @@ augmentation:
   random_center: true  # Use random center for spatial crop
   
   # TorchIO specific parameters
+  use_torchio: false  # Whether to use TorchIO transforms
+  elastic_control_points: 7  # Control points for elastic deformation
+  elastic_max_displacement: 5.0  # Maximum displacement for elastic deformation
   spike_num: [1, 6]  # Number of spikes
   spike_intensity: [0.1, 0.6]  # Intensity of spikes
   ghost_num: [2, 10]  # Number of ghosts
+  
+  # Tumor simulation configuration
+  tumor_config:
+
+    # Age-based segmentation
+    use_age_based_segmentation: true
+    segmentation_paths:
+      young: "brain_age_pred/data/segmentations/seg_18_40.nii.gz"
+      middle: "brain_age_pred/data/segmentations/seg_40_60.nii.gz"
+      old: "brain_age_pred/data/segmentations/seg_60_85.nii.gz"
+    age_ranges:
+      young: [18, 40]
+      middle: [40, 60]
+      old: [60, 85]
+    
+    # Tumor generation parameters
+    perlin_res: [2, 2, 2]  # Perlin noise resolution
+    mask_percentile_min: 90.0
+    mask_percentile_max: 99.6
+    tumor_size_factor_range: [0.5, 2.0]  # Random size scaling
+    pathol_thres: 0.2
+    min_tumor_size: 100
+    
+    # Fluid dynamics (makes tumors more realistic)
+    use_fluid_dynamics: false
+    V_multiplier: 500.0
+    dt: 0.1
+    min_nt: 10
+    max_nt: 20
+    integ_method: 'dopri5'
+    bc: 'neumann'
+    
+    # Intensity parameters
+    intensity_variation: 0.3
+    
+    # Brain mask parameters (fallback when segmentation fails)
+    brain_threshold: 0.1
 
 # ──────────────────────────  TRAINING  ────────────────────────── #
 training:
@@ -119,7 +167,8 @@ training:
   epochs: 150
 
   # optimiser & LR
-  learning_rate: 0.00001 #0.002193
+  learning_rate: 0.001 #0.002193
+  weight_decay:  0.001
   optimizer: "adamw"                       # adam | adamw | sgd | rmsprop | radam | novograd
   scheduler: "step"                      # cosine | plateau | onecycle | step | none
   scheduler_params:
@@ -132,7 +181,7 @@ training:
     gamma: 0.3
 
   # losses
-  loss: "mse"                        # mse | mae | huber | huber_mae | weighted_mse
+  loss: "huber_mae"                        # mse | mae | huber | huber_mae | weighted_mse
   loss_params:
     delta: 1.0
     mae_weight: 0.5
@@ -147,7 +196,7 @@ output:
   output_dir: "/home/ajoos/brain_age_pred/output"
   checkpoint_dir: "checkpoints"
   log_dir: "logs"
-  experiment_name: brainagenext_baseline #"brain_age_with_tumors"                   # auto-generate if left null
+  experiment_name: brainagenext_dom_rand_tumor #"brain_age_with_tumors"                   # auto-generate if left null
 
 # ─────────────────────────────  W&B  ──────────────────────────── #
 wandb:

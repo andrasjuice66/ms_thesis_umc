@@ -14,7 +14,7 @@ set -x
 set -o pipefail
 
 source ~/.bashrc
-conda activate thesis
+conda activate brain_age_310
 
 # SCRATCH=/scratch/$USER/$SLURM_JOB_ID
 # mkdir -p $SCRATCH && cp -r /project/<proj>/data/dataset $SCRATCH

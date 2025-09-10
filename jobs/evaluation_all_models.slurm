@@ -14,7 +14,7 @@ set -x
 set -o pipefail
 
 source ~/.bashrc
-conda activate thesis
+conda activate brain_age_310
 
 cd $HOME/
 

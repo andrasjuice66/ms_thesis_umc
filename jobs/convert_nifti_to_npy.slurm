@@ -15,7 +15,7 @@ set -o pipefail
 
 # 1) activate your env
 source ~/.bashrc
-conda activate thesis
+conda activate brain_age_310
 
 # 2) navigate to the preprocessing directory
 cd $HOME/brain_age_pred/data/preprocess
