@@ -24,6 +24,8 @@ data:
   age_min: 20
   age_max: 80
 
+  use_weighted_sampling: true  
+
 # ───────────────────────────  MODEL  ──────────────────────────── #
 model:
   type: "brainagenext"                             # sfcn | resnet3d | efficientnet3d
