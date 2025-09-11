@@ -1,10 +1,10 @@
 # ────────────────────────────  DATA  ──────────────────────────── #
 data:
-  train_csv: "/home/ajoos/brain_age_pred/data/labels/train_debug.csv"
-  val_csv:   "/home/ajoos/brain_age_pred/data/labels/val_30_40.csv"
-  test_csv:  "/home/ajoos/brain_age_pred/data/labels/test_30_40.csv"
-  segmented_data_dir: "/scratch-shared/ajoos/brain_age_segmented_converted/"   
-  real_data_dir: "/scratch-shared/ajoos/brain_age_preprocessed_converted/"   
+  train_csv: "/home/ajoos1/brain_age_pred/data/labels/train_debug.csv"
+  val_csv:   "/home/ajoos1/brain_age_pred/data/labels/val_30_40.csv"
+  test_csv:  "/home/ajoos1/brain_age_pred/data/labels/test_30_40.csv"
+  segmented_data_dir: "/scratch-shared/ajoos1/brain_age_segmented_converted/"   
+  real_data_dir: "/scratch-shared/ajoos1/brain_age_preprocessed_converted/"   
 
   image_key:  "image_path"
   age_key:    "age"
@@ -31,7 +31,7 @@ model:
   in_channels: 1
   dropout_rate: 0.1
   use_attention: false                   
-  checkpoint: null #"/home/ajoos/brain_age_pred/output/checkpoints/sfcn_20250522_104159/sfcn_20250522_104159_epoch057.pt"
+  checkpoint: null #"/home/ajoos1/brain_age_pred/output/checkpoints/sfcn_20250522_104159/sfcn_20250522_104159_epoch057.pt"
 
 #
 # ────────────────────── BRAIN GENERATOR ───────────────────────── #

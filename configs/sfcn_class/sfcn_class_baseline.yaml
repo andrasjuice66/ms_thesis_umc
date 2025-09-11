@@ -1,9 +1,9 @@
 # ────────────────────────────  DATA  ──────────────────────────── #
 data:
-  real_data_dir: "/scratch-shared/ajoos/brain_age_preprocessed_converted/"   
-  train_csv: "/home/ajoos/brain_age_pred/data/labels/train.csv"
-  val_csv:   "/home/ajoos/brain_age_pred/data/labels/val.csv"
-  test_csv:  "/home/ajoos/brain_age_pred/data/labels/test_balanced.csv"
+  real_data_dir: "/scratch-shared/ajoos1/brain_age_preprocessed_converted/"   
+  train_csv: "/home/ajoos1/brain_age_pred/data/labels/train.csv"
+  val_csv:   "/home/ajoos1/brain_age_pred/data/labels/val.csv"
+  test_csv:  "/home/ajoos1/brain_age_pred/data/labels/test_balanced.csv"
 
   image_key:  "image_path"
   age_key:    "age"
@@ -29,7 +29,7 @@ model:
   type: "sfcn_class"                             # sfcn | resnet3d | efficientnet3d
   in_channels: 1
   dropout_rate: 0.5
-  checkpoint: "/home/ajoos/brain_age_pred/output/checkpoints/sfcn_class_baseline/sfcn_class_baseline_epoch064.pt"
+  checkpoint: "/home/ajoos1/brain_age_pred/output/checkpoints/sfcn_class_baseline/sfcn_class_baseline_epoch064.pt"
 
 # ────────────────  DOMAIN-RANDOMISATION / AUGS  ───────────────── #
 # -------------------------------------------------------------------------
@@ -193,7 +193,7 @@ training:
 
 # ────────────────────────────  OUTPUT  ────────────────────────── #
 output:
-  output_dir: "/home/ajoos/brain_age_pred/output"
+  output_dir: "/home/ajoos1/brain_age_pred/output"
   checkpoint_dir: "checkpoints"
   log_dir: "logs"
   experiment_name: sfcn_class_baseline_finetune #"brain_age_with_tumors"                   # auto-generate if left null

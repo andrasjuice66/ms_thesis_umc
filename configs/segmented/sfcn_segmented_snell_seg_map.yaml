@@ -1,11 +1,11 @@
 # ────────────────────────────  DATA  ──────────────────────────── #
 data:
-  train_csv: "/home/ajoos/brain_age_pred/data/labels/train_synth.csv"
-  val_csv:   "/home/ajoos/brain_age_pred/data/labels/val.csv"
-  test_csv:  "/home/ajoos/brain_age_pred/data/labels/test.csv"
+  train_csv: "/home/ajoos1/brain_age_pred/data/labels/train_synth.csv"
+  val_csv:   "/home/ajoos1/brain_age_pred/data/labels/val.csv"
+  test_csv:  "/home/ajoos1/brain_age_pred/data/labels/test.csv"
 
-  segmented_data_dir: "/scratch-shared/ajoos/brain_age_segmented_converted/"   
-  real_data_dir: "/scratch-shared/ajoos/brain_age_segmented_converted/"   
+  segmented_data_dir: "/scratch-shared/ajoos1/brain_age_segmented_converted/"   
+  real_data_dir: "/scratch-shared/ajoos1/brain_age_segmented_converted/"   
 
   image_key:  "image_path"
   age_key:    "age"
@@ -32,7 +32,7 @@ model:
   in_channels: 15
   dropout_rate: 0.5
   use_attention: false                   
-  checkpoint: "/home/ajoos/brain_age_pred/output/checkpoints/sfcn_class_seg_map/sfcn_class_seg_map_epoch070.pt"
+  checkpoint: "/home/ajoos1/brain_age_pred/output/checkpoints/sfcn_class_seg_map/sfcn_class_seg_map_epoch070.pt"
 
 # ──────────────────────────  TRAINING  ────────────────────────── #
 training:
@@ -66,7 +66,7 @@ training:
 
 # ────────────────────────────  OUTPUT  ────────────────────────── #
 output:
-  output_dir: "/home/ajoos/brain_age_pred/output"
+  output_dir: "/home/ajoos1/brain_age_pred/output"
   checkpoint_dir: "checkpoints"
   log_dir: "logs"
   experiment_name: sfcn_class_seg_map_finetune #"brain_age_with_tumors"                   # auto-generate if left null

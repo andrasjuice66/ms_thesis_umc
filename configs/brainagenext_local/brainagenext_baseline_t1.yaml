@@ -15,7 +15,7 @@ data:
   cache_size: 0            
   shared_cache: 0
   preload: true
-  num_workers: 8
+  num_workers: 2
   pin_memory: false
   pin_memory_device: ""
   persistent_workers: true
@@ -24,7 +24,7 @@ data:
   age_min: 20
   age_max: 80
 
-  use_weighted_sampling: true  
+  use_weighted_sampling: false  
 
 # ───────────────────────────  MODEL  ──────────────────────────── #
 model:
@@ -43,81 +43,9 @@ model:
 augmentation:
   use_augmentation: false
 
-  image_key: "image"  # Key for the image in the data dictionary
-    
-  # Transform probabilities
-  transform_probs:
-    # Geometric transforms
-    flip: 0.5
-    affine: 0.7
-    
-    # Intensity transforms
-    contrast: 0.6
-    gamma: 0.5
-    scale_int: 0.4  # Scale intensity
-    shift_int: 0.4  # Shift intensity
-    hist_shift: 0.3  # Histogram shift
-    
-    # Noise/artifact transforms
-    blur: 0.2
-    bias: 0.5
-    noise: 0.4
-    rician: 0.3
-    gibbs: 0.3
-    
-    # Resolution/dropout transforms
-    resolution: 0.1
-    coarse_do: 0.0
-    
-    # TorchIO transforms (controlled by probabilities)
-    spike: 0.0
-    ghost: 0.0
-    motion: 0.0
-    swap: 0.0
-
-  # Geometric transform parameters
-  scaling_range: [0.85, 1.15]  # Range for scaling transformations
-  rotation_range: 15.0  # Maximum rotation in degrees
-  shearing_bounds: 0.3  # Maximum shearing
-  
-  # Intensity transform parameters
-  contrast_range: [0.1, 2.0]  # Range for contrast adjustment
-  log_gamma_std: 0.3  # Standard deviation for gamma transformation
-  bias_field_range: [0.0, 0.8]  # Range for bias field artifact
-  
-  # Noise parameters
-  noise_mean: 0.5  # Mean for Gaussian noise
-  noise_std: 0.08  # Standard deviation for Gaussian noise
-  rician_std: 0.08  # Standard deviation for Rician noise
-  gibbs_alpha: [0.0, 1.0]  # Alpha range for Gibbs noise
-  
-  # Blur parameters
-  blur_sigma: [0.5, 2.0]  # Sigma range for Gaussian smoothing
-  
-  # Intensity shift parameters
-  shift_offset: [-0.15, 0.15]  # Range for intensity shift
-  hist_control_points: [4, 12]  # Control points for histogram shift
-  
-  # Resolution/artifact parameters
-  max_res_iso: 1.8  # Maximum isotropic resolution
-  min_res: 1.0  # Minimum resolution
-  
-  # Dropout parameters
-  coarse_dropout_size: [20, 20, 20]  # Size of dropout regions
-  coarse_dropout_holes: 8  # Number of dropout holes
-  
-  # Spatial crop parameters
-  output_shape: [160, 192, 160]  # Final shape after transformations
-  random_center: true  # Use random center for spatial crop
-  
-  # TorchIO specific parameters
-  spike_num: [1, 6]  # Number of spikes
-  spike_intensity: [0.1, 0.6]  # Intensity of spikes
-  ghost_num: [2, 10]  # Number of ghosts
-
 # ──────────────────────────  TRAINING  ────────────────────────── #
 training:
-  batch_size: 8
+  batch_size: 1
   epochs: 150
 
   # optimiser & LR
@@ -134,7 +62,7 @@ training:
     gamma: 0.3
 
   # losses
-  loss: "mse"                        # mse | mae | huber | huber_mae | weighted_mse
+  loss: "huber_mae"                        # mse | mae | huber | huber_mae | weighted_mse
   loss_params:
     delta: 1.0
     mae_weight: 0.5
@@ -146,7 +74,7 @@ training:
 
 # ────────────────────────────  OUTPUT  ────────────────────────── #
 output:
-  output_dir: "/mnt/c/Projects/thesis_project/output/brainagenext_baseline_t1"
+  output_dir: "/mnt/c/Projects/thesis_project/run_output/brainagenext_baseline_t1"
   checkpoint_dir: "checkpoints"
   log_dir: "logs"
   experiment_name: brainagenext_baseline_t1 #"brain_age_with_tumors"                   # auto-generate if left null
@@ -154,7 +82,7 @@ output:
 # ─────────────────────────────  W&B  ──────────────────────────── #
 wandb:
   use_wandb: true                         # still requires $WANDB_API env-var
-  project: "brain_age_results"
+  project: "paper_check"
 
   entity: null
 

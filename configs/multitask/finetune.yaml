@@ -1,11 +1,11 @@
 # ────────────────────────────  DATA  ──────────────────────────── #
 data:
-  train_csv: "/home/ajoos/brain_age_pred/data/labels/train.csv"
-  val_csv:   "/home/ajoos/brain_age_pred/data/labels/val.csv"
-  test_csv:  "/home/ajoos/brain_age_pred/data/labels/test_balanced.csv"
+  train_csv: "/home/ajoos1/brain_age_pred/data/labels/train.csv"
+  val_csv:   "/home/ajoos1/brain_age_pred/data/labels/val.csv"
+  test_csv:  "/home/ajoos1/brain_age_pred/data/labels/test_balanced.csv"
 
-  segmented_data_dir: "/scratch-shared/ajoos/brain_age_segmented_converted/"   
-  real_data_dir: "/scratch-shared/ajoos/brain_age_preprocessed_converted/" 
+  segmented_data_dir: "/scratch-shared/ajoos1/brain_age_segmented_converted/"   
+  real_data_dir: "/scratch-shared/ajoos1/brain_age_preprocessed_converted/" 
   
   num_workers: 12
   pin_memory: true
@@ -15,7 +15,7 @@ data:
 # The architecture is based on SynthSeg's U-Net.
 model:
   checkpoint: null # Optional path to a checkpoint to resume training
-  synthseg_weights_path: "/home/ajoos/brain_age_pred/models/synthseg_2.0.h5"
+  synthseg_weights_path: "/home/ajoos1/brain_age_pred/models/synthseg_2.0.h5"
 
 # ────────────────────── BRAIN GENERATOR ───────────────────────── #
 # These settings control the on-the-fly generation of synthetic MRIs

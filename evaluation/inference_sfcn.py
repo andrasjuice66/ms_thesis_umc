@@ -66,14 +66,14 @@ bin_centres = np.arange(BIN_RANGE[0] + BIN_STEP / 2,
 N_BINS = len(bin_centres)
 
 # --- ❷ paths ---------------------------------------------------------------
-MODEL_DIR   = '/home/ajoos/model_files/'
+MODEL_DIR   = '/home/ajoos1/model_files/'
 MODEL_PATH = os.path.join(MODEL_DIR, 'sfcn_original_ckp.p')
 
-TEST_CSV    = '/home/ajoos/brain_age_pred/data/labels/test_balanced.csv'
-DATA_ROOT   = '/scratch-shared/ajoos/'
+TEST_CSV    = '/home/ajoos1/brain_age_pred/data/labels/test_balanced.csv'
+DATA_ROOT   = '/scratch-shared/ajoos1/'
 
 # Config file path
-CONFIG_PATH = str('/home/ajoos/brain_age_pred/configs/evaluate/sfcn_original.yaml')
+CONFIG_PATH = str('/home/ajoos1/brain_age_pred/configs/evaluate/sfcn_original.yaml')
 
 OUT_DIR     = Path('.')
 OUT_DIR.mkdir(exist_ok=True)

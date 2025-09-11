@@ -27,21 +27,21 @@ CONFIG_FILE="brain_age_pred/configs/evaluate/evaluate.yaml"
 #echo "--- Evaluating BrainAgeNeXt Baseline ---"
 #python -m brain_age_pred.scripts.evaluate \
 #    --model BrainAgeNeXt \
-#    --model_path /home/ajoos/brain_age_pred/output/checkpoints/brainagenext_baseline/brainagenext_baseline_best_mae.pt \
+#    --model_path /home/ajoos1/brain_age_pred/output/checkpoints/brainagenext_baseline/brainagenext_baseline_best_mae.pt \
 #    --config $CONFIG_FILE
 
 # BrainAgeNeXt Domain Randomization
 #echo "--- Evaluating BrainAgeNeXt Domain Randomization ---"
 #python -m brain_age_pred.scripts.evaluate \
 #    --model BrainAgeNeXt \
-#    --model_path /home/ajoos/brain_age_pred/output/checkpoints/brainagenext_dom_rand/brainagenext_dom_rand_best_mae.pt \
+#    --model_path /home/ajoos1/brain_age_pred/output/checkpoints/brainagenext_dom_rand/brainagenext_dom_rand_best_mae.pt \
 #    --config $CONFIG_FILE
 
 # BrainAgeNeXt Domain Randomization + Tumor
 #echo "--- Evaluating BrainAgeNeXt Domain Randomization + Tumor ---"
 #python -m brain_age_pred.scripts.evaluate \
 #    --model BrainAgeNeXt \
-#    --model_path /home/ajoos/brain_age_pred/output/checkpoints/brainagenext_dom_rand_tumor/brainagenext_dom_rand_tumor_best_mae.pt \
+#    --model_path /home/ajoos1/brain_age_pred/output/checkpoints/brainagenext_dom_rand_tumor/brainagenext_dom_rand_tumor_best_mae.pt \
 #    --config $CONFIG_FILE
 
 echo "=== Starting SFCN_Class Model Evaluations"
@@ -50,21 +50,21 @@ echo "=== Starting SFCN_Class Model Evaluations"
 echo "--- Evaluating SFCN_Class Baseline ---"
 python -m brain_age_pred.scripts.evaluate \
     --model SFCN_Class \
-    --model_path /home/ajoos/brain_age_pred/output/checkpoints/sfcn_class_baseline/sfcn_class_baseline_epoch144.pt \
+    --model_path /home/ajoos1/brain_age_pred/output/checkpoints/sfcn_class_baseline/sfcn_class_baseline_epoch144.pt \
     --config $CONFIG_FILE
 
 # SFCN_Class Domain Randomization
 echo "--- Evaluating SFCN_Class Domain Randomization ---"
 python -m brain_age_pred.scripts.evaluate \
     --model SFCN_Class \
-    --model_path /home/ajoos/brain_age_pred/output/checkpoints/sfcn_class_dom_rand/sfcn_class_dom_rand_best_mae.pt \
+    --model_path /home/ajoos1/brain_age_pred/output/checkpoints/sfcn_class_dom_rand/sfcn_class_dom_rand_best_mae.pt \
     --config $CONFIG_FILE
 
 # SFCN_Class Domain Randomization + Tumor
 echo "--- Evaluating SFCN_Class Domain Randomization + Tumor ---"
 python -m brain_age_pred.scripts.evaluate \
     --model SFCN_Class \
-    --model_path /home/ajoos/brain_age_pred/output/checkpoints/sfcn_class_dom_rand_tumor/sfcn_class_dom_rand_tumor_best_mae.pt \
+    --model_path /home/ajoos1/brain_age_pred/output/checkpoints/sfcn_class_dom_rand_tumor/sfcn_class_dom_rand_tumor_best_mae.pt \
     --config $CONFIG_FILE
 
 echo "=== All Model Evaluations Complete" 

@@ -1,11 +1,11 @@
 # Configuration for the evaluation script
 
 # Directory where evaluation outputs (logs, results) will be saved
-output_dir: "/home/ajoos/brain_age_pred/output/evaluation_all_models"
+output_dir: "/home/ajoos1/brain_age_pred/output/evaluation_all_models"
 
 # Default directory where the real image data (NIfTI files, etc.) is stored.
 # This can be overridden on a per-model basis.
-data_dir: "/scratch-shared/ajoos/brain_age_preprocessed_converted/"
+data_dir: "/scratch-shared/ajoos1/brain_age_preprocessed_converted/"
 
 # Device to run evaluation on ('cuda', 'cpu', or null to auto-detect)
 device: "cuda"
@@ -24,7 +24,7 @@ wandb:
 # List of models, each with a name, checkpoint path, and parameters.
 models:
   - name: "sfcn_baseline"
-    checkpoint: "/home/ajoos/brain_age_pred/output/checkpoints/sfcn_class_baseline/sfcn_class_baseline_best_mae.pt"
+    checkpoint: "/home/ajoos1/brain_age_pred/output/checkpoints/sfcn_class_baseline/sfcn_class_baseline_best_mae.pt"
     params:
       type: "sfcn_class"
       in_channels: 1
@@ -34,7 +34,7 @@ models:
 
 
   - name: "sfcn_baseline_finetune"
-    checkpoint: "/home/ajoos/brain_age_pred/output/checkpoints/sfcn_class_baseline/sfcn_class_baseline_best_mae.pt"
+    checkpoint: "/home/ajoos1/brain_age_pred/output/checkpoints/sfcn_class_baseline/sfcn_class_baseline_best_mae.pt"
     params:
       type: "sfcn_class"
       in_channels: 1
@@ -43,7 +43,7 @@ models:
       age_max: 80
 
   - name: "sfcn_dom_rand"
-    checkpoint: "/home/ajoos/brain_age_pred/output/checkpoints/sfcn_class_dom_rand/sfcn_class_dom_rand_best_mae.pt"
+    checkpoint: "/home/ajoos1/brain_age_pred/output/checkpoints/sfcn_class_dom_rand/sfcn_class_dom_rand_best_mae.pt"
     params:
       type: "sfcn_class"
       in_channels: 1
@@ -52,7 +52,7 @@ models:
       age_max: 80
 
   - name: "sfcn_dom_rand_finetune"
-    checkpoint: "/home/ajoos/brain_age_pred/output/checkpoints/sfcn_class_dom_rand/sfcn_class_dom_rand_best_mae.pt"
+    checkpoint: "/home/ajoos1/brain_age_pred/output/checkpoints/sfcn_class_dom_rand/sfcn_class_dom_rand_best_mae.pt"
     params:
       type: "sfcn_class"
       in_channels: 1
@@ -61,7 +61,7 @@ models:
       age_max: 80
 
   - name: "brainagenext_baseline"
-    checkpoint: "/home/ajoos/brain_age_pred/output/checkpoints/brainagenext_baseline/brainagenext_baseline_best_mae.pt"
+    checkpoint: "/home/ajoos1/brain_age_pred/output/checkpoints/brainagenext_baseline/brainagenext_baseline_best_mae.pt"
     params:
       type: "brainagenext"
       in_channels: 1
@@ -71,7 +71,7 @@ models:
       hidden_size: 64
 
   - name: "brainagenext_dom_rand"
-    checkpoint: "/home/ajoos/brain_age_pred/output/checkpoints/brainagenext_dom_rand/brainagenext_dom_rand_best_mae.pt"
+    checkpoint: "/home/ajoos1/brain_age_pred/output/checkpoints/brainagenext_dom_rand/brainagenext_dom_rand_best_mae.pt"
     params:
       type: "brainagenext"
       in_channels: 1
@@ -81,8 +81,8 @@ models:
       hidden_size: 64
 
   - name: "sfcn_seg_map"
-    checkpoint: "/home/ajoos/brain_age_pred/output/checkpoints/sfcn_class_seg_map/sfcn_class_seg_map_best_mae.pt"
-    data_dir: "/scratch-shared/ajoos/brain_age_segmented_converted/" # Override data directory for this model
+    checkpoint: "/home/ajoos1/brain_age_pred/output/checkpoints/sfcn_class_seg_map/sfcn_class_seg_map_best_mae.pt"
+    data_dir: "/scratch-shared/ajoos1/brain_age_segmented_converted/" # Override data directory for this model
     params:
       type: "sfcn_class"
       in_channels: 15 # Number of segmentation classes
@@ -91,8 +91,8 @@ models:
       age_max: 80
 
   - name: "sfcn_seg_map_finetune"
-    checkpoint: "/home/ajoos/brain_age_pred/output/checkpoints/sfcn_class_seg_map/sfcn_class_seg_map_best_mae.pt"
-    data_dir: "/scratch-shared/ajoos/brain_age_segmented_converted/" # Override data directory for this model
+    checkpoint: "/home/ajoos1/brain_age_pred/output/checkpoints/sfcn_class_seg_map/sfcn_class_seg_map_best_mae.pt"
+    data_dir: "/scratch-shared/ajoos1/brain_age_segmented_converted/" # Override data directory for this model
     params:
       type: "sfcn_class"
       in_channels: 15 # Number of segmentation classes
@@ -101,8 +101,8 @@ models:
       age_max: 80
 
   - name: "brainagenext_seg_map"
-    checkpoint: "/home/ajoos/brain_age_pred/output/checkpoints/brainagenext_seg_map/brainagenext_seg_map_best_mae.pt"
-    data_dir: "/scratch-shared/ajoos/brain_age_segmented_converted/" # Override data directory
+    checkpoint: "/home/ajoos1/brain_age_pred/output/checkpoints/brainagenext_seg_map/brainagenext_seg_map_best_mae.pt"
+    data_dir: "/scratch-shared/ajoos1/brain_age_segmented_converted/" # Override data directory
     params:
       type: "brainagenext"
       in_channels: 15 # Number of segmentation classes
@@ -112,7 +112,7 @@ models:
       hidden_size: 64
 
   - name: "multitask"
-    checkpoint: "/home/ajoos/brain_age_pred/output/checkpoints/multitask/multitask_best_mae.pt"
+    checkpoint: "/home/ajoos1/brain_age_pred/output/checkpoints/multitask/multitask_best_mae.pt"
     params:
       type: "multitask"
       n_classes: 45 
@@ -123,13 +123,13 @@ models:
 # List of test sets, each with a name and a path to its CSV file.
 testing:
   - name: "ValidationSet"
-    csv_path: "/home/ajoos/brain_age_pred/data/labels/val.csv"
+    csv_path: "/home/ajoos1/brain_age_pred/data/labels/val.csv"
 
   - name: "ExternalTestSet"
-    csv_path: "/home/ajoos/brain_age_pred/data/labels/test.csv"
+    csv_path: "/home/ajoos1/brain_age_pred/data/labels/test.csv"
 
   - name: "ExternalTestSetBalanced"
-    csv_path: "/home/ajoos/brain_age_pred/data/labels/test_balanced.csv"
+    csv_path: "/home/ajoos1/brain_age_pred/data/labels/test_balanced.csv"
 
   - name: "MovementNoise"
-    csv_path: "/home/ajoos/brain_age_pred/data/labels/test_movement_noise.csv"  
+    csv_path: "/home/ajoos1/brain_age_pred/data/labels/test_movement_noise.csv"  
