@@ -145,7 +145,7 @@ training:
 
 # ────────────────────────────  OUTPUT  ────────────────────────── #
 output:
-  output_dir: "/home/ajoos/brain_age_pred/output"
+  output_dir: "/home/ajoos1/brain_age_pred/output"
   checkpoint_dir: "checkpoints"
   log_dir: "logs"
   experiment_name: brainagenext_baseline_t1 #"brain_age_with_tumors"                   # auto-generate if left null
