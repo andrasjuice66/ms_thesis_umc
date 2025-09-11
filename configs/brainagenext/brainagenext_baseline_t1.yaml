@@ -1,9 +1,9 @@
 # ────────────────────────────  DATA  ──────────────────────────── #
 data:
   real_data_dir: "/scratch-shared/ajoos/brain_age_preprocessed_converted/"   
-  train_csv: "/home/ajoos/brain_age_pred/data/labels/train.csv"
-  val_csv:   "/home/ajoos/brain_age_pred/data/labels/val.csv"
-  test_csv:  "/home/ajoos/brain_age_pred/data/labels/test_balanced.csv"
+  train_csv: "/home/ajoos/brain_age_pred/data/labels/train_t1_labels.csv"
+  val_csv:   "/home/ajoos/brain_age_pred/data/labels/val_t1_labels.csv"
+  test_csv:  "/home/ajoos/brain_age_pred/data/labels/test_t1_labels.csv"
 
   image_key:  "image_path"
   age_key:    "age"
@@ -23,6 +23,7 @@ data:
   target_shape: [160, 192, 160]            # (D,H,W) after optional resize
   age_min: 20
   age_max: 80
+  use_weighted_sampling: false  
 
 # ───────────────────────────  MODEL  ──────────────────────────── #
 model:
@@ -30,7 +31,7 @@ model:
   in_channels: 1
   dropout_rate: 0.2 
   use_attention: false                   
-  checkpoint: "/home/ajoos1/brain_age_pred/output/checkpoints/brainagenext_baseline/brainagenext_baseline_best_mae.pt"
+  checkpoint: #"/home/ajoos1/brain_age_pred/output/checkpoints/brainagenext_baseline/brainagenext_baseline_best_mae.pt"
 
 # ─────────────────────────  AUGMENTATION  ─────────────────────── #
 # -------------------------------------------------------------------------
@@ -115,7 +116,7 @@ augmentation:
 
 # ──────────────────────────  TRAINING  ────────────────────────── #
 training:
-  batch_size: 8
+  batch_size: 4
   epochs: 150
 
   # optimiser & LR
@@ -132,7 +133,7 @@ training:
     gamma: 0.3
 
   # losses
-  loss: "mse"                        # mse | mae | huber | huber_mae | weighted_mse
+  loss: "huber_mae"                        # mse | mae | huber | huber_mae | weighted_mse
   loss_params:
     delta: 1.0
     mae_weight: 0.5
@@ -147,12 +148,12 @@ output:
   output_dir: "/home/ajoos/brain_age_pred/output"
   checkpoint_dir: "checkpoints"
   log_dir: "logs"
-  experiment_name: brainagenext_baseline #"brain_age_with_tumors"                   # auto-generate if left null
+  experiment_name: brainagenext_baseline_t1 #"brain_age_with_tumors"                   # auto-generate if left null
 
 # ─────────────────────────────  W&B  ──────────────────────────── #
 wandb:
   use_wandb: true                         # still requires $WANDB_API env-var
-  project: "brain_age_results"
+  project: "paper_check"
 
   entity: null
 

@@ -18,6 +18,8 @@ from monai.transforms import (
     RandHistogramShiftd,
     RandGibbsNoised,
     RandCoarseDropoutd,
+    RandZoomd,
+    RandRotated,
     ToTensord,
 )
 
@@ -42,11 +44,13 @@ class AugmentationPipeline:
         # spatial
         "flip": 0.5,
         "affine": 0.5,
+        "zoom": 0.5,  # Added for RandZoomd
+        "rotate": 0.5,  # Added for RandRotated
         # non-spatial (intensity + artifacts)
         "contrast": 0.5,
         "gamma": 0.5,
         "blur": 0.3,
-        "bias": 0.3,
+        "bias": 0.5,  # Updated from 0.3 to 0.5
         "scale_int": 0.4,
         "shift_int": 0.4,
         "hist_shift": 0.3,
@@ -68,10 +72,18 @@ class AugmentationPipeline:
         "scaling_range": (0.9, 1.1),
         "rotation_range": 10.0,  # degrees
         "shearing_bounds": 0.2,
+        # zoom parameters for RandZoomd
+        "zoom_min": 0.95,
+        "zoom_max": 1.00,
+        # rotation parameters for RandRotated
+        "rotate_range_x": 0.1,
+        "rotate_range_y": 0.1,
+        "rotate_range_z": 0.1,
         # intensity
-        "contrast_range": (0.6, 1.4),
+        "contrast_range": (0.6, 3.0),  # Updated from (0.6, 1.4) to (0.6, 3.0)
         "log_gamma_std": 0.2,
-        "bias_field_range": (0.0, 0.6),
+        "bias_field_range": (-0.5, 0.1),  # Updated from (0.0, 0.6) to (-0.5, 0.1)
+        "bias_field_degree": 5,  # Added for RandBiasFieldd degree parameter
         # noise
         "noise_mean": 0.0,
         "noise_std": 0.05,
@@ -119,10 +131,18 @@ class AugmentationPipeline:
         scaling_range: Optional[Union[Tuple[float, float], List[float]]] = None,
         rotation_range: Optional[float] = None,
         shearing_bounds: Optional[float] = None,
+        # zoom parameters
+        zoom_min: Optional[float] = None,
+        zoom_max: Optional[float] = None,
+        # rotation parameters for RandRotated
+        rotate_range_x: Optional[float] = None,
+        rotate_range_y: Optional[float] = None,
+        rotate_range_z: Optional[float] = None,
         # intensity
         contrast_range: Optional[Union[Tuple[float, float], List[float]]] = None,
         log_gamma_std: Optional[float] = None,
         bias_field_range: Optional[Union[Tuple[float, float], List[float]]] = None,
+        bias_field_degree: Optional[int] = None,
         # noise
         noise_mean: Optional[float] = None,
         noise_std: Optional[float] = None,
@@ -167,9 +187,15 @@ class AugmentationPipeline:
             'scaling_range': scaling_range,
             'rotation_range': rotation_range,
             'shearing_bounds': shearing_bounds,
+            'zoom_min': zoom_min,
+            'zoom_max': zoom_max,
+            'rotate_range_x': rotate_range_x,
+            'rotate_range_y': rotate_range_y,
+            'rotate_range_z': rotate_range_z,
             'contrast_range': contrast_range,
             'log_gamma_std': log_gamma_std,
             'bias_field_range': bias_field_range,
+            'bias_field_degree': bias_field_degree,
             'noise_mean': noise_mean,
             'noise_std': noise_std,
             'rician_std': rician_std,
@@ -240,11 +266,24 @@ class AugmentationPipeline:
                     prob=self.prob["flip"],
                     spatial_axis=2,
                 ),
+                RandZoomd(
+                    keys=[self.image_key], 
+                    min_zoom=self.zoom_min, 
+                    max_zoom=self.zoom_max, 
+                    prob=self.prob["zoom"]
+                ),
+                RandRotated(
+                    keys=[self.image_key], 
+                    range_x=self.rotate_range_x, 
+                    range_y=self.rotate_range_y, 
+                    range_z=self.rotate_range_z, 
+                    prob=self.prob["rotate"]
+                ),
                 RandAffined(
                     keys=[self.image_key],
                     prob=self.prob["affine"],
-                    rotate_range=(deg2rad * self.rotation_range,) * 3,
-                    scale_range=(self.scaling_range[1] - 1,) * 3,
+                    rotate_range=(0, 0, 0),  # Disable rotation since we use RandRotated
+                    scale_range=(0, 0, 0),   # Disable scaling since we use RandZoomd
                     shear_range=(self.shearing_bounds,) * 3,
                     mode="bilinear",
                 ),
@@ -309,6 +348,7 @@ class AugmentationPipeline:
                 RandBiasFieldd(
                     keys=[self.image_key],
                     prob=self.prob["bias"],
+                    degree=self.bias_field_degree,
                     coeff_range=self.bias_field_range,
                 ),
                 RandomResolutionD(
