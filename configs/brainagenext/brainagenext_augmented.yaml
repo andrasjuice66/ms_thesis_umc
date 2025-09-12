@@ -1,10 +1,10 @@
 # ────────────────────────────  DATA  ──────────────────────────── #
 data:
-  train_csv: "/home/ajoos1/brain_age_pred/data/labels/train.csv"
-  val_csv:   "/home/ajoos1/brain_age_pred/data/labels/val.csv"
-  test_csv:  "/home/ajoos1/brain_age_pred/data/labels/test.csv"
+  train_csv: "/home/ajoos1/brain_age_pred/data/labels/train_t1_labels.csv"
+  val_csv:   "/home/ajoos1/brain_age_pred/data/labels/val_t1_labels.csv"
+  test_csv:  "/home/ajoos1/brain_age_pred/data/labels/test_t1_labels.csv"
 
-  real_data_dir: "/scratch-shared/ajoos1/brain_age_preprocessed_converted/"   
+  real_data_dir: "/scratch-shared/ajoos1/brain_age_preprocessed_no_csf/"   
 
   image_key:  "image_path"
   age_key:    "age"
@@ -31,7 +31,7 @@ model:
   in_channels: 1
   dropout_rate: 0.2
   use_attention: false                   
-  checkpoint: "/home/ajoos1/brain_age_pred/output/checkpoints/brainagenext_dom_rand/brainagenext_dom_rand_best_mae.pt"
+  checkpoint: #"/home/ajoos1/brain_age_pred/output/checkpoints/brainagenext_dom_rand/brainagenext_dom_rand_best_mae.pt"
 
 # ─────────────────────────  AUGMENTATION  ─────────────────────── #
 # -------------------------------------------------------------------------
@@ -41,53 +41,64 @@ model:
 # -------------------------------------------------------------------------
 augmentation:
   use_augmentation: true
-  augmentation_strength: 1.2  # Overall augmentation strength multiplier
+  use_spatial_transforms: true
+  use_intensity_transforms: true
 
   image_key: "image"  # Key for the image in the data dictionary
     
   # Transform probabilities
   transform_probs:
     # Geometric transforms
-    flip: 0.5
+    flip: 0
     affine: 0.5
+    zoom: 0.5
+    rotate: 0.5
+
     
     # Intensity transforms
-    contrast: 0.6
+    contrast: 0.5
     gamma: 0.5
-    scale_int: 0.4  # Scale intensity
-    shift_int: 0.4  # Shift intensity
-    hist_shift: 0.3  # Histogram shift
+    scale_int: 0  # Scale intensity
+    shift_int: 0  # Shift intensity
+    hist_shift: 0  # Histogram shift
     
     # Noise/artifact transforms
-    blur: 0.4           # Up from 0.2
+    blur: 0           # Up from 0.2
     bias: 0.5
-    noise: 0.4
-    rician: 0.3
-    gibbs: 0.3
+    noise: 0.5
+    rician: 0
+    gibbs: 0
     
     # Resolution/dropout transforms
-    resolution: 0.4     # Up from 0.2
-    coarse_do: 0.2      # Up from 0.0
+    resolution: 0     # Up from 0.2
+    coarse_do: 0      # Up from 0.0
     
     # TorchIO transforms (controlled by probabilities)
-    spike: 0.2
-    ghost: 0.3
-    motion: 0.1
-    swap: 0.1
+    spike: 0
+    ghost: 0.5
+    motion: 0.5
+    swap: 0.5
 
-  # Geometric transform parameters
-  scaling_range: [0.9, 1.1]      # More conservative
-  rotation_range: 10.0  # Maximum rotation in degrees
-  shearing_bounds: 0.2           # More conservative  
+  # Geometric transform parameters #   torchio.transforms.RandomAffine(scales=(0.05,0.05,0.05), degrees=(5,5,5), translation=(10,10,10), include=['img'], p=0.5),
+  scaling_range: [0.95, 1.05]    
+  rotation_range: 5.0  
+  shearing_bounds: 0.2
+  translation_range: 10.0
   
   # Intensity transform parameters
-  contrast_range: [0.7, 1.3]  # Range for contrast adjustment
-  log_gamma_std: 0.3  # Standard deviation for gamma transformation
-  bias_field_range: [0.0, 0.4]  # Range for bias field artifact
-  
+  contrast_range: [0.6, 3.0]  # RandAdjustContrastd(keys=["img"], gamma=(0.6, 3.0), prob=0.5),
+  log_gamma_std: 0.8  # S        torchio.transforms.RandomGamma(log_gamma=0.8, keys=["img"], include=['img'], p=0.5),
+
+  bias_field_range: [-0.5, 0.1]      #RandBiasFieldd(keys=["img"], degree=5, coeff_range=(-0.5, 0.1), prob=0.5), ]
+  bias_field_degree: 5
+
+
   # Noise parameters
-  noise_mean: 0.0          # ❌ Fix this! Was 0.2
-  noise_std: 0.05          # ✅ Keep
+  noise_mean: 0.0          #         torchio.RandomNoise(keys=["img"], std=[0,0.5], p=0.5, include=['img']),
+  noise_std: [0, 0.5]      # Standard deviation range for noise
+
+
+
   rician_std: 0.08  # Standard deviation for Rician noise
   gibbs_alpha: [0.0, 1.0]  # Alpha range for Gibbs noise
   
@@ -113,7 +124,30 @@ augmentation:
   # TorchIO specific parameters
   spike_num: [1, 6]  # Number of spikes
   spike_intensity: [0.1, 0.6]  # Intensity of spikes
-  ghost_num: [2, 10]  # Number of ghosts
+
+  #Ghost parameters    torchio.transforms.RandomGhosting(num_ghosts=(1, 4), intensity=(0.1, 0.6), keys=["img"], p=0.5, include=['img']),
+  ghost_num: [1, 4]  # Number of ghosts
+  ghost_intensity: [0.1, 0.6]  # Intensity of ghosts
+
+
+  # Swap parameters
+  swap_patch_size: 15
+  swap_num_iterations: 100
+
+  # Motion parameters
+  motion_degrees: 3  # torchio.transforms.RandomMotion(degrees=(3), translation=(5), num_transforms=4, keys=["img"], p=0.5, include=['img']),
+  motion_translation: 5 
+  motion_num_transforms: 4
+
+
+  # Rotation parameters
+  rotate_range_x: 0.1
+  rotate_range_y: 0.1
+  rotate_range_z: 0.1
+
+  # Zoom parameters
+  zoom_min: 0.95
+  zoom_max: 1.00
 
 # ──────────────────────────  TRAINING  ────────────────────────── #
 training:
@@ -121,8 +155,8 @@ training:
   epochs: 150
 
   # optimiser & LR
-  learning_rate: 0.0001 #0.002193
-  weight_decay:  0.0001
+  learning_rate: 0.00001 #0.002193
+  weight_decay:  0.001
   optimizer: "adamw"                       # adam | adamw | sgd | rmsprop | radam | novograd
   scheduler: "step"                      # cosine | plateau | onecycle | step | none
   scheduler_params:
@@ -135,7 +169,7 @@ training:
     gamma: 0.3
 
   # losses
-  loss: "mse"                        # mse | mae | huber | huber_mae | weighted_mse
+  loss: "huber_mae"                        # mse | mae | huber | huber_mae | weighted_mse
   loss_params:
     delta: 1.0
     mae_weight: 0.5
@@ -150,12 +184,12 @@ output:
   output_dir: "/home/ajoos1/brain_age_pred/output"
   checkpoint_dir: "checkpoints"
   log_dir: "logs"
-  experiment_name: brainagenext_augmented #"brain_age_with_tumors"                   # auto-generate if left null
+  experiment_name: brainagenext_augmented_t1 
 
 # ─────────────────────────────  W&B  ──────────────────────────── #
 wandb:
   use_wandb: true                         # still requires $WANDB_API env-var
-  project: "brain_age_results"
+  project: "paper check"
 
   entity: null
 

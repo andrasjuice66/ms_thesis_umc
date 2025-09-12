@@ -113,6 +113,8 @@ class AugmentationPipeline:
         "motion_transforms": 4,
         "tio_gamma_log": 0.8,
         "tio_noise_std": (0.0, 0.5),
+        "swap_patch_size": 15,
+        "swap_num_iterations": 100,
     }
 
     def __init__(
@@ -124,7 +126,6 @@ class AugmentationPipeline:
         use_intensity_transforms: bool = True,  # BIG switch for all non-spatial
         # Augmentation control parameters
         use_augmentation: bool = True,  # Master switch for augmentation
-        augmentation_strength: float = 1.0,  # Overall augmentation strength multiplier
         # probability overrides
         transform_probs: Optional[Dict[str, float]] = None,
         # spatial ranges
@@ -172,13 +173,14 @@ class AugmentationPipeline:
         motion_transforms: Optional[int] = None,
         tio_gamma_log: Optional[float] = None,
         tio_noise_std: Optional[Union[Tuple[float, float], List[float]]] = None,
+        swap_patch_size: Optional[int] = None,
+        swap_num_iterations: Optional[int] = None,
         **unused,
     ):
         self.image_key = image_key
         self.use_spatial_transforms = use_spatial_transforms and use_augmentation
         self.use_intensity_transforms = use_intensity_transforms and use_augmentation
         self.use_augmentation = use_augmentation
-        self.augmentation_strength = augmentation_strength
         self.device = torch.device(device) if isinstance(device, str) else device
         
         # Initialize params with defaults and override with provided values
@@ -218,6 +220,8 @@ class AugmentationPipeline:
             'motion_transforms': motion_transforms,
             'tio_gamma_log': tio_gamma_log,
             'tio_noise_std': tio_noise_std,
+            'swap_patch_size': swap_patch_size,
+            'swap_num_iterations': swap_num_iterations,
         }
         for param_name, param_value in param_mapping.items():
             if param_value is not None:
@@ -232,15 +236,6 @@ class AugmentationPipeline:
                     params[param_name] = param_value
         for k, v in params.items():
             setattr(self, k, v)
-
-        # probabilities - apply augmentation strength multiplier
-        self.prob = {**AugmentationPipeline._DEFAULT_PROBS}
-        if transform_probs:
-            # Apply augmentation strength to all probabilities
-            scaled_probs = {}
-            for key, value in transform_probs.items():
-                scaled_probs[key] = min(1.0, value * self.augmentation_strength)
-            self.prob.update(scaled_probs)
 
         # build pipelines
         if self.use_augmentation:
@@ -395,8 +390,8 @@ class AugmentationPipeline:
                 p=self.prob["motion"],
             ),
             tio.RandomSwap(
-                patch_size=15,
-                num_iterations=100,
+                patch_size=self.swap_patch_size,
+                num_iterations=self.swap_num_iterations,
                 p=self.prob["swap"],
             ),
         ]
