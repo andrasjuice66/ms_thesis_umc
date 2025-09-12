@@ -237,6 +237,11 @@ class AugmentationPipeline:
         for k, v in params.items():
             setattr(self, k, v)
 
+        # Initialize probabilities with defaults and override with provided values  
+        self.prob = {**self._DEFAULT_PROBS}
+        if transform_probs is not None:
+            self.prob.update(transform_probs)
+
         # build pipelines
         if self.use_augmentation:
             self._build_monai_pipeline()
