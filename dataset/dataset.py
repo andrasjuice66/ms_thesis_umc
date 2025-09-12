@@ -25,6 +25,11 @@ import torchio as tio
 __all__ = ["BADataset"]
 
 
+def _positive_mask(x):
+    """Masking function for Z-normalization to only consider positive values."""
+    return x > 0
+
+
 class BADataset(Dataset):
     """
     Parameters
@@ -86,7 +91,7 @@ class BADataset(Dataset):
         # Z-normalization with masking for positive values
         if self.apply_normalization:
             always_transforms.append(
-                tio.transforms.ZNormalization(masking_method=lambda x: x > 0, keys=["image"], include=['image'])
+                tio.transforms.ZNormalization(masking_method=_positive_mask, keys=["image"], include=['image'])
             )
         
         self.always_transforms = tio.transforms.Compose(always_transforms) if always_transforms else None

@@ -41,6 +41,7 @@ model:
 # -------------------------------------------------------------------------
 augmentation:
   use_augmentation: true
+  
   augmentation_strength: 1.2  # Overall augmentation strength multiplier
 
   image_key: "image"  # Key for the image in the data dictionary
