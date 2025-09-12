@@ -343,8 +343,9 @@ class BrainAgeTrainer:
             self.scheduler.step()
 
         # ---------------- Metrics & logging -------------------------- #
-        y_pred = np.concatenate(preds_all)
-        y_true = np.concatenate(targets_all)
+           # ---------------- Metrics & logging -------------------------- #
+        y_pred = np.concatenate(preds_all).astype(np.float64)
+        y_true = np.concatenate(targets_all).astype(np.float64)
 
         # Log every prediction vs ground truth for debugging
         # self.logger.info(f"=== TRAIN EPOCH {epoch+1} PREDICTIONS vs GROUND TRUTH ===")
@@ -396,8 +397,8 @@ class BrainAgeTrainer:
                     sexes_all.extend(batch["sex"])
                 pbar.set_postfix(loss=loss.item())
 
-        y_pred = np.concatenate(preds_all)
-        y_true = np.concatenate(targets_all)
+        y_pred = np.concatenate(preds_all).astype(np.float64)
+        y_true = np.concatenate(targets_all).astype(np.float64)
         
         # Log every validation prediction vs ground truth for debugging
         # self.logger.info(f"=== VAL EPOCH {epoch+1} PREDICTIONS vs GROUND TRUTH ===")

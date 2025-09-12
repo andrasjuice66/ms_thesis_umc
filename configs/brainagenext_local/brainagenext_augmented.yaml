@@ -151,7 +151,7 @@ augmentation:
 
 # ──────────────────────────  TRAINING  ────────────────────────── #
 training:
-  batch_size: 2
+  batch_size: 1
   epochs: 150
 
   # optimiser & LR
