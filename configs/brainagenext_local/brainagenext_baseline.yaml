@@ -30,7 +30,7 @@ model:
   in_channels: 1
   dropout_rate: 0.2 
   use_attention: false                   
-  checkpoint: "/home/ajoos1/brain_age_pred/output/checkpoints/brainagenext_baseline/brainagenext_baseline_best_mae.pt"
+  checkpoint: #"/home/ajoos1/brain_age_pred/output/checkpoints/brainagenext_baseline/brainagenext_baseline_best_mae.pt"
 
 # ─────────────────────────  AUGMENTATION  ─────────────────────── #
 # -------------------------------------------------------------------------
