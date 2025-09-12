@@ -57,6 +57,24 @@ class BrainAgeNeXt(nn.Module):
         self.feature_extractor = self._build_feature_extractor()
         self.global_avg_pool = nn.AdaptiveAvgPool3d((1, 1, 1))
         self.regression_head = self._build_regression_head(feature_size, hidden_size)
+
+        self._initialize_weights()
+
+
+
+    # Add this method to BrainAgeNeXt class
+    def _initialize_weights(self):
+        """Initialize model weights properly."""
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                # Use Xavier/Glorot initialization for better stability
+                nn.init.xavier_normal_(m.weight)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+            elif isinstance(m, (nn.BatchNorm3d, nn.GroupNorm)):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+
     
     def _build_feature_extractor(self) -> nn.Module:
         """Build the feature extraction part of the model."""
