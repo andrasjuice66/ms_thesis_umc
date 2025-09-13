@@ -15,11 +15,11 @@ data:
   cache_size: 0            
   shared_cache: 0
   preload: true
-  num_workers: 2
+  num_workers: 0
   pin_memory: false
   pin_memory_device: ""
   persistent_workers: true
-  prefetch_factor: 4
+  prefetch_factor: 1
   target_shape: [160, 192, 160]            # (D,H,W) after optional resize
   age_min: 20
   age_max: 80
