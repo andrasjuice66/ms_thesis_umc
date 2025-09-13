@@ -19,7 +19,7 @@ data:
   pin_memory: false
   pin_memory_device: ""
   persistent_workers: true
-  prefetch_factor: None
+  prefetch_factor: null
   target_shape: [160, 192, 160]            # (D,H,W) after optional resize
   age_min: 20
   age_max: 80
