@@ -110,8 +110,8 @@ training:
     epochs: 60
     steps_per_epoch: 534
 
-    step_size: 30
-    gamma: 0.3
+    step_size: 10
+    gamma: 0.8
 
   # losses
   loss: "kl_div"                        # mse | mae | huber | huber_mae | weighted_mse

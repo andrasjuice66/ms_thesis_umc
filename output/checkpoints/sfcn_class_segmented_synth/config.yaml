@@ -106,7 +106,7 @@ training:
     T_max: 100
     epochs: 60
     eta_min: 1.0e-05
-    gamma: 0.3
+    step_size: 0.8
     step_size: 30
     steps_per_epoch: 534
   use_amp: false

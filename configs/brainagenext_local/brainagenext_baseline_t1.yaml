@@ -35,11 +35,7 @@ model:
   checkpoint: #"/mnt/c/Projects/thesis_project/output/brainagenext_local/checkpoints/brainagenext_baseline/brainagenext_baseline_best_mae.pt"
 
 # ─────────────────────────  AUGMENTATION  ─────────────────────── #
-# -------------------------------------------------------------------------
-# Augmentation settings
-# Every key here maps 1-to-1 to a keyword argument or probability override
-# accepted by the AugmentationPipeline class.
-# -------------------------------------------------------------------------
+
 augmentation:
   use_augmentation: false
 
@@ -58,13 +54,13 @@ training:
     epochs: 200
     steps_per_epoch: 534
 
-    step_size: 30
-    gamma: 0.3
+    step_size: 10
+    gamma: 0.8
 
   # losses
-  loss: "huber_mae"                        # mse | mae | huber | huber_mae | weighted_mse
+  loss: "huber"                      
   loss_params:
-    delta: 1.0
+    delta: 5.0
     mae_weight: 0.5
 
   # misc

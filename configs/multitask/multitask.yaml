@@ -93,7 +93,7 @@ training:
   scheduler:
     scheduler_type: "cosine" # "cosine" or "step" or "plateau"
     T_max: 150               # For cosine scheduler
-    step_size: 30            # For step scheduler
+    step_size: 10            # For step scheduler
     gamma: 0.5               # For step scheduler
 
   # Loss function parameters for Multi-Task learning
