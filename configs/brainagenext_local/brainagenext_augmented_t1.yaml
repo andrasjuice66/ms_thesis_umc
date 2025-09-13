@@ -18,7 +18,7 @@ data:
   num_workers: 0
   pin_memory: false
   pin_memory_device: ""
-  persistent_workers: true
+  persistent_workers: false
   prefetch_factor: null
   target_shape: [160, 192, 160]            # (D,H,W) after optional resize
   age_min: 20
