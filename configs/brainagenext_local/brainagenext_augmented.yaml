@@ -95,7 +95,7 @@ augmentation:
 
   # Noise parameters
   noise_mean: 0.0          #         torchio.RandomNoise(keys=["img"], std=[0,0.5], p=0.5, include=['img']),
-  noise_std: [0, 0.5]      # Standard deviation range for noise
+  noise_std: 0.2     # Standard deviation range for noise
 
 
 
