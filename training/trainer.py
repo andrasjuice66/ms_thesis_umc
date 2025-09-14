@@ -297,6 +297,7 @@ class BrainAgeTrainer:
         gpu_time_tot   = 0.0
 
         preds_all, targets_all = [], []
+        paths_all = []  # Track file paths for NaN debugging
 
         pbar = tqdm(
             self.train_loader,
@@ -331,6 +332,14 @@ class BrainAgeTrainer:
             running_loss += loss.item()
             preds_all.append(preds.cpu().numpy())
             targets_all.append(batch["age"].cpu().numpy())
+            
+            # Collect file paths for NaN debugging
+            if "__image_path__" in batch:
+                batch_paths = batch["__image_path__"]
+                if isinstance(batch_paths, (list, tuple)):
+                    paths_all.extend(batch_paths)
+                else:
+                    paths_all.append(batch_paths)
 
             pbar.set_postfix(loss=f"{loss.item():.4f}")
 
@@ -343,16 +352,23 @@ class BrainAgeTrainer:
             self.scheduler.step()
 
         # ---------------- Metrics & logging -------------------------- #
-           # ---------------- Metrics & logging -------------------------- #
         y_pred = np.concatenate(preds_all).astype(np.float64)
         y_true = np.concatenate(targets_all).astype(np.float64)
 
-        # Log every prediction vs ground truth for debugging
-        # self.logger.info(f"=== TRAIN EPOCH {epoch+1} PREDICTIONS vs GROUND TRUTH ===")
-        # for i, (pred, true) in enumerate(zip(y_pred, y_true)):
-        #     error = abs(pred - true)
-        #     self.logger.info(f"Train sample {i:3d}: pred={pred:6.2f}, true={true:6.2f}, error={error:5.2f}")
-        
+        # Check for NaN predictions and log the offending files
+        if np.isnan(y_pred).any():
+            nan_indices = np.where(np.isnan(y_pred))[0]
+            self.logger.error(f"Found NaN predictions at indices: {nan_indices.tolist()}")
+            
+            # Log the file paths that caused NaN predictions
+            if len(paths_all) >= len(y_pred):
+                nan_files = [paths_all[i] for i in nan_indices if i < len(paths_all)]
+                self.logger.error(f"Files that produced NaN predictions:")
+                for i, file_path in enumerate(nan_files):
+                    self.logger.error(f"  Index {nan_indices[i]}: {file_path}")
+            else:
+                self.logger.error(f"Could not map NaN indices to file paths (paths: {len(paths_all)}, predictions: {len(y_pred)})")
+
         # Log summary statistics
         self.logger.info(f"TRAIN SUMMARY - Pred: min={y_pred.min():.2f}, max={y_pred.max():.2f}, mean={y_pred.mean():.2f}, std={y_pred.std():.2f}")
         self.logger.info(f"TRAIN SUMMARY - True: min={y_true.min():.2f}, max={y_true.max():.2f}, mean={y_true.mean():.2f}, std={y_true.std():.2f}")
@@ -378,6 +394,7 @@ class BrainAgeTrainer:
         running_loss: float = 0.0
         preds_all, targets_all = [], []
         modalities_all, sexes_all = [], []
+        paths_all = []  # Track file paths for NaN debugging
 
         with torch.no_grad():
             pbar = tqdm(
@@ -391,6 +408,15 @@ class BrainAgeTrainer:
                 running_loss += loss.item()
                 preds_all.append(preds.cpu().numpy())
                 targets_all.append(batch["age"].cpu().numpy())
+                
+                # Collect file paths for NaN debugging
+                if "__image_path__" in batch:
+                    batch_paths = batch["__image_path__"]
+                    if isinstance(batch_paths, (list, tuple)):
+                        paths_all.extend(batch_paths)
+                    else:
+                        paths_all.append(batch_paths)
+                
                 if "modality" in batch:
                     modalities_all.extend(batch["modality"])
                 if "sex" in batch:
@@ -400,11 +426,19 @@ class BrainAgeTrainer:
         y_pred = np.concatenate(preds_all).astype(np.float64)
         y_true = np.concatenate(targets_all).astype(np.float64)
         
-        # Log every validation prediction vs ground truth for debugging
-        # self.logger.info(f"=== VAL EPOCH {epoch+1} PREDICTIONS vs GROUND TRUTH ===")
-        # for i, (pred, true) in enumerate(zip(y_pred, y_true)):
-        #     error = abs(pred - true)
-        #     self.logger.info(f"Val sample {i:3d}: pred={pred:6.2f}, true={true:6.2f}, error={error:5.2f}")
+        # Check for NaN predictions and log the offending files
+        if np.isnan(y_pred).any():
+            nan_indices = np.where(np.isnan(y_pred))[0]
+            self.logger.error(f"Found NaN predictions in validation at indices: {nan_indices.tolist()}")
+            
+            # Log the file paths that caused NaN predictions
+            if len(paths_all) >= len(y_pred):
+                nan_files = [paths_all[i] for i in nan_indices if i < len(paths_all)]
+                self.logger.error(f"Validation files that produced NaN predictions:")
+                for i, file_path in enumerate(nan_files):
+                    self.logger.error(f"  Index {nan_indices[i]}: {file_path}")
+            else:
+                self.logger.error(f"Could not map NaN indices to file paths (paths: {len(paths_all)}, predictions: {len(y_pred)})")
         
         # Log summary statistics
         self.logger.info(f"VAL SUMMARY - Pred: min={y_pred.min():.2f}, max={y_pred.max():.2f}, mean={y_pred.mean():.2f}, std={y_pred.std():.2f}")
