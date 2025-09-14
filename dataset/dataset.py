@@ -125,13 +125,14 @@ class BADataset(Dataset):
         if self.sexes is not None:
             sample["sex"] = self.sexes[idx]
 
-        # ---- always apply transformations first --------------------------
-        if self.always_transforms is not None:
-            sample = self.always_transforms(sample)
+
             
         # ---- apply user-defined transform ---------------------------------
         if self.transform is not None:
-            sample = self.transform(sample)         
+            sample = self.transform(sample)     
+
+        if self.always_transforms is not None:
+            sample = self.always_transforms(sample)    
             
         # ---- always apply center crop last --------------------------------
         sample = self.center_crop(sample)
