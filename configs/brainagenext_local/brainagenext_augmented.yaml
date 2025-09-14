@@ -1,10 +1,9 @@
 # ────────────────────────────  DATA  ──────────────────────────── #
 data:
-  train_csv: "/home/ajoos1/brain_age_pred/data/labels/train.csv"
-  val_csv:   "/home/ajoos1/brain_age_pred/data/labels/val.csv"
-  test_csv:  "/home/ajoos1/brain_age_pred/data/labels/test.csv"
-
-  real_data_dir: "/scratch-shared/ajoos1/brain_age_preprocessed_converted/"   
+  real_data_dir: "/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed_no_csf/"   
+  train_csv: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels/train_labels.csv"
+  val_csv:   "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels/val_labels.csv"
+  test_csv:  "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels/test_labels.csv"
 
   image_key:  "image_path"
   age_key:    "age"
@@ -181,7 +180,7 @@ training:
 
 # ────────────────────────────  OUTPUT  ────────────────────────── #
 output:
-  output_dir: "/home/ajoos1/brain_age_pred/output"
+  output_dir: "/mnt/c/Projects/thesis_project/run_output/brainagenext_augmented"
   checkpoint_dir: "checkpoints"
   log_dir: "logs"
   experiment_name: brainagenext_augmented #"brain_age_with_tumors"                   # auto-generate if left null

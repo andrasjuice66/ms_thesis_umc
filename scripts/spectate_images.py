@@ -214,7 +214,7 @@ def main() -> None:
         dataset=train_ds,
         output_dir=spectate_dir / "train_augmented",
         prefix="train",
-        num_images=100,
+        num_images=10,
         save_format=save_format
     )
     
@@ -223,7 +223,7 @@ def main() -> None:
         dataset=val_ds,
         output_dir=spectate_dir / "val_original", 
         prefix="val",
-        num_images=20,  # Fewer validation images
+        num_images=10,  # Fewer validation images
         save_format=save_format
     )
     
@@ -245,7 +245,7 @@ def main() -> None:
             dataset=train_ds_no_aug,
             output_dir=spectate_dir / "train_original",
             prefix="train_orig",
-            num_images=50,
+            num_images=10,
             save_format=save_format
         )
 

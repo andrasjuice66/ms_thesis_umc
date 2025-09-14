@@ -57,8 +57,6 @@ class BADataset(Dataset):
         transform    = None,
         cache_size   : int = 0,        # 0 ⇒ off
         mode         : str = "train",
-        apply_clipping : bool = True,
-        apply_normalization : bool = True,
         crop_size : tuple[int, int, int] = (160, 192, 160),
     ):
         assert len(file_paths) == len(age_labels), "len(paths) ≠ len(labels)"
@@ -73,8 +71,7 @@ class BADataset(Dataset):
         self.sample_wts    = sample_wts
         self.transform     = transform
         self.mode          = mode.lower()
-        self.apply_clipping = apply_clipping
-        self.apply_normalization = apply_normalization
+
         
 
         self.center_crop = CenterSpatialCropd(keys=["image", "seg_gt"], roi_size=crop_size, allow_missing_keys=True)
@@ -83,14 +80,12 @@ class BADataset(Dataset):
         always_transforms = []
         
         # Clipping transform to set negative values to 0
-        if self.apply_clipping:
-            always_transforms.append(
+        always_transforms.append(
                 tio.transforms.Clamp(out_min=0, keys=["image"], include=['image'])
             )
         
         # Z-normalization with masking for positive values
-        if self.apply_normalization:
-            always_transforms.append(
+        always_transforms.append(
                 tio.transforms.ZNormalization(masking_method=_positive_mask, keys=["image"], include=['image'])
             )
         
