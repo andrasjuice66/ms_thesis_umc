@@ -25,11 +25,10 @@ from brain_age_pred.dataset.dataset import BADataset
 from brain_age_pred.dataset.augmentation import AugmentationPipeline
 from brain_age_pred.utils.logger import setup_logger
 from brain_age_pred.utils.utils import set_seed, read_csv
-from brain_age_pred.dataset.utils.misc import MRIwrite
 
 
 def save_image_as_nifti(image_tensor: torch.Tensor, save_path: Path, affine: np.ndarray = None):
-    """Save a torch tensor as NIfTI file."""
+    """Save a torch tensor as NIfTI file using nibabel."""
     # Convert tensor to numpy and remove channel dimension if present
     if len(image_tensor.shape) == 4:  # (C, D, H, W)
         image_np = image_tensor.squeeze(0).cpu().numpy()
@@ -40,15 +39,28 @@ def save_image_as_nifti(image_tensor: torch.Tensor, save_path: Path, affine: np.
     if affine is None:
         affine = np.eye(4)
     
-    # Save using the utility function
-    MRIwrite(image_np, affine, str(save_path))
+    # Create NIfTI image using nibabel and save
+    nifti_img = nib.Nifti1Image(image_np, affine)
+    nib.save(nifti_img, str(save_path))
 
 
-def save_dataset_images(dataset, output_dir: Path, prefix: str, num_images: int = 100):
+def save_image_as_numpy(image_tensor: torch.Tensor, save_path: Path):
+    """Save a torch tensor as numpy array (.npy file)."""
+    # Convert tensor to numpy and remove channel dimension if present
+    if len(image_tensor.shape) == 4:  # (C, D, H, W)
+        image_np = image_tensor.squeeze(0).cpu().numpy()
+    else:  # (D, H, W)
+        image_np = image_tensor.cpu().numpy()
+    
+    # Save as numpy array
+    np.save(str(save_path), image_np)
+
+
+def save_dataset_images(dataset, output_dir: Path, prefix: str, num_images: int = 100, save_format: str = "nifti"):
     """Save images from dataset to inspect augmentation."""
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    print(f"\n=== Saving {num_images} {prefix} images to {output_dir} ===")
+    print(f"\n=== Saving {num_images} {prefix} images to {output_dir} (format: {save_format}) ===")
     
     # Save metadata
     metadata = []
@@ -63,11 +75,16 @@ def save_dataset_images(dataset, output_dir: Path, prefix: str, num_images: int 
             original_path = sample.get("__image_path__", f"unknown_{i}")
             original_name = Path(original_path).stem if original_path != f"unknown_{i}" else f"unknown_{i}"
             
-            filename = f"{prefix}_{i:03d}_{original_name}_age{age:.1f}.nii.gz"
-            save_path = output_dir / filename
-            
-            # Save the image
-            save_image_as_nifti(image, save_path)
+            if save_format.lower() == "nifti":
+                filename = f"{prefix}_{i:03d}_{original_name}_age{age:.1f}.nii.gz"
+                save_path = output_dir / filename
+                save_image_as_nifti(image, save_path)
+            elif save_format.lower() == "numpy":
+                filename = f"{prefix}_{i:03d}_{original_name}_age{age:.1f}.npy"
+                save_path = output_dir / filename
+                save_image_as_numpy(image, save_path)
+            else:
+                raise ValueError(f"Unsupported save format: {save_format}")
             
             # Store metadata
             metadata.append({
@@ -82,6 +99,7 @@ def save_dataset_images(dataset, output_dir: Path, prefix: str, num_images: int 
                 "image_max": float(image.max()),
                 "image_mean": float(image.mean()),
                 "image_std": float(image.std()),
+                "save_format": save_format,
             })
             
             if (i + 1) % 10 == 0:
@@ -187,12 +205,17 @@ def main() -> None:
     # Save config for reference
     cfg.save_config(spectate_dir / "config.yaml")
     
+    # Determine save format (can be configured or default to nifti)
+    save_format = cfg.get("spectate.save_format", "nifti")  # "nifti" or "numpy"
+    logger.info(f"Saving images in {save_format} format")
+    
     # Save training images (with augmentation)
     train_metadata = save_dataset_images(
         dataset=train_ds,
         output_dir=spectate_dir / "train_augmented",
         prefix="train",
-        num_images=100
+        num_images=100,
+        save_format=save_format
     )
     
     # Save validation images (without augmentation) 
@@ -200,7 +223,8 @@ def main() -> None:
         dataset=val_ds,
         output_dir=spectate_dir / "val_original", 
         prefix="val",
-        num_images=20  # Fewer validation images
+        num_images=20,  # Fewer validation images
+        save_format=save_format
     )
     
     # If augmentation is enabled, also save some training images WITHOUT augmentation for comparison
@@ -221,7 +245,8 @@ def main() -> None:
             dataset=train_ds_no_aug,
             output_dir=spectate_dir / "train_original",
             prefix="train_orig",
-            num_images=50
+            num_images=50,
+            save_format=save_format
         )
 
     # 7. ─── summary ───────────────────────────────────────── #
@@ -229,6 +254,7 @@ def main() -> None:
         "experiment_name": experiment_name,
         "timestamp": timestamp,
         "config_file": cfg_file,
+        "save_format": save_format,
         "augmentation_enabled": aug_cfg.get("use_augmentation", False),
         "augmentation_config": aug_cfg,
         "train_images_saved": len(train_metadata),
@@ -244,6 +270,7 @@ def main() -> None:
     
     logger.info("=== SPECTATING COMPLETE ===")
     logger.info(f"Images saved to: {spectate_dir}")
+    logger.info(f"Save format: {save_format}")
     logger.info(f"Training images (augmented): {len(train_metadata)}")
     logger.info(f"Validation images (original): {len(val_metadata)}")
     if transform is not None:
@@ -253,6 +280,7 @@ def main() -> None:
     print(f"\n🎉 Image spectating complete!")
     print(f"📁 Check your images in: {spectate_dir}")
     print(f"📊 Summary: {summary_path}")
+    print(f"💾 Format: {save_format}")
 
 
 if __name__ == "__main__":
