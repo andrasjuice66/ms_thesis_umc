@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=unzip_brain_age_data
-#SBATCH --partition=cpu                    # Use CPU partition (cheapest)
+#SBATCH --partition=rome                    # Use CPU partition (cheapest)
 #SBATCH --cpus-per-task=2                  # Minimal CPU allocation
 #SBATCH --mem=4G                           # Minimal memory allocation
 #SBATCH --time=06:00:00                    # 6 hours for both files
