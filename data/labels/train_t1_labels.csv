@@ -1,5 +1,5 @@
 subject_id,image_path,sex,age,modality,dataset,5_age_bin,age_frequency,age_modality_frequency
-sub-001,OpenNeuro/Narrative/sub-001_T1w.nii.gz,female,22.0,t1,narratives,20,3.821315296725133e-05,1.5432575079477762e-05
+sub-001,v,female,22.0,t1,narratives,20,3.821315296725133e-05,1.5432575079477762e-05
 sub-002,OpenNeuro/Narrative/sub-002_T1w.nii.gz,male,20.0,t1,narratives,20,4.1397582381188945e-05,1.4202729764660767e-05
 sub-004,OpenNeuro/Narrative/sub-004_T1w.nii.gz,male,24.0,t1,narratives,20,4.4790826838663444e-05,1.7937863241730645e-05
 sub-006,OpenNeuro/Narrative/sub-006_T1w.nii.gz,female,21.0,t1,narratives,20,3.803582975162603e-05,1.3881562508675977e-05

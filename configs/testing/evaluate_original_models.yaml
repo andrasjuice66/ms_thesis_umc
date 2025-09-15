@@ -20,7 +20,7 @@ wandb:
 models:
   # BrainAgeNeXt Original Model(s)
   - name: "brainagenext_original_model1"
-    checkpoint: "/mnt/c/Projects/thesis_project/checkpoints/brainagenext_original/BrainAge_1.pth"  # Replace with actual path
+    checkpoint: "/mnt/c/Projects/thesis_project/model_files/BrainAge_1.pth"  # Replace with actual path
     params:
       type: "brainagenext_original"
 
