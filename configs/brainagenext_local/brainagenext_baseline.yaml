@@ -30,7 +30,7 @@ model:
   in_channels: 1
   dropout_rate: 0.2 
   use_attention: false                   
-  checkpoint: "/mnt/c/Projects/thesis_project/brainagenext_model_files/BrainAge_1.pth"
+  checkpoint: "/mnt/c/Projects/thesis_project/model_files/BrainAge_1.pth"
 
 # ─────────────────────────  AUGMENTATION  ─────────────────────── #
 # -------------------------------------------------------------------------
