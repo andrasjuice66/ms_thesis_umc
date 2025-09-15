@@ -15,7 +15,7 @@ data:
   cache_size: 0            
   shared_cache: 0
   preload: true
-  num_workers: 2
+  num_workers: 8
   pin_memory: false
   pin_memory_device: ""
   persistent_workers: true
@@ -150,7 +150,7 @@ augmentation:
 
 # ──────────────────────────  TRAINING  ────────────────────────── #
 training:
-  batch_size: 1
+  batch_size: 4
   epochs: 150
 
   # optimiser & LR
@@ -180,10 +180,10 @@ training:
 
 # ────────────────────────────  OUTPUT  ────────────────────────── #
 output:
-  output_dir: "/home/ajoos1/run_output/brainagenext_augmented"
+  output_dir: "/home/ajoos1/run_output/brainagenext_augmented_finetune"
   checkpoint_dir: "checkpoints"
   log_dir: "logs"
-  experiment_name: brainagenext_augmented #"brain_age_with_tumors"                   # auto-generate if left null
+  experiment_name: brainagenext_augmented_finetune #"brain_age_with_tumors"                   # auto-generate if left null
 
 # ─────────────────────────────  W&B  ──────────────────────────── #
 wandb:
