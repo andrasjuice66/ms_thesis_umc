@@ -89,7 +89,6 @@ class BrainAgeNeXt(nn.Module):
     def _build_regression_head(self, feature_size: int, hidden_size: int) -> nn.Module:
         """Build the regression head for age prediction."""
         return nn.Sequential(
-            nn.Flatten(),
             nn.Linear(feature_size, hidden_size),
             nn.ReLU(),
             nn.Dropout(self.dropout_rate),
@@ -100,6 +99,7 @@ class BrainAgeNeXt(nn.Module):
         """Forward pass through the model."""
         features = self.feature_extractor(x)
         x = self.global_avg_pool(features)
+        x = torch.flatten(x, start_dim=1)
         age_estimate = self.regression_head(x)
         return age_estimate.squeeze(-1)
 
