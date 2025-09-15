@@ -139,7 +139,7 @@ def main() -> None:
         prior_stds=prior_stds,
         distribution=bg_cfg.get("distribution", "normal"),
         prob=bg_cfg.get("prob", {}),
-    
+
         # Spatial augmentation parameters
         rotation_range=bg_cfg.get("rotation_range", 10),
         scaling_range=bg_cfg.get("scaling_range", 0.1),
@@ -159,10 +159,31 @@ def main() -> None:
         gibbs_alpha=bg_cfg.get("gibbs_alpha", 0.5),
         blur_sigma=bg_cfg.get("blur_sigma", 1.0),
         bias_field_rng=tuple(bg_cfg.get("bias_field_rng", [0.0, 0.8])),
-    
+
         # Resolution parameters
         min_res=bg_cfg.get("min_res", 1.0),
         max_res_iso=bg_cfg.get("max_res_iso", 1.8),
+
+        # BrainAgeNeXt parameters (using same names as config)
+        zoom_min=bg_cfg.get("zoom_min", 0.95),
+        zoom_max=bg_cfg.get("zoom_max", 1.00),
+        rotate_range_x=bg_cfg.get("rotate_range_x", 0.1),
+        rotate_range_y=bg_cfg.get("rotate_range_y", 0.1),
+        rotate_range_z=bg_cfg.get("rotate_range_z", 0.1),
+        scaling_range_tio=tuple(bg_cfg.get("scaling_range_tio", [0.05, 0.05, 0.05])),
+        rotation_range_tio=tuple(bg_cfg.get("rotation_range_tio", [5, 5, 5])),
+        translation_range=bg_cfg.get("translation_range", 10.0),
+        bias_field_range=tuple(bg_cfg.get("bias_field_range", [-0.5, 0.1])),
+        bias_field_degree=bg_cfg.get("bias_field_degree", 5),
+        motion_degrees=bg_cfg.get("motion_degrees", 3),
+        motion_translation=bg_cfg.get("motion_translation", 5),
+        motion_num_transforms=bg_cfg.get("motion_num_transforms", 4),
+        ghost_num=tuple(bg_cfg.get("ghost_num", [1, 4])),
+        ghost_intensity=tuple(bg_cfg.get("ghost_intensity", [0.1, 0.6])),
+
+        # Toggle parameters
+        use_torchio_transforms=bg_cfg.get("use_torchio_transforms", True),
+        use_znormalization=bg_cfg.get("use_znormalization", True),
 
         output_shape=tuple(bg_cfg.get("output_shape", [160, 192, 160])),
     )

@@ -1,0 +1,180 @@
+# ────────────────────────────  DATA  ──────────────────────────── #
+data:
+  train_csv: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels/train_local.csv"
+  val_csv:   "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels/val_local.csv"
+  test_csv:  "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels/test_local.csv"
+
+  segmented_data_dir: "/mnt/c/Projects/thesis_project/Data/brain_age_segmented/"   
+  real_data_dir: "/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed/" 
+  
+  num_workers: 4
+  pin_memory: true
+
+# ───────────────────────────  MODEL  ──────────────────────────── #
+# Model is hard-coded to MultiTaskBrainAge in train_multitask.py
+# The architecture is based on SynthSeg's U-Net.
+model:
+  checkpoint: # "/mnt/c/Projects/thesis_project/output/multitask/checkpoints/multitask_synth_v1/multitask_synth_v1_best_mae.pt" # Optional path to a checkpoint to resume training
+
+# ────────────────────── BRAIN GENERATOR ───────────────────────── #
+# These settings control the on-the-fly generation of synthetic MRIs
+brain_generator:
+  # Prior distribution for GMM sampling (intensities)
+  # μ_c ~ Uniform[25, 225] and σ_c ~ Uniform[5, 25]
+  distribution: "uniform"  # "normal" or "uniform"
+  mean_loc: 125.0          # Mid-point of distribution for means: (25 + 225) / 2 = 125
+  mean_scale: 100.0        # Half-range of distribution for means: (225 - 25) / 2 = 100
+  std_loc: 15.0            # Mid-point of distribution for standard deviations: (5 + 25) / 2 = 15
+  std_scale: 10.0          # Half-range of distribution for standard deviations: (25 - 5) / 2 = 10
+  
+  # Probabilities for applying each augmentation (matching brainagenext_augmented config)
+  prob:
+    # Original transforms
+    flip: 0.5
+    affine: 0.5              # Matching brainagenext: 0.5
+    
+    # BrainAgeNeXt spatial transforms (before GMM sampling)
+    zoom: 0.5                # RandZoomd
+    rotate: 0.5              # RandRotated
+    
+    # BrainAgeNeXt intensity transforms (after GMM sampling)
+    contrast: 0.5            # RandAdjustContrastd (BrainAgeNeXt version)
+    gamma: 0.5               # TorchIO RandomGamma
+    bias: 0.5                # RandBiasFieldd (BrainAgeNeXt version)
+    
+    # BrainAgeNeXt artifact transforms (after GMM sampling)
+    motion: 0.5              # TorchIO RandomMotion
+    ghost: 0.5               # TorchIO RandomGhosting
+    noise: 0.5               # TorchIO RandomNoise
+    swap: 0.5                # TorchIO RandomSwap
+    blur: 0.0                # Gaussian blur (matching brainagenext: 0)
+    
+    # Original transforms (renamed to avoid conflicts, set to 0 like brainagenext)
+    scale_int: 0.0           # Matching brainagenext: 0
+    shift_int: 0.0           # Matching brainagenext: 0
+    hist_shift: 0.0          # Matching brainagenext: 0
+    noise_gaussian: 0.4      # Original Gaussian noise (keep for original pipeline)
+    rician: 0.0              # Matching brainagenext: 0
+    gibbs: 0.0               # Matching brainagenext: 0
+    bias_original: 0.4       # Original bias field (keep for original pipeline)
+    gamma_original: 0.4      # Original gamma (keep for original pipeline)
+    resolution: 0.0          # Matching brainagenext: 0
+  
+  # Spatial augmentation parameters (matching brainagenext_augmented values)
+  rotation_range: 5.0        # Matching brainagenext: 5.0
+  scaling_range: [0.95, 1.05]  # Matching brainagenext: [0.95, 1.05] (will need to handle this in code)
+  shear_bounds: 0.2          # Matching brainagenext: 0.2
+  translation_bounds: false  # Set to a value like 5.0 to enable
+  
+  # BrainAgeNeXt spatial parameters (using same names and values as brainagenext config)
+  zoom_min: 0.95
+  zoom_max: 1.00
+  rotate_range_x: 0.1
+  rotate_range_y: 0.1
+  rotate_range_z: 0.1
+  scaling_range_tio: [0.95, 1.05]  # Matching brainagenext scaling_range
+  rotation_range_tio: [5.0, 5.0, 5.0]  # Matching brainagenext rotation_range
+  translation_range: 10.0
+  shearing_bounds: 0.2       # Matching brainagenext: 0.2
+  
+  # Intensity augmentation parameters (matching brainagenext_augmented values)
+  contrast_range: [0.6, 3.0]  # Matching brainagenext
+  log_gamma_std: 0.8           # Matching brainagenext
+  shift_offset: [-0.1, 0.1]    # Matching brainagenext
+  hist_control_points: [4, 12] # Matching brainagenext
+  
+  # BrainAgeNeXt intensity parameters (using same names and values as brainagenext config)
+  bias_field_range: [-0.5, 0.1]  # Matching brainagenext
+  bias_field_degree: 5            # Matching brainagenext
+  
+  # Artefacts parameters (matching brainagenext_augmented values)
+  noise_mean: 0.0              # Matching brainagenext
+  noise_std: [0, 0.5]          # Matching brainagenext: [0, 0.5]
+  rician_std: 0.08             # Matching brainagenext
+  gibbs_alpha: [0.0, 1.0]      # Matching brainagenext
+  blur_sigma: [0.5, 2.0]       # Matching brainagenext
+  bias_field_rng: [0.0, 0.6]   # Original bias field range (keep for original pipeline)
+  
+  # BrainAgeNeXt artifact parameters (using same names and values as brainagenext config)
+  motion_degrees: 3            # Matching brainagenext
+  motion_translation: 5        # Matching brainagenext
+  motion_num_transforms: 4     # Matching brainagenext
+  ghost_num: [1, 4]            # Matching brainagenext
+  ghost_intensity: [0.1, 0.6]  # Matching brainagenext
+  
+  # Additional brainagenext parameters
+  spike_num: [1, 6]            # Matching brainagenext
+  spike_intensity: [0.1, 0.6]  # Matching brainagenext
+  swap_patch_size: 15          # Matching brainagenext
+  swap_num_iterations: 100     # Matching brainagenext
+  
+  # Resolution parameters (matching brainagenext_augmented values)
+  min_res: 1.0                 # Matching brainagenext
+  max_res_iso: 1.8             # Matching brainagenext
+  max_res_aniso: 2.5
+  atlas_res: 1.0
+  
+  # Dropout parameters (matching brainagenext_augmented values)
+  coarse_dropout_size: [20, 20, 20]  # Matching brainagenext
+  coarse_dropout_holes: 8             # Matching brainagenext
+  
+  # Shape and cropping parameters for the generator
+  output_shape: [160, 192, 160]  # Matching brainagenext
+  random_center: true            # Matching brainagenext
+  use_random_cropping: true
+  use_sample: true
+  use_hemisphere_aware_flip: true
+  use_dynamic_resolution: true
+  use_intensity_clip_normalize: true
+  use_torchio_transforms: true   # Toggle for TorchIO transforms
+  use_znormalization: true       # Toggle for ZNormalization
+  tumor_prior_means: [0.4, 0.15]
+  tumor_prior_stds: [0.12, 0.04]
+  tumor_perlin_res: [4, 4, 4]   
+  tumor_percentile_range: [90.0, 99.6]
+  tumor_size_factor_range: [0.5, 2.0]
+  tumor_use_fluid_dynamics: True
+
+# ──────────────────────────  TRAINING  ────────────────────────── #
+training:
+  age_only_mode: true
+  freeze_encoder: true  # Set to true for age-head-only fine-tuning
+  batch_size: 1  # Can often use larger batches since fewer params to update
+  epochs: 50      # Might need fewer epochs
+
+  # Optimiser & LR Scheduler
+  optimizer:
+    optimizer_type: "adamw"
+    learning_rate: 0.0001
+    weight_decay:  0.001
+  scheduler:
+    scheduler_type: "cosine" # "cosine" or "step" or "plateau"
+    T_max: 150               # For cosine scheduler
+    step_size: 10            # For step scheduler
+    gamma: 0.5               # For step scheduler
+
+  # Loss function parameters for Multi-Task learning
+  loss:
+    age_loss_fn: "huber"        # Loss for the age prediction task (mae, mse, huber)
+    age_loss_weight: 1.0      # Weight for the age prediction loss
+    seg_loss_weight: 5.0    # Weight for the segmentation loss (DiceCE)
+
+  # Misc training settings
+  early_stopping_patience: 30
+  gradient_accumulation_steps: 1
+  use_amp: true # Use Automatic Mixed Precision
+
+# ────────────────────────────  OUTPUT  ────────────────────────── #
+output:
+  output_dir: "./output/multitask"
+  experiment_name: "multitask_synth_head_only"
+
+# ─────────────────────────────  W&B  ──────────────────────────── #
+wandb:
+  use_wandb: true
+  project: "brain-age-multitask"
+  entity: null # Your W&B entity/username, or set as environment variable
+
+# ───────────────────────── MISCELLANEOUS ───────────────────────── #
+seed: 42
+device: "cuda"
