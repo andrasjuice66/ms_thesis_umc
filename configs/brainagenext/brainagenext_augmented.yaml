@@ -1,10 +1,9 @@
 # ────────────────────────────  DATA  ──────────────────────────── #
 data:
-  train_csv: "/home/ajoos1/brain_age_pred/data/labels/train_t1_labels.csv"
-  val_csv:   "/home/ajoos1/brain_age_pred/data/labels/val_t1_labels.csv"
-  test_csv:  "/home/ajoos1/brain_age_pred/data/labels/test_t1_labels.csv"
-
   real_data_dir: "/scratch-shared/ajoos1/brain_age_preprocessed_no_csf/"   
+  train_csv: "/home/ajoos1/brain_age_pred/data/labels/train_labels.csv"
+  val_csv:   "/home/ajoos1/brain_age_pred/data/labels/val_labels.csv"
+  test_csv:  "/home/ajoos1/brain_age_pred/data/labels/test_labels.csv"
 
   image_key:  "image_path"
   age_key:    "age"
@@ -16,7 +15,7 @@ data:
   cache_size: 0            
   shared_cache: 0
   preload: true
-  num_workers: 8
+  num_workers: 2
   pin_memory: false
   pin_memory_device: ""
   persistent_workers: true
@@ -31,7 +30,7 @@ model:
   in_channels: 1
   dropout_rate: 0.2
   use_attention: false                   
-  checkpoint: #"/home/ajoos1/brain_age_pred/output/checkpoints/brainagenext_dom_rand/brainagenext_dom_rand_best_mae.pt"
+  checkpoint: "/home/ajoos1/model_files/BrainAge_1.pth"
 
 # ─────────────────────────  AUGMENTATION  ─────────────────────── #
 # -------------------------------------------------------------------------
@@ -95,7 +94,7 @@ augmentation:
 
   # Noise parameters
   noise_mean: 0.0          #         torchio.RandomNoise(keys=["img"], std=[0,0.5], p=0.5, include=['img']),
-  noise_std: [0, 0.5]      # Standard deviation range for noise
+  noise_std: 0.2     # Standard deviation range for noise
 
 
 
@@ -151,11 +150,11 @@ augmentation:
 
 # ──────────────────────────  TRAINING  ────────────────────────── #
 training:
-  batch_size: 8
+  batch_size: 1
   epochs: 150
 
   # optimiser & LR
-  learning_rate: 0.00001 #0.002193
+  learning_rate: 0.000005 #0.002193
   weight_decay:  0.001
   optimizer: "adamw"                       # adam | adamw | sgd | rmsprop | radam | novograd
   scheduler: "step"                      # cosine | plateau | onecycle | step | none
@@ -181,15 +180,15 @@ training:
 
 # ────────────────────────────  OUTPUT  ────────────────────────── #
 output:
-  output_dir: "/home/ajoos1/brain_age_pred/output"
+  output_dir: "/home/ajoos1/run_output/brainagenext_augmented"
   checkpoint_dir: "checkpoints"
   log_dir: "logs"
-  experiment_name: brainagenext_augmented_t1 
+  experiment_name: brainagenext_augmented #"brain_age_with_tumors"                   # auto-generate if left null
 
 # ─────────────────────────────  W&B  ──────────────────────────── #
 wandb:
   use_wandb: true                         # still requires $WANDB_API env-var
-  project: "paper check"
+  project: "paper_check"
 
   entity: null
 

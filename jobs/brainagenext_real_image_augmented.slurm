@@ -4,7 +4,7 @@
 #SBATCH --gres=gpu:a100:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
-#SBATCH --time=02:00:00
+#SBATCH --time=20:00:00
 #SBATCH --output=/home/%u/run_logs/%x_%j.out   
 #SBATCH --error=/home/%u/run_logs/%x_%j.err
 #SBATCH --mail-type=FAIL,END    
@@ -23,7 +23,7 @@ conda activate brain_age_310
 
 cd $HOME/
 
-python -m brain_age_pred.scripts.train_real_image brain_age_pred/configs/brainagenext/brainagenext_baseline_t1.yaml
+python -m brain_age_pred.scripts.train_real_image brain_age_pred/configs/brainagenext/brainagenext_augmented.yaml
 
 
 
