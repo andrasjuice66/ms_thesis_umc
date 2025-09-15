@@ -30,6 +30,14 @@ def _positive_mask(x):
     return x > 0
 
 
+def _min_max_normalize(img):
+    """Min-max normalization to [0, 1]"""
+    img_min = img.min()
+    img_max = img.max()
+    if img_max - img_min == 0:
+        return torch.zeros_like(img)
+    return (img - img_min) / (img_max - img_min)
+
 class BADataset(Dataset):
     """
     Parameters
@@ -76,18 +84,18 @@ class BADataset(Dataset):
 
         self.center_crop = CenterSpatialCropd(keys=["image", "seg_gt"], roi_size=crop_size, allow_missing_keys=True)
         
-        # Always-applied transforms
+        # Always-applied transforms - MOVED TO END
         always_transforms = []
         
-        # Clipping transform to set negative values to 0
+        # Final clipping to ensure no negative values
         always_transforms.append(
-                tio.transforms.Clamp(out_min=0, keys=["image"], include=['image'])
-            )
+            tio.transforms.Clamp(out_min=0, keys=["image"], include=['image'])
+        )
         
-        # Z-normalization with masking for positive values
+        # Min-max normalization instead of Z-normalization
         always_transforms.append(
-                tio.transforms.ZNormalization(masking_method=_positive_mask, keys=["image"], include=['image'])
-            )
+            tio.transforms.Lambda(_min_max_normalize, keys=["image"], include=['image'])
+        )
         
         self.always_transforms = tio.transforms.Compose(always_transforms) if always_transforms else None
 
@@ -127,15 +135,16 @@ class BADataset(Dataset):
 
 
             
-        # ---- apply user-defined transform ---------------------------------
+        # ---- apply user-defined transform FIRST ---------------------------------
         if self.transform is not None:
             sample = self.transform(sample)     
 
+        # ---- apply center crop SECOND --------------------------------
+        sample = self.center_crop(sample)
+        
+        # ---- apply normalization LAST (after all augmentations) --------------------------------
         if self.always_transforms is not None:
             sample = self.always_transforms(sample)    
-            
-        # ---- always apply center crop last --------------------------------
-        sample = self.center_crop(sample)
 
         # ---- sanity checks ------------------------------------------------
         if sample is None:
