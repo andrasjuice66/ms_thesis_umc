@@ -20,6 +20,7 @@ from brain_age_pred.models.create_mednext_encoder_v1 import create_mednext_encod
 class BrainAgeNeXt(nn.Module):
     """
     MedNeXt-based model for brain age prediction.
+    Uses original paper's layer naming convention for checkpoint compatibility.
     """
     
     def __init__(
@@ -53,16 +54,24 @@ class BrainAgeNeXt(nn.Module):
         self.kernel_size = kernel_size
         self.deep_supervision = deep_supervision
         
-        # Build model components
-        self.feature_extractor = self._build_feature_extractor()
+        # Build model components using original naming convention
+        self.mednextv1 = create_mednext_encoder_v1(
+            num_input_channels=self.in_channels, 
+            num_classes=1, 
+            model_id=self.model_id, 
+            kernel_size=self.kernel_size, 
+            deep_supervision=self.deep_supervision
+        )
         self.global_avg_pool = nn.AdaptiveAvgPool3d((1, 1, 1))
-        self.regression_head = self._build_regression_head(feature_size, hidden_size)
+        self.regression_fc = nn.Sequential(
+            nn.Linear(feature_size, hidden_size),
+            nn.ReLU(),
+            nn.Dropout(self.dropout_rate),
+            nn.Linear(hidden_size, 1)
+        )
 
         self._initialize_weights()
 
-
-
-    # Add this method to BrainAgeNeXt class
     def _initialize_weights(self):
         """Initialize model weights properly."""
         for m in self.modules():
@@ -74,34 +83,44 @@ class BrainAgeNeXt(nn.Module):
             elif isinstance(m, (nn.BatchNorm3d, nn.GroupNorm)):
                 nn.init.constant_(m.weight, 1)
                 nn.init.constant_(m.bias, 0)
-
-    
-    def _build_feature_extractor(self) -> nn.Module:
-        """Build the feature extraction part of the model."""
-        return create_mednext_encoder_v1(
-            num_input_channels=self.in_channels, 
-            num_classes=1, 
-            model_id=self.model_id, 
-            kernel_size=self.kernel_size, 
-            deep_supervision=self.deep_supervision
-        )
-    
-    def _build_regression_head(self, feature_size: int, hidden_size: int) -> nn.Module:
-        """Build the regression head for age prediction."""
-        return nn.Sequential(
-            nn.Linear(feature_size, hidden_size),
-            nn.ReLU(),
-            nn.Dropout(self.dropout_rate),
-            nn.Linear(hidden_size, 1)
-        )
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass through the model."""
-        features = self.feature_extractor(x)
-        x = self.global_avg_pool(features)
+        mednext_out = self.mednextv1(x)
+        x = mednext_out
+        x = self.global_avg_pool(x)
         x = torch.flatten(x, start_dim=1)
-        age_estimate = self.regression_head(x)
-        return age_estimate.squeeze(-1)
+        age_estimate = self.regression_fc(x)
+        return age_estimate.squeeze()
+
+
+# # Keep the old MedNeXtEncReg class for backward compatibility if needed
+# class MedNeXtEncReg(nn.Module):
+#     """Original BrainAgeNeXt model architecture using MedNeXt encoder"""
+#     def __init__(self, *args, **kwargs):
+#         super(MedNeXtEncReg, self).__init__()
+#         self.mednextv1 = create_mednext_encoder_v1(
+#             num_input_channels=1, 
+#             num_classes=1, 
+#             model_id='B', 
+#             kernel_size=3, 
+#             deep_supervision=True
+#         )
+#         self.global_avg_pool = nn.AdaptiveAvgPool3d((1, 1, 1))
+#         self.regression_fc = nn.Sequential(
+#             nn.Linear(512, 64),
+#             nn.ReLU(),
+#             nn.Dropout(0.0),
+#             nn.Linear(64, 1)
+#         )
+
+#     def forward(self, x):
+#         mednext_out = self.mednextv1(x)
+#         x = mednext_out
+#         x = self.global_avg_pool(x)
+#         x = torch.flatten(x, start_dim=1)
+#         age_estimate = self.regression_fc(x)
+#         return age_estimate.squeeze()
 
 
 
