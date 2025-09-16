@@ -47,7 +47,7 @@ segmentation_augmentation:
     flip: 0.5
     affine: 0.5
     zoom: 0.0
-    rotate: 0.5
+    rotate: 0.0
   
   # Spatial transformation parameters
   scaling_range: [0.95, 1.05]  
