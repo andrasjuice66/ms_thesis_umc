@@ -46,7 +46,7 @@ segmentation_augmentation:
   transform_probs:
     flip: 0.5
     affine: 0.5
-    zoom: 0.5
+    zoom: 0.0
     rotate: 0.5
   
   # Spatial transformation parameters
