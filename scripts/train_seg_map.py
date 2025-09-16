@@ -157,6 +157,8 @@ def main() -> None:
         transform    = one_hot_transform,  
         mode         = "train",
         cache_size   = cfg.get("data.cache_size", 0),
+        clamp        = False,
+        normalize    = False,
     )
     
     logger.info("Creating validation dataset")
@@ -168,6 +170,8 @@ def main() -> None:
         transform    = get_one_hot_transform(n_classes), 
         mode         = "val",
         cache_size   = cfg.get("data.cache_size", 0),
+        clamp        = False,
+        normalize    = False,
     )
 
     logger.info("Creating test dataset")
@@ -179,6 +183,8 @@ def main() -> None:
         transform    = get_one_hot_transform(n_classes), 
         mode         = "test",
         cache_size   = cfg.get("data.cache_size", 0),
+        clamp        = False,
+        normalize    = False,
     )
 
     logger.info("Setting up sampler...")

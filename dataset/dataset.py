@@ -66,6 +66,8 @@ class BADataset(Dataset):
         cache_size   : int = 0,        # 0 ⇒ off
         mode         : str = "train",
         crop_size : tuple[int, int, int] = (160, 192, 160),
+        clamp: bool = True,
+        normalize: bool = True,
     ):
         assert len(file_paths) == len(age_labels), "len(paths) ≠ len(labels)"
         if modalities is not None:
@@ -79,6 +81,8 @@ class BADataset(Dataset):
         self.sample_wts    = sample_wts
         self.transform     = transform
         self.mode          = mode.lower()
+        self.clamp         = clamp
+        self.normalize     = normalize
 
         
 
@@ -87,15 +91,16 @@ class BADataset(Dataset):
         # Always-applied transforms - MOVED TO END
         always_transforms = []
         
-        # Final clipping to ensure no negative values
-        always_transforms.append(
-            tio.transforms.Clamp(out_min=0, keys=["image"], include=['image'])
-        )
+
+        if clamp:
+            always_transforms.append(
+                tio.transforms.Clamp(out_min=0, keys=["image"], include=['image'])
+            )
         
-        # Min-max normalization instead of Z-normalization
-        always_transforms.append(
-            tio.transforms.Lambda(_min_max_normalize, keys=["image"], include=['image'])
-        )
+        if normalize:
+            always_transforms.append(
+                tio.transforms.Lambda(_min_max_normalize, keys=["image"], include=['image'])
+            )
         
         self.always_transforms = tio.transforms.Compose(always_transforms) if always_transforms else None
 

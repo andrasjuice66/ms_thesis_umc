@@ -85,8 +85,8 @@ def create_augmented_one_hot_transform(n_classes, config=None):
         config = SegmentationAugmentationConfig()
     
     spatial_transforms = [
-        # Ensure channel first
-        EnsureChannelFirstd(keys=["image"], channel_dim="no_channel"),
+        # Ensure channel first - data already has channel dimension at position 0
+        EnsureChannelFirstd(keys=["image"], channel_dim=0),  # Changed from "no_channel"
         
         # Add spatial augmentations before label conversion
         RandFlipd(
@@ -138,7 +138,7 @@ def create_augmented_one_hot_transform(n_classes, config=None):
 def get_one_hot_transform(n_classes):
     """Get the original one-hot transform without spatial augmentations"""
     return Compose([
-        EnsureChannelFirstd(keys=["image"], channel_dim="no_channel"),
+        EnsureChannelFirstd(keys=["image"], channel_dim=0),  # Changed from "no_channel"
         ConvertLabelsD(
             keys=["image"],
             generation_labels=GENERATION_LABELS,
