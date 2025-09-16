@@ -156,3 +156,101 @@ def load_checkpoint(model, checkpoint_path, device, logger):
         logger.error(f"Error loading checkpoint: {str(e)}")
         raise
 
+
+
+# Add this function before the main() function in train_seg_map.py
+def load_checkpoint_with_different_channels(model, checkpoint_path, device, logger, 
+                                           original_in_channels=1, new_in_channels=15):
+    """
+    Load checkpoint for a model with different input channels.
+    
+    This function specifically handles the case where we're loading weights from a model
+    trained on different number of input channels. It will:
+    1. Load the checkpoint
+    2. Skip the first layer weights that would have shape mismatch
+    3. Apply all other weights that match
+    
+    Args:
+        model: The model to load weights into
+        checkpoint_path: Path to the checkpoint file
+        device: Device to load the checkpoint to
+        logger: Logger instance
+        original_in_channels: Number of input channels in the checkpoint
+        new_in_channels: Number of input channels in the current model
+    """
+    try:
+        logger.info(f"Loading checkpoint with channel adaptation from {checkpoint_path}")
+        logger.info(f"Adapting weights from {original_in_channels} to {new_in_channels} channels")
+        checkpoint = torch.load(checkpoint_path, map_location=device)
+        
+        # Handle different checkpoint formats
+        if isinstance(checkpoint, dict):
+            # Get the state dict from checkpoint
+            if 'state_dict' in checkpoint:
+                state_dict = checkpoint['state_dict']
+            elif 'model_state_dict' in checkpoint:
+                state_dict = checkpoint['model_state_dict']
+            else:
+                state_dict = checkpoint
+        else:
+            state_dict = checkpoint
+            
+        # Remove 'module.' prefix if it exists (from DataParallel)
+        new_state_dict = {}
+        for k, v in state_dict.items():
+            name = k[7:] if k.startswith('module.') else k
+            new_state_dict[name] = v
+            
+        # Get the current model state dict
+        model_state_dict = model.state_dict()
+        
+        # These are the keys for the first convolution layer that need special handling
+        stem_keys = [k for k in new_state_dict.keys() if 'stem.weight' in k]
+        
+        # Initialize statistics
+        total_layers = len(new_state_dict)
+        layers_loaded = 0
+        layers_skipped = 0
+        
+        # Process the state dict
+        filtered_state_dict = {}
+        
+        for k, v in new_state_dict.items():
+            # Skip the stem layer with shape mismatch
+            if k in stem_keys:
+                logger.warning(f"Skipping first layer weights due to channel mismatch: {k} {v.shape} vs {model_state_dict[k].shape}")
+                layers_skipped += 1
+                continue
+                
+            # Check if the key exists and shapes match
+            if k in model_state_dict:
+                if v.shape == model_state_dict[k].shape:
+                    filtered_state_dict[k] = v
+                    layers_loaded += 1
+                else:
+                    logger.warning(f"Shape mismatch for {k}: {v.shape} vs {model_state_dict[k].shape}")
+                    layers_skipped += 1
+            else:
+                layers_skipped += 1
+                
+        # Load the filtered state dict
+        model.load_state_dict(filtered_state_dict, strict=False)
+        
+        logger.info(f"Successfully loaded model weights with channel adaptation")
+        logger.info(f"Loaded {layers_loaded}/{total_layers} layers, skipped {layers_skipped} layers")
+        logger.info(f"The input stem layer was initialized randomly")
+        
+        # Return additional checkpoint info
+        if isinstance(checkpoint, dict):
+            return {
+                'epoch': checkpoint.get('epoch'),
+                'optimizer_state': checkpoint.get('optimizer_state_dict'),
+                'scheduler_state': checkpoint.get('scheduler_state_dict'),
+                'best_metric': checkpoint.get('best_metric'),
+                'history': checkpoint.get('history')
+            }
+        return {}
+        
+    except Exception as e:
+        logger.error(f"Error loading checkpoint with channel adaptation: {str(e)}")
+        raise

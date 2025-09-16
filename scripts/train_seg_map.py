@@ -29,11 +29,12 @@ from brain_age_pred.models.sfcn_class import SFCNClass
 from brain_age_pred.models.brainagenext import BrainAgeNeXt
 from brain_age_pred.training.trainer import BrainAgeTrainer
 from brain_age_pred.utils.logger import setup_logger
-from brain_age_pred.utils.utils import set_seed, read_csv, load_checkpoint
+from brain_age_pred.utils.utils import set_seed, read_csv, load_checkpoint, load_checkpoint_with_different_channels
 from torch.utils.data import WeightedRandomSampler, DataLoader
 from brain_age_pred.brain_gen.brain_generator import BABrainGenerator
 from brain_age_pred.brain_gen.labels import GENERATION_CLASSES, GENERATION_LABELS, N_NEUTRAL_LABELS
-from brain_age_pred.dataset.custom_transformations import ConvertLabelsD
+from brain_age_pred.dataset.segmentation_augmentation import create_augmented_one_hot_transform, get_one_hot_transform
+from brain_age_pred.dataset.segmentation_augmentation import SegmentationAugmentationConfig
 
 
 def main() -> None:
@@ -79,9 +80,7 @@ def main() -> None:
     device = torch.device(cfg.get("device") or ("cuda" if torch.cuda.is_available() else "cpu"))
     logger.info(f"Using device: {device}")
 
-    # 5. ─── Cleaned up unused brain generator code ───────────────── #
-    n_classes = int(GENERATION_CLASSES.max() + 1)     # = 15 with the default label set
-            
+
 
     # 6. ─── CSV → dataset / sampler ─────────────────────────── #
     logger.info("Reading CSV files...")
@@ -89,7 +88,6 @@ def main() -> None:
     val_csv   = Path(cfg.get("data.val_csv"))
     test_csv  = Path(cfg.get("data.test_csv"))
     segmented_data_dir = Path(cfg.get("data.segmented_data_dir"))
-    real_data_dir  = Path(cfg.get("data.real_data_dir"))
     
 
     logger.info(f"Reading train CSV from {train_csv}")
@@ -101,13 +99,13 @@ def main() -> None:
 
     val_p, val_a, val_w, val_s, val_m = read_csv(
         val_csv,
-        real_data_dir,
+        segmented_data_dir,
     )
     logger.info(f"Reading test CSV from {test_csv}")
 
     test_p, test_a, test_w, test_s, test_m = read_csv(
         test_csv,
-        real_data_dir,
+        segmented_data_dir,
     )
     
     logger.info(f"Train={len(train_p)}  Val={len(val_p)}  Test={len(test_p)}")
@@ -124,17 +122,29 @@ def main() -> None:
 
     logger.info("Initializing datasets...")
 
-    # --- NEW: Define the one-hot encoding transform for the experiment ---
-    one_hot_transform = Compose([
-        EnsureChannelFirstd(keys=["image"], channel_dim="no_channel"),
-        ConvertLabelsD(
-            keys=["image"],
-            generation_labels=GENERATION_LABELS,
-            output_labels=GENERATION_CLASSES
-        ),
-        SqueezeDimd(keys=["image"], dim=0),
-        AsDiscreted(keys=["image"], to_onehot=n_classes),
-    ])
+    # --- NEW: Define the one-hot encoding transform with spatial augmentation ---
+    n_classes = int(GENERATION_CLASSES.max() + 1)     # = 15 with the default label set
+
+
+    # Create augmentation config from YAML settings
+    aug_config = SegmentationAugmentationConfig(
+        transform_probs={
+            "flip": cfg.get("segmentation_augmentation.transform_probs.flip", 0.5),
+            "affine": cfg.get("segmentation_augmentation.transform_probs.affine", 0.5),
+            "zoom": cfg.get("segmentation_augmentation.transform_probs.zoom", 0.5),
+            "rotate": cfg.get("segmentation_augmentation.transform_probs.rotate", 0.5),
+        },
+        scaling_range=cfg.get("segmentation_augmentation.scaling_range", (0.95, 1.05)),
+        shearing_bounds=cfg.get("segmentation_augmentation.shearing_bounds", 0.2),
+        zoom_min=cfg.get("segmentation_augmentation.zoom_min", 0.95),
+        zoom_max=cfg.get("segmentation_augmentation.zoom_max", 1.05),
+        rotate_range_x=cfg.get("segmentation_augmentation.rotate_range_x", 0.1),
+        rotate_range_y=cfg.get("segmentation_augmentation.rotate_range_y", 0.1),
+        rotate_range_z=cfg.get("segmentation_augmentation.rotate_range_z", 0.1),
+    )
+
+    # Create transform with the config from YAML
+    one_hot_transform = create_augmented_one_hot_transform(n_classes, aug_config)
     # ---------------------------------------------------------------------
 
     logger.info("Creating training dataset")
@@ -145,7 +155,7 @@ def main() -> None:
         sample_wts   = train_w,
         sexes        = train_s,
         modalities   = train_m,
-        transform    = one_hot_transform,  # <-- USE THE NEW TRANSFORM
+        transform    = one_hot_transform,  
         mode         = "train",
         cache_size   = cfg.get("data.cache_size", 0),
     )
@@ -156,7 +166,7 @@ def main() -> None:
         age_labels   = val_a,
         sexes        = val_s,
         modalities   = val_m,
-        transform    = one_hot_transform, # <-- USE THE NEW TRANSFORM HERE TOO
+        transform    = get_one_hot_transform(n_classes), 
         mode         = "val",
         cache_size   = cfg.get("data.cache_size", 0),
     )
@@ -167,19 +177,29 @@ def main() -> None:
         age_labels   = test_a,
         sexes        = test_s,
         modalities   = test_m,
-        transform    = one_hot_transform, # <-- AND HERE
+        transform    = get_one_hot_transform(n_classes), 
         mode         = "test",
         cache_size   = cfg.get("data.cache_size", 0),
     )
 
     logger.info("Setting up sampler...")
 
-    sampler = WeightedRandomSampler(
-        weights=train_w,
-        num_samples=len(train_w),
-        replacement=True,
-    )
-    logger.info("Weighted random sampler initialized")
+    use_weighted_sampling = cfg.get("data.use_weighted_sampling", True)
+    
+    if use_weighted_sampling:
+        sampler = WeightedRandomSampler(
+            weights=train_w,
+            num_samples=len(train_w),
+            replacement=True,
+        )
+        logger.info("Weighted random sampler initialized")
+        shuffle = False  # Don't shuffle when using sampler
+    else:
+        sampler = None
+        logger.info("Using random sampling (no weights)")
+        shuffle = True  # Shuffle when not using sampler
+
+    logger.info(f"{sampler} sampler initialized")
 
     logger.info("Setting up data loader parameters...")
     dl_kwargs = dict(
@@ -257,7 +277,15 @@ def main() -> None:
     checkpoint_path = cfg.get("model.checkpoint")
     if checkpoint_path:
         try:
-            checkpoint_info = load_checkpoint(model, checkpoint_path, device, logger)
+            # Use channel-aware loading for segmentation maps with 15 channels
+            checkpoint_info = load_checkpoint_with_different_channels(
+                model, 
+                checkpoint_path, 
+                device, 
+                logger,
+                original_in_channels=1,  # Original model had 1 channel
+                new_in_channels=n_classes  # New model has n_classes channels
+            )
             if checkpoint_info:
                 logger.info(f"Loaded checkpoint from epoch {checkpoint_info.get('epoch', 'unknown')}")
         except Exception as e:

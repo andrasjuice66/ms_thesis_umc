@@ -1,0 +1,112 @@
+# ────────────────────────────  DATA  ──────────────────────────── #
+data:
+  real_data_dir: "/scratch-shared/ajoos1/brain_age_segmented/"   
+  train_csv: "/home/ajoos1/brain_age_pred/data/labels/train_labels.csv"
+  val_csv:   "/home/ajoos1/brain_age_pred/data/labels/val_labels.csv"
+  test_csv:  "/home/ajoos1/brain_age_pred/data/labels/test_labels.csv"
+
+  image_key:  "image_path"
+  age_key:    "age"
+  weight_key: "age_modality_frequency"             
+
+  # loading / caching
+  cache_dir: "data/cache"
+  cache_mode: "memory"   
+  cache_size: 0            
+  shared_cache: 0
+  preload: true
+  num_workers: 4
+  pin_memory: false
+  pin_memory_device: ""
+  persistent_workers: true
+  prefetch_factor: 4
+  target_shape: [160, 192, 160]            # (D,H,W) after optional resize
+  age_min: 20
+  age_max: 80
+
+  use_weighted_sampling: false  
+
+
+# ───────────────────────────  MODEL  ──────────────────────────── #
+model:
+  type: "brainagenext"                             # sfcn | resnet3d | efficientnet3d
+  in_channels: 15
+  dropout_rate: 0.2
+  use_attention: false                   
+  checkpoint: "/home/ajoos1/model_files/BrainAge_1.pth"
+
+# ─────────────────────────  AUGMENTATION  ─────────────────────── #
+# -------------------------------------------------------------------------
+# Augmentation settings
+# Every key here maps 1-to-1 to a keyword argument or probability override
+# accepted by the AugmentationPipeline class.
+
+segmentation_augmentation:
+  # Control the transform probabilities
+  transform_probs:
+    flip: 0.5
+    affine: 0.5
+    zoom: 0.5
+    rotate: 0.5
+  
+  # Spatial transformation parameters
+  scaling_range: [0.95, 1.05]  
+  shearing_bounds: 0.2
+  
+  # Zoom parameters
+  zoom_min: 0.95
+  zoom_max: 1.05
+  
+  # Rotation parameters (in radians)
+  rotate_range_x: 0.1  # ~5.7 degrees
+  rotate_range_y: 0.1
+  rotate_range_z: 0.1
+
+# ──────────────────────────  TRAINING  ────────────────────────── #
+training:
+  batch_size: 2
+  epochs: 150
+
+  # optimiser & LR
+  learning_rate: 0.00001 #0.002193
+  weight_decay:  0.001
+  optimizer: "adamw"                       # adam | adamw | sgd | rmsprop | radam | novograd
+  scheduler: "step"                      # cosine | plateau | onecycle | step | none
+  scheduler_params:
+    T_max: 100
+    eta_min: 0.00001
+    epochs: 200
+    steps_per_epoch: 534
+
+    step_size: 10
+    gamma: 0.8
+
+  # losses
+  loss: "huber"                      
+  loss_params:
+    delta: 5.0
+    mae_weight: 0.5
+
+  # misc
+  early_stopping_patience: 30
+  gradient_accumulation_steps: 1
+  use_amp: true                            # mixed precision if CUDA present
+
+# ────────────────────────────  OUTPUT  ────────────────────────── #
+output:
+  output_dir: "/home/ajoos1/run_output/brainagenext_seg_map_augmented_finetune"
+  checkpoint_dir: "checkpoints"
+  log_dir: "logs"
+  experiment_name: brainagenext_seg_map_augmented_finetune #"brain_age_with_tumors"                   # auto-generate if left null
+
+# ─────────────────────────────  W&B  ──────────────────────────── #
+wandb:
+  use_wandb: true                         # still requires $WANDB_API env-var
+  project: "paper_check"
+
+  entity: null
+
+# ───────────────────────── MISCELLANEOUS ───────────────────────── #
+seed: 42
+device: "cuda"                              # cuda if available, else cpu
+
