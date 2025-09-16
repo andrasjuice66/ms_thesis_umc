@@ -128,7 +128,7 @@ def create_augmented_one_hot_transform(n_classes, config=None):
             generation_labels=GENERATION_LABELS,
             output_labels=GENERATION_CLASSES
         ),
-        SqueezeDimd(keys=["image"], dim=0),
+        # Remove SqueezeDimd - AsDiscreted needs the channel dimension
         AsDiscreted(keys=["image"], to_onehot=n_classes),
     ]
     
@@ -138,12 +138,12 @@ def create_augmented_one_hot_transform(n_classes, config=None):
 def get_one_hot_transform(n_classes):
     """Get the original one-hot transform without spatial augmentations"""
     return Compose([
-        EnsureChannelFirstd(keys=["image"], channel_dim=0),  # Changed from "no_channel"
+        EnsureChannelFirstd(keys=["image"], channel_dim=0),  # Fixed from "no_channel"
         ConvertLabelsD(
             keys=["image"],
             generation_labels=GENERATION_LABELS,
             output_labels=GENERATION_CLASSES
         ),
-        SqueezeDimd(keys=["image"], dim=0),
+        # Remove SqueezeDimd - AsDiscreted needs the channel dimension
         AsDiscreted(keys=["image"], to_onehot=n_classes),
     ])

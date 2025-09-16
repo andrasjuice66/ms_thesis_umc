@@ -2,8 +2,8 @@
 #SBATCH --job-name=brainagenext_real_image_augmented
 #SBATCH --partition=gpu_a100            
 #SBATCH --gres=gpu:a100:1
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=64G
+#SBATCH --cpus-per-task=18
+#SBATCH --mem=120G
 #SBATCH --time=20:00:00
 #SBATCH --output=/home/%u/run_logs/%x_%j.out   
 #SBATCH --error=/home/%u/run_logs/%x_%j.err
