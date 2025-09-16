@@ -9,7 +9,8 @@ from monai.transforms import (
     RandAffined,
     RandFlipd,
     RandRotated,
-    RandZoomd
+    RandZoomd,
+    CastToTyped
 )
 from brain_age_pred.dataset.custom_transformations import ConvertLabelsD
 from brain_age_pred.brain_gen.labels import GENERATION_LABELS, GENERATION_CLASSES
@@ -130,6 +131,8 @@ def create_augmented_one_hot_transform(n_classes, config=None):
         ),
         # Remove SqueezeDimd - AsDiscreted needs the channel dimension
         AsDiscreted(keys=["image"], to_onehot=n_classes),
+        CastToTyped(keys=["image"], dtype=np.float32),   # make sure model sees float32
+        
     ]
     
     return Compose(spatial_transforms)
@@ -146,4 +149,5 @@ def get_one_hot_transform(n_classes):
         ),
         # Remove SqueezeDimd - AsDiscreted needs the channel dimension
         AsDiscreted(keys=["image"], to_onehot=n_classes),
+        CastToTyped(keys=["image"], dtype=np.float32),   # make sure model sees float32
     ])
