@@ -31,7 +31,6 @@ from brain_age_pred.training.trainer import BrainAgeTrainer
 from brain_age_pred.utils.logger import setup_logger
 from brain_age_pred.utils.utils import set_seed, read_csv, load_checkpoint, load_checkpoint_with_different_channels
 from torch.utils.data import WeightedRandomSampler, DataLoader
-from brain_age_pred.brain_gen.brain_generator import BABrainGenerator
 from brain_age_pred.brain_gen.labels import GENERATION_CLASSES, GENERATION_LABELS, N_NEUTRAL_LABELS
 from brain_age_pred.dataset.segmentation_augmentation import create_augmented_one_hot_transform, get_one_hot_transform
 from brain_age_pred.dataset.segmentation_augmentation import SegmentationAugmentationConfig
