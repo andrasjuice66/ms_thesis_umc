@@ -1,0 +1,147 @@
+# ────────────────────────────  DATA  ──────────────────────────── #
+data:
+  real_data_dir: "/scratch-shared/ajoos1/brain_age_preprocessed_no_csf/"   
+  train_csv: "/home/ajoos1/brain_age_pred/data/labels/train_labels.csv"
+  val_csv:   "/home/ajoos1/brain_age_pred/data/labels/val_labels.csv"
+  test_csv:  "/home/ajoos1/brain_age_pred/data/labels/test_labels.csv"
+
+  image_key:  "image_path"
+  age_key:    "age"
+  weight_key: "age_modality_frequency"             
+
+  # loading / caching
+  cache_dir: "data/cache"
+  cache_mode: "memory"   
+  cache_size: 0            
+  shared_cache: 0
+  preload: true
+  num_workers: 8
+  pin_memory: false
+  pin_memory_device: ""
+  persistent_workers: true
+  prefetch_factor: 4
+  target_shape: [160, 192, 160]            # (D,H,W) after optional resize
+  age_min: 20
+  age_max: 80
+
+# ───────────────────────────  MODEL  ──────────────────────────── #
+model:
+  type: "brainagenext"                             # sfcn | resnet3d | efficientnet3d
+  in_channels: 1
+  dropout_rate: 0.2
+  use_attention: false                   
+  checkpoint: "/home/ajoos1/model_files/BrainAge_1.pth"
+
+
+brain_generator:
+  # Prior distribution for GMM sampling (intensities)
+  distribution: "uniform"  # "normal" or "uniform"
+  mean_loc: 125.0          # Mid-point of distribution for means
+  mean_scale: 125.0        # Half-range of distribution for means
+  std_loc: 17.5            # Mid-point of distribution for standard deviations
+  std_scale: 17.5          # Half-range of distribution for standard deviations
+  
+  # Probabilities for applying each augmentation
+  prob:
+    flip: 0.5
+    affine: 0.9
+    tumor: 0.0
+    contrast: 0.5
+    gamma: 0.4
+    scale_int: 0.4
+    shift_int: 0.4
+    hist_shift: 0.4
+    noise: 0.4
+    rician: 0.4
+    gibbs: 0.5
+    blur: 0.4
+    bias: 0.4
+    resolution: 0.4
+  
+  # Spatial augmentation parameters
+  rotation_range: 10
+  scaling_range: 0.15
+  shear_bounds: 0.01
+  translation_bounds: false # Set to a value like 5.0 to enable
+  
+  # Intensity augmentation parameters
+  contrast_range: [0.7, 1.3]
+  log_gamma_std: 0.2
+  shift_offset: 0.1
+  hist_control_points: 8
+  
+  # Artefacts parameters
+  noise_mean: 0.05
+  noise_std: 0.05
+  rician_std: 0.05
+  gibbs_alpha: 0.5
+  blur_sigma: 0.5
+  bias_field_rng: [0.0, 0.6]
+  
+  # Resolution parameters (simulates different scanner resolutions)
+  min_res: 0.8
+  max_res_iso: 2.5
+  max_res_aniso: 2.5
+  atlas_res: 1.0
+  
+  # Shape and cropping parameters for the generator
+  output_shape: [160, 192, 160]
+  use_random_cropping: true
+  use_sample: true
+  use_hemisphere_aware_flip: true
+  use_dynamic_resolution: true
+  use_intensity_clip_normalize: true
+  tumor_prior_means: [0.4, 0.15]
+  tumor_prior_stds: [0.12, 0.04]
+  tumor_perlin_res: [4, 4, 4]   
+  tumor_percentile_range: [90.0, 99.6]
+  tumor_size_factor_range: [0.5, 2.0]
+  tumor_use_fluid_dynamics: True,        
+
+# ──────────────────────────  TRAINING  ────────────────────────── #
+training:
+  batch_size: 4
+  epochs: 150
+
+  # optimiser & LR
+  learning_rate: 0.000005 #0.002193
+  weight_decay:  0.001
+  optimizer: "adamw"                       # adam | adamw | sgd | rmsprop | radam | novograd
+  scheduler: "step"                      # cosine | plateau | onecycle | step | none
+  scheduler_params:
+    T_max: 100
+    eta_min: 0.00001
+    epochs: 200
+    steps_per_epoch: 534
+
+    step_size: 10
+    gamma: 0.8
+
+  # losses
+  loss: "huber"                      
+  loss_params:
+    delta: 5.0
+    mae_weight: 0.5
+
+  # misc
+  early_stopping_patience: 30
+  gradient_accumulation_steps: 1
+  use_amp: true                            # mixed precision if CUDA present
+
+# ────────────────────────────  OUTPUT  ────────────────────────── #
+output:
+  output_dir: "/home/ajoos1/run_output/brainagenext_augmented_finetune"
+  checkpoint_dir: "checkpoints"
+  log_dir: "logs"
+  experiment_name: brainagenext_augmented_finetune #"brain_age_with_tumors"                   # auto-generate if left null
+
+# ─────────────────────────────  W&B  ──────────────────────────── #
+wandb:
+  use_wandb: true                         # still requires $WANDB_API env-var
+  project: "paper_check"
+
+  entity: null
+
+# ───────────────────────── MISCELLANEOUS ───────────────────────── #
+seed: 42
+device: "cuda"                              # cuda if available, else cpu

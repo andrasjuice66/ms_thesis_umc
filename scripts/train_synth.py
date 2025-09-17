@@ -84,12 +84,6 @@ def main() -> None:
     # Read brain generator config from file
     bg_cfg = cfg.get("brain_generator", {})
     
-    # Prior distribution parameters
-    mean_loc = bg_cfg.get("mean_loc", 125.0)
-    mean_scale = bg_cfg.get("mean_scale", 125.0)
-    std_loc = bg_cfg.get("std_loc", 17.5)
-    std_scale = bg_cfg.get("std_scale", 17.5)
-    
     # Augmentation probabilities from config
     prob = bg_cfg.get("prob", {
         "flip": 0.5,
@@ -109,7 +103,15 @@ def main() -> None:
     
     n_classes = GENERATION_CLASSES.max() + 1     # = 15 with the default label set
 
-    # "loc" = mid-point,  "scale" = half-range  (SampleConditionalGMMd convention)
+    # Prior distribution parameters
+    mean_loc = bg_cfg.get("mean_loc", 125.0)
+    mean_scale = bg_cfg.get("mean_scale", 100.0)
+    std_loc = bg_cfg.get("std_loc", 15.0)
+    std_scale = bg_cfg.get("std_scale", 10.0)
+    
+    n_classes = len(GENERATION_LABELS)
+
+    # "loc" = mid-point,  "scale" = half-range
     prior_means = np.vstack([
         np.full(n_classes, mean_loc,   dtype=float),
         np.full(n_classes, mean_scale, dtype=float),
@@ -122,7 +124,7 @@ def main() -> None:
 
     # Set background class (label 0) to zero
     prior_means[:, 0] = 0.0    
-    prior_stds[:, 0] = 0.0     
+    prior_stds[:, 0] = 0.0   
 
     brain_generator = BABrainGenerator(
         # Required parameters

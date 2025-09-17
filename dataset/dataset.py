@@ -19,6 +19,7 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 from monai.transforms import CenterSpatialCropd
+from brain_age_pred.dataset.custom_transformations import IntensityClipNormalizeD
 import nibabel as nib
 import torchio as tio
 
@@ -99,7 +100,10 @@ class BADataset(Dataset):
         
         if normalize:
             always_transforms.append(
-                tio.transforms.Lambda(_min_max_normalize, keys=["image"], include=['image'])
+                IntensityClipNormalizeD(keys=["image"],
+                                        clip_percentiles=(1.0, 99.0),
+                                        normalise=True, gamma_std=0.2,
+                                        separate_channels=True, prob=0.95)
             )
         
         self.always_transforms = tio.transforms.Compose(always_transforms) if always_transforms else None
