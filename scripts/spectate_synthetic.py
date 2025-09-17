@@ -11,7 +11,7 @@ import multiprocessing as mp
 import numpy as np
 import torch
 import nibabel as nib
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 
 # Set multiprocessing start method to 'spawn' for CUDA compatibility
 mp.set_start_method('spawn', force=True)
@@ -54,6 +54,77 @@ def save_image_as_numpy(image_tensor, save_path):
     
     # Save as numpy array
     np.save(str(save_path), image_np)
+
+
+def save_individual_samples(dataset, output_dir, prefix, num_samples=20, save_format="nifti", random_sampling=True):
+    """Save individual samples from dataset without batching."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    print(f"\n=== Saving {num_samples} individual {prefix} samples to {output_dir} (format: {save_format}) ===")
+    
+    # Generate random indices if using random sampling
+    if random_sampling:
+        indices = random.sample(range(len(dataset)), min(num_samples, len(dataset)))
+    else:
+        indices = list(range(min(num_samples, len(dataset))))
+    
+    metadata = []
+    
+    for i, idx in enumerate(indices):
+        try:
+            sample = dataset[idx]
+            image = sample["image"]
+            age = sample["age"].item()
+            
+            # Create filename with metadata
+            original_path = sample.get("__image_path__", f"unknown_{idx}")
+            original_name = Path(original_path).stem if isinstance(original_path, str) else f"unknown_{idx}"
+            
+            if save_format.lower() == "nifti":
+                filename = f"{prefix}_sample{i:03d}_idx{idx}_age{age:.1f}.nii.gz"
+                save_path = output_dir / filename
+                save_image_as_nifti(image, save_path)
+            elif save_format.lower() == "numpy":
+                filename = f"{prefix}_sample{i:03d}_idx{idx}_age{age:.1f}.npy"
+                save_path = output_dir / filename
+                save_image_as_numpy(image, save_path)
+            else:
+                raise ValueError(f"Unsupported save format: {save_format}")
+            
+            # If segmentation is available, save it too
+            if "seg_gt" in sample:
+                seg_filename = f"{prefix}_sample{i:03d}_idx{idx}_seg.nii.gz"
+                seg_save_path = output_dir / seg_filename
+                save_image_as_nifti(sample["seg_gt"], seg_save_path)
+            
+            # Store metadata
+            metadata.append({
+                "sample_idx": i,
+                "dataset_idx": idx,
+                "filename": filename,
+                "age": age,
+                "original_path": str(original_path) if isinstance(original_path, str) else f"unknown_{idx}",
+                "image_shape": list(image.shape),
+                "image_min": float(image.min().item()),
+                "image_max": float(image.max().item()),
+                "image_mean": float(image.mean().item()),
+                "image_std": float(image.std().item()),
+            })
+            
+            if (i + 1) % 5 == 0:
+                print(f"  Saved {i + 1}/{num_samples} samples...")
+                
+        except Exception as e:
+            print(f"  Error saving sample at index {idx}: {e}")
+            continue
+    
+    # Save metadata as JSON
+    metadata_path = output_dir / f"{prefix}_metadata.json"
+    with open(metadata_path, 'w') as f:
+        json.dump(metadata, f, indent=2)
+    
+    print(f"  Completed! Saved {len(metadata)} samples")
+    return metadata
 
 
 def save_dataset_batch(dataloader, output_dir, prefix, num_batches=5, save_format="nifti"):
@@ -267,57 +338,42 @@ def main():
     # 6. ─── Create datasets with appropriate transforms ──────── #
     logger.info("Creating datasets with transforms...")
     
-    # Synthetic training dataset with brain generator
+    # Synthetic training dataset with brain generator - use the entire dataset
     train_synth_ds = BADataset(
-        file_paths=train_p[:100],  # Limit to first 100 files
-        age_labels=train_a[:100],
-        sample_wts=train_w[:100] if train_w else None,
-        sexes=train_s[:100] if train_s else None,
-        modalities=train_m[:100] if train_m else None,
+        file_paths=train_p,
+        age_labels=train_a,
+        sample_wts=train_w,
+        sexes=train_s,
+        modalities=train_m,
         transform=brain_generator,
         mode="train",
         cache_size=0,  # No cache for debugging
     )
     
-    # Real validation dataset without augmentation
+    # Real validation dataset without augmentation - use the entire dataset
     val_ds = BADataset(
-        file_paths=val_p[:50],  # Limit to first 50 files
-        age_labels=val_a[:50],
-        sexes=val_s[:50] if val_s else None,
-        modalities=val_m[:50] if val_m else None,
+        file_paths=val_p,
+        age_labels=val_a,
+        sexes=val_s,
+        modalities=val_m,
         transform=None,  # No augmentation for validation
         mode="val",
         cache_size=0,
     )
-
-    # 7. ─── Create dataloaders ─────────────────────────────── #
-    logger.info("Setting up data loaders...")
-    batch_size = cfg.get("training.batch_size", 4)
     
-    dl_kwargs = dict(
-        num_workers=2,  # Use fewer workers for debugging
-        pin_memory=cfg.get("data.pin_memory", False),
-        persistent_workers=False,  # Disable for debugging
-    )
-    
-    # Training dataloader with synthetic data
-    train_loader = DataLoader(
-        train_synth_ds,
-        batch_size=batch_size,
-        shuffle=True,
-        **dl_kwargs,
-    )
-    
-    # Validation dataloader with real data
-    val_loader = DataLoader(
-        val_ds,
-        batch_size=batch_size,
-        shuffle=False,
-        **dl_kwargs,
+    # Real test dataset without augmentation - use the entire dataset
+    test_ds = BADataset(
+        file_paths=test_p,
+        age_labels=test_a,
+        sexes=test_s,
+        modalities=test_m,
+        transform=None,
+        mode="test",
+        cache_size=0,
     )
 
-    # 8. ─── Save data samples ───────────────────────────────── #
-    logger.info("Sampling and saving data that would be fed to the model...")
+    # 7. ─── Save random individual samples ───────────────────── #
+    logger.info("Sampling and saving random samples from datasets...")
     
     # Save config for reference
     cfg.save_config(output_dir / "config.yaml")
@@ -325,25 +381,72 @@ def main():
     # Determine save format
     save_format = cfg.get("spectate.save_format", "nifti")  # "nifti" or "numpy"
     
-    # Save synthetic training batches
-    train_metadata = save_dataset_batch(
-        dataloader=train_loader,
-        output_dir=output_dir / "synthetic_train",
+    # Save random individual samples from training set with synthetic data
+    train_metadata = save_individual_samples(
+        dataset=train_synth_ds,
+        output_dir=output_dir / "synthetic_train_random",
         prefix="train",
-        num_batches=3,
-        save_format=save_format
+        num_samples=30,  # Increased number of samples
+        save_format=save_format,
+        random_sampling=True  # Random sampling from entire dataset
     )
     
-    # Save validation batches
-    val_metadata = save_dataset_batch(
-        dataloader=val_loader,
-        output_dir=output_dir / "real_validation",
+    # Save random individual samples from validation set
+    val_metadata = save_individual_samples(
+        dataset=val_ds,
+        output_dir=output_dir / "real_val_random",
         prefix="val",
+        num_samples=20,  # Increased number of samples
+        save_format=save_format,
+        random_sampling=True  # Random sampling from entire dataset
+    )
+    
+    # Save random individual samples from test set
+    test_metadata = save_individual_samples(
+        dataset=test_ds,
+        output_dir=output_dir / "real_test_random",
+        prefix="test",
+        num_samples=20,  # Added test samples
+        save_format=save_format,
+        random_sampling=True  # Random sampling from entire dataset
+    )
+    
+    # 8. ─── Create dataloaders and save some batches too ────── #
+    logger.info("Creating dataloaders and saving batches...")
+    batch_size = cfg.get("training.batch_size", 4)
+    
+    dl_kwargs = dict(
+        num_workers=2,
+        pin_memory=False,
+        persistent_workers=False,
+    )
+    
+    # Create random subsets for faster dataloader creation
+    train_subset_indices = random.sample(range(len(train_synth_ds)), min(100, len(train_synth_ds)))
+    train_subset = Subset(train_synth_ds, train_subset_indices)
+    
+    # Training dataloader with synthetic data
+    train_loader = DataLoader(
+        train_subset,
+        batch_size=batch_size,
+        shuffle=True,
+        **dl_kwargs,
+    )
+    
+    # Save a few batches as well
+    batch_metadata = save_dataset_batch(
+        dataloader=train_loader,
+        output_dir=output_dir / "batch_samples",
+        prefix="batch",
         num_batches=2,
         save_format=save_format
     )
     
-    # 9. ─── Generate summary ────────────────────────────────── #
+    # 9. ─── Generate summary with age distribution ────────────── #
+    train_ages = [sample["age"] for sample in train_metadata]
+    val_ages = [sample["age"] for sample in val_metadata]
+    test_ages = [sample["age"] for sample in test_metadata]
+    
     summary = {
         "experiment_name": experiment_name,
         "timestamp": timestamp,
@@ -353,7 +456,29 @@ def main():
         "output_directory": str(output_dir),
         "train_samples_saved": len(train_metadata),
         "val_samples_saved": len(val_metadata),
+        "test_samples_saved": len(test_metadata),
+        "batch_samples_saved": len(batch_metadata),
         "batch_size": batch_size,
+        "age_statistics": {
+            "train": {
+                "min": min(train_ages) if train_ages else None,
+                "max": max(train_ages) if train_ages else None,
+                "mean": np.mean(train_ages) if train_ages else None,
+                "std": np.std(train_ages) if train_ages else None,
+            },
+            "val": {
+                "min": min(val_ages) if val_ages else None,
+                "max": max(val_ages) if val_ages else None,
+                "mean": np.mean(val_ages) if val_ages else None,
+                "std": np.std(val_ages) if val_ages else None,
+            },
+            "test": {
+                "min": min(test_ages) if test_ages else None,
+                "max": max(test_ages) if test_ages else None,
+                "mean": np.mean(test_ages) if test_ages else None,
+                "std": np.std(test_ages) if test_ages else None,
+            }
+        }
     }
     
     summary_path = output_dir / "input_debug_summary.json"
@@ -363,16 +488,16 @@ def main():
     # 10. ─── Print statistics about the data ──────────────────── #
     print("\n=== DATA STATISTICS ===")
     
-    # Calculate statistics from the saved metadata
+    # Calculate intensity statistics from the saved metadata
     if train_metadata:
         train_min = min(sample["image_min"] for sample in train_metadata)
         train_max = max(sample["image_max"] for sample in train_metadata)
         train_mean = np.mean([sample["image_mean"] for sample in train_metadata])
         train_std = np.mean([sample["image_std"] for sample in train_metadata])
         
-        print(f"Synthetic Training Data:")
-        print(f"  Min: {train_min:.4f}, Max: {train_max:.4f}")
-        print(f"  Mean: {train_mean:.4f}, Std: {train_std:.4f}")
+        print(f"Synthetic Training Data (n={len(train_metadata)}):")
+        print(f"  Age range: {min(train_ages):.1f} - {max(train_ages):.1f}, mean: {np.mean(train_ages):.1f}")
+        print(f"  Image intensity: min={train_min:.4f}, max={train_max:.4f}, mean={train_mean:.4f}, std={train_std:.4f}")
     
     if val_metadata:
         val_min = min(sample["image_min"] for sample in val_metadata)
@@ -380,9 +505,19 @@ def main():
         val_mean = np.mean([sample["image_mean"] for sample in val_metadata])
         val_std = np.mean([sample["image_std"] for sample in val_metadata])
         
-        print(f"Real Validation Data:")
-        print(f"  Min: {val_min:.4f}, Max: {val_max:.4f}")
-        print(f"  Mean: {val_mean:.4f}, Std: {val_std:.4f}")
+        print(f"Real Validation Data (n={len(val_metadata)}):")
+        print(f"  Age range: {min(val_ages):.1f} - {max(val_ages):.1f}, mean: {np.mean(val_ages):.1f}")
+        print(f"  Image intensity: min={val_min:.4f}, max={val_max:.4f}, mean={val_mean:.4f}, std={val_std:.4f}")
+    
+    if test_metadata:
+        test_min = min(sample["image_min"] for sample in test_metadata)
+        test_max = max(sample["image_max"] for sample in test_metadata)
+        test_mean = np.mean([sample["image_mean"] for sample in test_metadata])
+        test_std = np.mean([sample["image_std"] for sample in test_metadata])
+        
+        print(f"Real Test Data (n={len(test_metadata)}):")
+        print(f"  Age range: {min(test_ages):.1f} - {max(test_ages):.1f}, mean: {np.mean(test_ages):.1f}")
+        print(f"  Image intensity: min={test_min:.4f}, max={test_max:.4f}, mean={test_mean:.4f}, std={test_std:.4f}")
     
     logger.info("=== MODEL INPUT VISUALIZATION COMPLETE ===")
     logger.info(f"Images saved to: {output_dir}")
