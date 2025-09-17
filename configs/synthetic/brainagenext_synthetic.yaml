@@ -135,10 +135,10 @@ training:
 
 # ────────────────────────────  OUTPUT  ────────────────────────── #
 output:
-  output_dir: "/home/ajoos1/run_output/brainagenext_augmented_finetune"
+  output_dir: "/home/ajoos1/run_output/brainagenext_synthetic_finetune"
   checkpoint_dir: "checkpoints"
   log_dir: "logs"
-  experiment_name: brainagenext_augmented_finetune #"brain_age_with_tumors"                   # auto-generate if left null
+  experiment_name: brainagenext_synthetic_finetune #"brain_age_with_tumors"                   # auto-generate if left null
 
 # ─────────────────────────────  W&B  ──────────────────────────── #
 wandb:
