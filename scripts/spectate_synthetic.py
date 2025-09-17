@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """
-Brain Generator Spectating Script
-Saves synthetic images generated from the brain generator for inspection.
+Data Pipeline Visualization Script
+Shows exactly what data is fed into the model by sampling from the dataset
 """
 import os, sys, time, json, random
 from datetime import datetime
@@ -11,6 +11,7 @@ import multiprocessing as mp
 import numpy as np
 import torch
 import nibabel as nib
+from torch.utils.data import DataLoader
 
 # Set multiprocessing start method to 'spawn' for CUDA compatibility
 mp.set_start_method('spawn', force=True)
@@ -19,6 +20,7 @@ project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
 
 from brain_age_pred.configs.config import Config
+from brain_age_pred.dataset.dataset import BADataset
 from brain_age_pred.utils.logger import setup_logger
 from brain_age_pred.utils.utils import set_seed, read_csv
 from brain_age_pred.brain_gen.brain_generator import BABrainGenerator
@@ -54,91 +56,70 @@ def save_image_as_numpy(image_tensor, save_path):
     np.save(str(save_path), image_np)
 
 
-def generate_and_save_images(brain_generator, segmentation_paths, output_dir, prefix, num_images=10, save_format="nifti", batch_size=1, random_ages=False):
-    """Generate synthetic images and save them for inspection."""
+def save_dataset_batch(dataloader, output_dir, prefix, num_batches=5, save_format="nifti"):
+    """Save batches from dataloader to visualize what's fed to the model."""
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    print(f"\n=== Generating and saving {num_images} {prefix} images to {output_dir} (format: {save_format}) ===")
-    
-    # Limit to requested number of images
-    segmentation_paths = segmentation_paths[:num_images]
+    print(f"\n=== Saving {num_batches} {prefix} batches to {output_dir} (format: {save_format}) ===")
     
     metadata = []
     
-    for i, seg_path in enumerate(segmentation_paths):
-        try:
-            # Load segmentation image
-            seg_nii = nib.load(seg_path)
-            seg_data = seg_nii.get_fdata()
-            
-            # Convert to torch tensor
-            seg_tensor = torch.from_numpy(seg_data).long()
-            
-            # Generate random age if requested, otherwise use middle age (50)
-            if random_ages:
-                age = random.uniform(20, 80)
-            else:
-                age = 50.0
-            
-            # Prepare input for brain generator
-            sample = {
-                "image": seg_tensor,
-                "age": torch.tensor([age]),
-                "__image_path__": str(seg_path)
-            }
-            
-            # Apply brain generator transform
-            result = brain_generator(sample)
-            
-            # Get the generated image
-            generated_image = result["image"]
-            
-            # Create filename with metadata
-            original_name = Path(seg_path).stem
-            if save_format.lower() == "nifti":
-                filename = f"{prefix}_{i:03d}_{original_name}_age{age:.1f}.nii.gz"
-                save_path = output_dir / filename
-                save_image_as_nifti(generated_image, save_path, affine=seg_nii.affine)
-            elif save_format.lower() == "numpy":
-                filename = f"{prefix}_{i:03d}_{original_name}_age{age:.1f}.npy"
-                save_path = output_dir / filename
-                save_image_as_numpy(generated_image, save_path)
-            else:
-                raise ValueError(f"Unsupported save format: {save_format}")
-            
-            # Save segmentation too if it's in the result
-            if "seg_gt" in result:
-                seg_filename = f"{prefix}_{i:03d}_{original_name}_seg_gt.nii.gz"
-                seg_save_path = output_dir / seg_filename
-                save_image_as_nifti(result["seg_gt"], seg_save_path, affine=seg_nii.affine)
-            
-            # Store metadata
-            metadata.append({
-                "index": i,
-                "filename": filename,
-                "age": float(age),
-                "original_path": str(seg_path),
-                "image_shape": list(generated_image.shape),
-                "image_min": float(generated_image.min()),
-                "image_max": float(generated_image.max()),
-                "image_mean": float(generated_image.mean()),
-                "image_std": float(generated_image.std()),
-                "save_format": save_format,
-            })
-            
-            if (i + 1) % 5 == 0:
-                print(f"  Generated {i + 1}/{len(segmentation_paths)} images...")
+    for batch_idx, batch in enumerate(dataloader):
+        if batch_idx >= num_batches:
+            break
+        
+        # Create batch directory
+        batch_dir = output_dir / f"batch_{batch_idx}"
+        batch_dir.mkdir(exist_ok=True)
+        
+        # Extract batch data
+        images = batch["image"]
+        ages = batch["age"]
+        paths = batch.get("__image_path__", [f"unknown_{i}" for i in range(len(images))])
+        
+        print(f"  Saving batch {batch_idx+1}/{num_batches} with {len(images)} samples...")
+        
+        # Process each sample in the batch
+        for i, (image, age, path) in enumerate(zip(images, ages, paths)):
+            try:
+                # Create filename with metadata
+                original_name = Path(path).stem if isinstance(path, str) else f"sample_{i}"
                 
-        except Exception as e:
-            print(f"  Error generating image from {seg_path}: {e}")
-            continue
+                if save_format.lower() == "nifti":
+                    filename = f"{prefix}_batch{batch_idx}_sample{i}_{original_name}_age{age.item():.1f}.nii.gz"
+                    save_path = batch_dir / filename
+                    save_image_as_nifti(image, save_path)
+                elif save_format.lower() == "numpy":
+                    filename = f"{prefix}_batch{batch_idx}_sample{i}_{original_name}_age{age.item():.1f}.npy"
+                    save_path = batch_dir / filename
+                    save_image_as_numpy(image, save_path)
+                else:
+                    raise ValueError(f"Unsupported save format: {save_format}")
+                
+                # Store metadata
+                metadata.append({
+                    "batch_idx": batch_idx,
+                    "sample_idx": i,
+                    "filename": str(save_path.relative_to(output_dir)),
+                    "age": age.item(),
+                    "original_path": str(path) if isinstance(path, str) else f"unknown_{i}",
+                    "image_shape": list(image.shape),
+                    "image_min": float(image.min().item()),
+                    "image_max": float(image.max().item()),
+                    "image_mean": float(image.mean().item()),
+                    "image_std": float(image.std().item()),
+                })
+                
+            except Exception as e:
+                print(f"  Error saving sample {i} in batch {batch_idx}: {e}")
+                continue
     
     # Save metadata as JSON
     metadata_path = output_dir / f"{prefix}_metadata.json"
     with open(metadata_path, 'w') as f:
         json.dump(metadata, f, indent=2)
     
-    print(f"  Completed! Generated {len(metadata)} images and saved metadata to {output_dir}")
+    print(f"  Completed! Saved {len(metadata)} samples from {min(num_batches, batch_idx+1)} batches")
     return metadata
 
 
@@ -151,24 +132,24 @@ def main():
     # 2. ─── experiment naming / I/O ─────────────────────────── #
     experiment_name = cfg.get("output.experiment_name")
     if not experiment_name:
-        experiment_name = f'brain_gen_debug_{timestamp}'
+        experiment_name = f'model_input_debug_{timestamp}'
     
     out_root = Path("debug_output")
-    spectate_dir = out_root / experiment_name
-    spectate_dir.mkdir(parents=True, exist_ok=True)
+    output_dir = out_root / experiment_name
+    output_dir.mkdir(parents=True, exist_ok=True)
     
-    logger = setup_logger("brain-gen-debug", log_file=spectate_dir / "debug.log")
+    logger = setup_logger("model-input-debug", log_file=output_dir / "debug.log")
     
-    logger.info("Initializing brain generator debug...")
+    logger.info("Initializing model input debugging...")
     set_seed(cfg.get("seed", 42))
     logger.info(f"Experiment: {experiment_name}\nConfig: {cfg_file}")
-    logger.info(f"Output directory: {spectate_dir}")
+    logger.info(f"Output directory: {output_dir}")
 
     # 3. ─── Set up device ─────────────────────────────────────── #
     device = torch.device(cfg.get("device") or ("cuda" if torch.cuda.is_available() else "cpu"))
     logger.info(f"Using device: {device}")
 
-    # 4. ─── Initialize Brain Generator ────────────────────────── #
+    # 4. ─── Initialize Brain Generator for synthetic data ────── #
     logger.info("Initializing Brain Generator...")
     bg_cfg = cfg.get("brain_generator", {})
     
@@ -198,7 +179,7 @@ def main():
     prior_means[:, 0] = 0.0    
     prior_stds[:, 0] = 0.0
 
-    # Initialize brain generator
+    # Initialize brain generator for synthetic data
     brain_generator = BABrainGenerator(
         # Required parameters
         prior_means=prior_means,
@@ -256,138 +237,159 @@ def main():
         output_shape=tuple(bg_cfg.get("output_shape", [160, 192, 160])),
         use_random_cropping=bg_cfg.get("use_random_cropping", True),
         return_gradients=bg_cfg.get("return_gradients", False),
-        return_segmentation=True,  # Always return segmentation for visualization
+        return_segmentation=True,  # Return segmentation for visualization
         device=device,
     )
 
-    # 5. ─── Prepare Input Segmentations ─────────────────────── #
-    logger.info("Reading CSV files to get segmentation paths...")
-    segmented_data_dir = Path(cfg.get("data.segmented_data_dir"))
+    # 5. ─── Read data paths from CSV files ───────────────────── #
+    logger.info("Reading CSV files to get data paths...")
     train_csv = Path(cfg.get("data.train_csv"))
-    
-    logger.info(f"Reading train CSV from {train_csv}")
+    val_csv = Path(cfg.get("data.val_csv"))
+    test_csv = Path(cfg.get("data.test_csv"))
+    segmented_data_dir = Path(cfg.get("data.segmented_data_dir", ""))
+    real_data_dir = Path(cfg.get("data.real_data_dir", ""))
+
     train_p, train_a, train_w, train_s, train_m = read_csv(
         train_csv,
         segmented_data_dir,
     )
+    
+    val_p, val_a, val_w, val_s, val_m = read_csv(
+        val_csv,
+        real_data_dir,
+    )
+    
+    test_p, test_a, test_w, test_s, test_m = read_csv(
+        test_csv,
+        real_data_dir,
+    )
 
-    # 6. ─── Generate and Save Images ───────────────────────── #
-    logger.info("Generating and saving synthetic images...")
+    # 6. ─── Create datasets with appropriate transforms ──────── #
+    logger.info("Creating datasets with transforms...")
+    
+    # Synthetic training dataset with brain generator
+    train_synth_ds = BADataset(
+        file_paths=train_p[:100],  # Limit to first 100 files
+        age_labels=train_a[:100],
+        sample_wts=train_w[:100] if train_w else None,
+        sexes=train_s[:100] if train_s else None,
+        modalities=train_m[:100] if train_m else None,
+        transform=brain_generator,
+        mode="train",
+        cache_size=0,  # No cache for debugging
+    )
+    
+    # Real validation dataset without augmentation
+    val_ds = BADataset(
+        file_paths=val_p[:50],  # Limit to first 50 files
+        age_labels=val_a[:50],
+        sexes=val_s[:50] if val_s else None,
+        modalities=val_m[:50] if val_m else None,
+        transform=None,  # No augmentation for validation
+        mode="val",
+        cache_size=0,
+    )
+
+    # 7. ─── Create dataloaders ─────────────────────────────── #
+    logger.info("Setting up data loaders...")
+    batch_size = cfg.get("training.batch_size", 4)
+    
+    dl_kwargs = dict(
+        num_workers=2,  # Use fewer workers for debugging
+        pin_memory=cfg.get("data.pin_memory", False),
+        persistent_workers=False,  # Disable for debugging
+    )
+    
+    # Training dataloader with synthetic data
+    train_loader = DataLoader(
+        train_synth_ds,
+        batch_size=batch_size,
+        shuffle=True,
+        **dl_kwargs,
+    )
+    
+    # Validation dataloader with real data
+    val_loader = DataLoader(
+        val_ds,
+        batch_size=batch_size,
+        shuffle=False,
+        **dl_kwargs,
+    )
+
+    # 8. ─── Save data samples ───────────────────────────────── #
+    logger.info("Sampling and saving data that would be fed to the model...")
     
     # Save config for reference
-    cfg.save_config(spectate_dir / "config.yaml")
+    cfg.save_config(output_dir / "config.yaml")
     
     # Determine save format
     save_format = cfg.get("spectate.save_format", "nifti")  # "nifti" or "numpy"
     
-    # Generate multiple sets with different parameters
-    # Standard generations
-    standard_metadata = generate_and_save_images(
-        brain_generator=brain_generator,
-        segmentation_paths=train_p,
-        output_dir=spectate_dir / "standard",
-        prefix="standard",
-        num_images=10,
-        save_format=save_format,
-        random_ages=True
+    # Save synthetic training batches
+    train_metadata = save_dataset_batch(
+        dataloader=train_loader,
+        output_dir=output_dir / "synthetic_train",
+        prefix="train",
+        num_batches=3,
+        save_format=save_format
     )
     
-    # With tumor (if supported)
-    if "tumor" in prob:
-        # Temporarily increase tumor probability to 1.0
-        old_tumor_prob = prob.get("tumor", 0.0)
-        prob["tumor"] = 1.0
-        
-        tumor_metadata = generate_and_save_images(
-            brain_generator=brain_generator,
-            segmentation_paths=train_p,
-            output_dir=spectate_dir / "with_tumor",
-            prefix="tumor",
-            num_images=10,
-            save_format=save_format,
-            random_ages=True
-        )
-        
-        # Restore original probability
-        prob["tumor"] = old_tumor_prob
+    # Save validation batches
+    val_metadata = save_dataset_batch(
+        dataloader=val_loader,
+        output_dir=output_dir / "real_validation",
+        prefix="val",
+        num_batches=2,
+        save_format=save_format
+    )
     
-    # With motion artifacts (if supported)
-    if "motion" in prob:
-        # Temporarily increase motion probability to 1.0
-        old_motion_prob = prob.get("motion", 0.0)
-        prob["motion"] = 1.0
-        
-        motion_metadata = generate_and_save_images(
-            brain_generator=brain_generator,
-            segmentation_paths=train_p,
-            output_dir=spectate_dir / "with_motion",
-            prefix="motion",
-            num_images=10,
-            save_format=save_format,
-            random_ages=True
-        )
-        
-        # Restore original probability
-        prob["motion"] = old_motion_prob
-    
-    # With ghosting artifacts (if supported)
-    if "ghost" in prob:
-        # Temporarily increase ghost probability to 1.0
-        old_ghost_prob = prob.get("ghost", 0.0)
-        prob["ghost"] = 1.0
-        
-        ghost_metadata = generate_and_save_images(
-            brain_generator=brain_generator,
-            segmentation_paths=train_p,
-            output_dir=spectate_dir / "with_ghost",
-            prefix="ghost",
-            num_images=10,
-            save_format=save_format,
-            random_ages=True
-        )
-        
-        # Restore original probability
-        prob["ghost"] = old_ghost_prob
-    
-    # With noise artifacts (if supported)
-    if "torchio_noise" in prob:
-        # Temporarily increase noise probability to 1.0
-        old_noise_prob = prob.get("torchio_noise", 0.0)
-        prob["torchio_noise"] = 1.0
-        
-        noise_metadata = generate_and_save_images(
-            brain_generator=brain_generator,
-            segmentation_paths=train_p,
-            output_dir=spectate_dir / "with_noise",
-            prefix="noise",
-            num_images=10,
-            save_format=save_format,
-            random_ages=True
-        )
-        
-        # Restore original probability
-        prob["torchio_noise"] = old_noise_prob
-    
-    # 7. ─── summary ───────────────────────────────────────────── #
+    # 9. ─── Generate summary ────────────────────────────────── #
     summary = {
         "experiment_name": experiment_name,
         "timestamp": timestamp,
         "config_file": cfg_file,
         "save_format": save_format,
         "brain_generator_config": bg_cfg,
-        "output_directory": str(spectate_dir),
+        "output_directory": str(output_dir),
+        "train_samples_saved": len(train_metadata),
+        "val_samples_saved": len(val_metadata),
+        "batch_size": batch_size,
     }
     
-    summary_path = spectate_dir / "debug_summary.json"
+    summary_path = output_dir / "input_debug_summary.json"
     with open(summary_path, 'w') as f:
         json.dump(summary, f, indent=2)
     
-    logger.info("=== BRAIN GENERATOR DEBUGGING COMPLETE ===")
-    logger.info(f"Images saved to: {spectate_dir}")
+    # 10. ─── Print statistics about the data ──────────────────── #
+    print("\n=== DATA STATISTICS ===")
+    
+    # Calculate statistics from the saved metadata
+    if train_metadata:
+        train_min = min(sample["image_min"] for sample in train_metadata)
+        train_max = max(sample["image_max"] for sample in train_metadata)
+        train_mean = np.mean([sample["image_mean"] for sample in train_metadata])
+        train_std = np.mean([sample["image_std"] for sample in train_metadata])
+        
+        print(f"Synthetic Training Data:")
+        print(f"  Min: {train_min:.4f}, Max: {train_max:.4f}")
+        print(f"  Mean: {train_mean:.4f}, Std: {train_std:.4f}")
+    
+    if val_metadata:
+        val_min = min(sample["image_min"] for sample in val_metadata)
+        val_max = max(sample["image_max"] for sample in val_metadata)
+        val_mean = np.mean([sample["image_mean"] for sample in val_metadata])
+        val_std = np.mean([sample["image_std"] for sample in val_metadata])
+        
+        print(f"Real Validation Data:")
+        print(f"  Min: {val_min:.4f}, Max: {val_max:.4f}")
+        print(f"  Mean: {val_mean:.4f}, Std: {val_std:.4f}")
+    
+    logger.info("=== MODEL INPUT VISUALIZATION COMPLETE ===")
+    logger.info(f"Images saved to: {output_dir}")
     logger.info(f"Summary saved to: {summary_path}")
     
-    print(f"\n🎉 Brain generator debug complete!")
-    print(f"📁 Check your images in: {spectate_dir}")
+    print(f"\n🎉 Model input visualization complete!")
+    print(f"📁 Check your images in: {output_dir}")
     print(f"📊 Summary: {summary_path}")
     print(f"💾 Format: {save_format}")
 
