@@ -1,10 +1,10 @@
 # ────────────────────────────  DATA  ──────────────────────────── #
 data:
-  real_data_dir: "/scratch-shared/ajoos1/brain_age_preprocessed_no_csf/"   
-  segmented_data_dir: "/scratch-shared/ajoos1/brain_age_segmented/"   
-  train_csv: "/home/ajoos1/brain_age_pred/data/labels/train_labels.csv"
-  val_csv:   "/home/ajoos1/brain_age_pred/data/labels/val_labels.csv"
-  test_csv:  "/home/ajoos1/brain_age_pred/data/labels/test_labels.csv"
+  real_data_dir: "/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed_no_csf/"  
+  segmented_data_dir: "/mnt/c/Projects/thesis_project/Data/brain_age_segmented/"   
+  train_csv: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels/train_labels.csv"
+  val_csv:   "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels/val_labels.csv"
+  test_csv:  "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels/test_labels.csv"
 
   image_key:  "image_path"
   age_key:    "age"
@@ -31,7 +31,7 @@ model:
   in_channels: 1
   dropout_rate: 0.2
   use_attention: false                   
-  checkpoint: "/home/ajoos1/model_files/BrainAge_1.pth"
+  checkpoint: "/mnt/c/Projects/thesis_project/model_files/BrainAge_1.pth"
 
 
 brain_generator:
@@ -101,7 +101,7 @@ brain_generator:
 
 # ──────────────────────────  TRAINING  ────────────────────────── #
 training:
-  batch_size: 4
+  batch_size: 1
   epochs: 150
 
   # optimiser & LR
@@ -131,10 +131,10 @@ training:
 
 # ────────────────────────────  OUTPUT  ────────────────────────── #
 output:
-  output_dir: "/home/ajoos1/run_output/brainagenext_augmented_finetune"
+  output_dir: "/mnt/c/Projects/thesis_project/run_output/brainagenext_synthetic_finetune"
   checkpoint_dir: "checkpoints"
   log_dir: "logs"
-  experiment_name: brainagenext_augmented_finetune #"brain_age_with_tumors"                   # auto-generate if left null
+  experiment_name: brainagenext_synthetic_finetune #"brain_age_with_tumors"                   # auto-generate if left null
 
 # ─────────────────────────────  W&B  ──────────────────────────── #
 wandb:
