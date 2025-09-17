@@ -21,7 +21,7 @@ from brain_age_pred.dataset.custom_transformations import (
     IntensityClipNormalizeD, ConvertLabelsD,
 )
 from brain_age_pred.brain_gen.gen_image_from_labels import (
-    SampleConditionalGMMd, MultiChannelSampleConditionalGMMd,
+    SampleConditionalGMMd,
 )
 from brain_age_pred.brain_gen.tumor_generator import RandTumorSampleConditionalGMMd
 from brain_age_pred.brain_gen.labels import (
