@@ -58,9 +58,13 @@ brain_generator:
     blur: 0.4
     bias: 0.4
     resolution: 0.4
+    motion: 0.5          # For RandomMotion
+    ghost: 0.5           # For RandomGhosting  
+    torchio_noise: 0.5   # For RandomNoise
+    swap: 0.5   
   
   # Spatial augmentation parameters
-  rotation_range: 10
+  rotation_range: 1
   scaling_range: 0.15
   shear_bounds: 0.01
   translation_bounds: false # Set to a value like 5.0 to enable
@@ -97,7 +101,9 @@ brain_generator:
   tumor_perlin_res: [4, 4, 4]   
   tumor_percentile_range: [90.0, 99.6]
   tumor_size_factor_range: [0.5, 2.0]
-  tumor_use_fluid_dynamics: True,        
+  tumor_use_fluid_dynamics: True, 
+  
+         
 
 # ──────────────────────────  TRAINING  ────────────────────────── #
 training:
