@@ -245,18 +245,6 @@ def main() -> None:
     
     logger.info("Creating validation dataset")
     
-    # List of known problematic files that have caused NaN predictions
-    # Add the problematic files from error logs
-    problematic_files = [
-        "/scratch-shared/ajoos1/brain_age_preprocessed_no_csf/OpenNeuro/DallasLifeSpan/sub-815_ses-wave1_acq-MPRAGE_run-1_T1w.nii.gz",
-        "/scratch-shared/ajoos1/brain_age_preprocessed_no_csf/OpenNeuro/DallasLifeSpan/sub-1856_ses-wave1_acq-MPRAGE_run-1_T1w.nii.gz"
-    ]
-    
-    # Add any additional problematic files from config if specified
-    if cfg.get("data.excluded_files"):
-        problematic_files.extend(cfg.get("data.excluded_files"))
-    
-    logger.info(f"Excluding {len(problematic_files)} problematic files from validation dataset")
     
     val_ds = BADataset(
         file_paths   = val_p,
@@ -266,7 +254,6 @@ def main() -> None:
         transform    = None,
         mode         = "val",
         cache_size   = cfg.get("data.cache_size", 0),
-        excluded_files = problematic_files,
     )
 
     logger.info("Creating test dataset")
@@ -278,7 +265,6 @@ def main() -> None:
         transform    = None,
         mode         = "test",
         cache_size   = cfg.get("data.cache_size", 0),
-        excluded_files = problematic_files,  # Use the same exclusion list
     )
 
     logger.info("Setting up sampler...")
