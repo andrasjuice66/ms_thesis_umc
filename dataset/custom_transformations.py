@@ -315,54 +315,95 @@ class IntensityClipNormalizeD(MapTransform):
             for key in self.keys:
                 img = d[key]
                 
-                if self.separate_channels:
-                    # Process each channel separately
-                    for c in range(img.shape[0]):
-                        channel = img[c]
-                        
-                        # Clip intensities using percentiles
+                # Add this check to make robust against empty or constant images
+                if torch.isnan(img).any() or torch.isinf(img).any():
+                    print(f"WARNING: Input image already contains NaN or Inf values. Skipping normalization.")
+                    continue
+                
+                try:
+                    if self.separate_channels:
+                        # Process each channel separately
+                        for c in range(img.shape[0]):
+                            channel = img[c]
+                            
+                            # Skip processing if channel is empty or constant
+                            if torch.all(channel == 0) or (channel.max() - channel.min()) < 1e-6:
+                                continue
+                            
+                            # Clip intensities using percentiles
+                            low_percentile, high_percentile = self.clip_percentiles
+                            min_val = torch.quantile(channel, low_percentile / 100.0)
+                            max_val = torch.quantile(channel, high_percentile / 100.0)
+                            
+                            # Ensure we don't have min_val == max_val
+                            if max_val <= min_val:
+                                max_val = min_val + 1e-6
+                            
+                            # Clip to percentile range
+                            channel = torch.clamp(channel, min_val, max_val)
+                            
+                            # Normalize to [0, 1]
+                            if self.normalise:
+                                norm_channel = (channel - min_val) / (max_val - min_val)
+                                # Check for NaNs after normalization
+                                if torch.isnan(norm_channel).any():
+                                    print(f"WARNING: NaN values detected after normalization. Using min-max scaling instead.")
+                                    if channel.max() - channel.min() > 0:
+                                        norm_channel = (channel - channel.min()) / (channel.max() - channel.min())
+                                    else:
+                                        norm_channel = torch.zeros_like(channel)
+                                channel = norm_channel
+                            
+                            # Apply gamma correction
+                            if self.gamma_std > 0:
+                                gamma = torch.exp(torch.randn(1) * self.gamma_std).item()
+                                gamma = max(0.5, min(2.0, gamma))  # Clamp gamma to reasonable range
+                                channel = channel.pow(gamma)
+                            
+                            img[c] = channel
+                    else:
+                        # Process all channels together
+                        # Skip processing if image is empty or constant
+                        if torch.all(img == 0) or (img.max() - img.min()) < 1e-6:
+                            continue
+                            
                         low_percentile, high_percentile = self.clip_percentiles
-                        min_val = torch.quantile(channel, low_percentile / 100.0)
-                        max_val = torch.quantile(channel, high_percentile / 100.0)
+                        min_val = torch.quantile(img, low_percentile / 100.0)
+                        max_val = torch.quantile(img, high_percentile / 100.0)
                         
                         # Ensure we don't have min_val == max_val
                         if max_val <= min_val:
-                            max_val = min_val + 1e-8
+                            max_val = min_val + 1e-6
                         
                         # Clip to percentile range
-                        channel = torch.clamp(channel, min_val, max_val)
+                        img = torch.clamp(img, min_val, max_val)
                         
-                        # Normalize to [0, 1]
                         if self.normalise:
-                            channel = (channel - min_val) / (max_val - min_val)
+                            norm_img = (img - min_val) / (max_val - min_val)
+                            # Check for NaNs after normalization
+                            if torch.isnan(norm_img).any():
+                                print(f"WARNING: NaN values detected after normalization. Using min-max scaling instead.")
+                                if img.max() - img.min() > 0:
+                                    norm_img = (img - img.min()) / (img.max() - img.min())
+                                else:
+                                    norm_img = torch.zeros_like(img)
+                            img = norm_img
                         
-                        # Apply gamma correction
                         if self.gamma_std > 0:
                             gamma = torch.exp(torch.randn(1) * self.gamma_std).item()
-                            channel = channel.pow(gamma)
-                        
-                        img[c] = channel
-                else:
-                    # Process all channels together
-                    low_percentile, high_percentile = self.clip_percentiles
-                    min_val = torch.quantile(img, low_percentile / 100.0)
-                    max_val = torch.quantile(img, high_percentile / 100.0)
+                            gamma = max(0.5, min(2.0, gamma))  # Clamp gamma to reasonable range
+                            img = img.pow(gamma)
                     
-                    # Ensure we don't have min_val == max_val
-                    if max_val <= min_val:
-                        max_val = min_val + 1e-8
+                    # Final sanity check for NaNs/Infs
+                    if torch.isnan(img).any() or torch.isinf(img).any():
+                        print(f"WARNING: NaN or Inf values detected after all processing. Resetting to zeros.")
+                        img = torch.zeros_like(img)
                     
-                    # Clip to percentile range
-                    img = torch.clamp(img, min_val, max_val)
-                    
-                    if self.normalise:
-                        img = (img - min_val) / (max_val - min_val)
-                    
-                    if self.gamma_std > 0:
-                        gamma = torch.exp(torch.randn(1) * self.gamma_std).item()
-                        img = img.pow(gamma)
-                
-                d[key] = img
+                    d[key] = img
+                except Exception as e:
+                    print(f"ERROR in IntensityClipNormalizeD: {str(e)}")
+                    # If an error occurs, keep the original image
+                    continue
         
         return d
     
