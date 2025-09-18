@@ -153,11 +153,15 @@ class MultiTaskTrainer:
             
             # Always compute age loss
             print("age_preds, age_gts", age_preds, age_gts)
-            print("age_preds.dtype, age_gts.dtype", age_preds.dtype, age_gts.dtype)
+            print("age_preds.dtype", age_preds.dtype)
+            print("age_gts.dtype", age_gts.dtype)
+            
             age_preds = age_preds.float()
             age_gts = age_gts.float()
+            
             print("age_preds, age_gts", age_preds, age_gts)
-            print("age_preds.dtype, age_gts.dtype", age_preds.dtype, age_gts.dtype)
+            print("age_preds.dtype", age_preds.dtype)
+            print("age_gts.dtype", age_gts.dtype)
 
             age_loss = self.age_criterion(age_preds, age_gts)
             
