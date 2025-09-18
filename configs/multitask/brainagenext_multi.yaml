@@ -127,7 +127,7 @@ brain_generator:
 
 # ──────────────────────────  TRAINING  ────────────────────────── #
 training:
-  batch_size: 4
+  batch_size: 2
   epochs: 120
 
   # Optimizer & Scheduler (MultiTaskTrainer-compatible style)
