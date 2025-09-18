@@ -150,19 +150,6 @@ class MultiTaskTrainer:
 
         with autocast(device_type=self.device.type, enabled=self.use_amp):
             seg_logits, age_preds = self.model(imgs)
-            
-            # Always compute age loss
-            print("age_preds, age_gts", age_preds, age_gts)
-            print("age_preds.dtype", age_preds.dtype)
-            print("age_gts.dtype", age_gts.dtype)
-            
-            age_preds = age_preds.float()
-            age_gts = age_gts.float()
-            
-            print("age_preds, age_gts", age_preds, age_gts)
-            print("age_preds.dtype", age_preds.dtype)
-            print("age_gts.dtype", age_gts.dtype)
-
             age_loss = self.age_criterion(age_preds, age_gts)
             
             # Check if we're in age-only mode

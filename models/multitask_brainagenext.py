@@ -146,4 +146,4 @@ class MultiTaskBrainAgeNeXt(nn.Module):
 
         # Seg head: upsample to original size
         seg_logits = self.seg_decoder(feats, target_spatial_shape=x.shape[2:])
-        return {"age": age_pred, "seg": seg_logits}
+        return seg_logits, age_pred
