@@ -141,7 +141,11 @@ class MultiTaskTrainer:
 
     def _step(self, batch: Dict[str, torch.Tensor], train: bool = True):
         imgs = batch["image"].to(self.device)
-        age_gts = batch["age"].float().to(self.device)
+        # Add defensive conversion for age
+        if isinstance(batch["age"], str):
+            age_gts = torch.tensor(float(batch["age"]), device=self.device)
+        else:
+            age_gts = batch["age"].float().to(self.device)
         seg_gts = batch["seg_gt"].to(self.device)
 
         with autocast(device_type=self.device.type, enabled=self.use_amp):
