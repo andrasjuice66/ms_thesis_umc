@@ -152,6 +152,8 @@ class MultiTaskTrainer:
             seg_logits, age_preds = self.model(imgs)
             
             # Always compute age loss
+            print("age_preds, age_gts", age_preds, age_gts)
+            
             age_loss = self.age_criterion(age_preds, age_gts)
             
             # Check if we're in age-only mode
