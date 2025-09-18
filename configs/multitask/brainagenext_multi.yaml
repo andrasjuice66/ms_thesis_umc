@@ -55,6 +55,8 @@ model:
     norm: "in"           # "bn" or "in"
 
 brain_generator:
+  return_segmentation: true
+
   # Prior distribution for GMM sampling (intensities)
   distribution: "uniform"  # "normal" or "uniform"
   mean_loc: 125.0          # Mid-point of distribution for means

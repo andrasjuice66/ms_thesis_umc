@@ -360,7 +360,7 @@ def main() -> None:
         output_shape = tuple(bg_cfg.get("output_shape", [182, 218, 182])),
         use_random_cropping          = bg_cfg.get("use_random_cropping", True),
         return_gradients             = bg_cfg.get("return_gradients", False),
-        return_segmentation          = bg_cfg.get("return_segmentation", False),
+        return_segmentation          = bg_cfg.get("return_segmentation", True),
         device                       = device,
     )
     print(f"Brain Generator config: {bg_cfg}")
