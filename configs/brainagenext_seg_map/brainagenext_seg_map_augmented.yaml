@@ -33,7 +33,7 @@ model:
   in_channels: 15
   dropout_rate: 0.2
   use_attention: false                   
-  checkpoint: "/home/ajoos1/model_files/BrainAge_1.pth"
+  checkpoint: "/home/ajoos1/run_output/brainagenext_seg_map_augmented_finetune/checkpoints/brainagenext_seg_map_augmented_finetune/brainagenext_seg_map_augmented_finetune_best_mae.pt"
 
 # ─────────────────────────  AUGMENTATION  ─────────────────────── #
 # -------------------------------------------------------------------------
@@ -68,7 +68,7 @@ training:
   epochs: 150
 
   # optimiser & LR
-  learning_rate: 0.00001 #0.002193
+  learning_rate: 0.000005 #0.002193
   weight_decay:  0.001
   optimizer: "adamw"                       # adam | adamw | sgd | rmsprop | radam | novograd
   scheduler: "step"                      # cosine | plateau | onecycle | step | none
