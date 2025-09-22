@@ -126,6 +126,7 @@ def main() -> None:
     prior_means[:, 0] = 0.0    
     prior_stds[:, 0] = 0.0   
 
+    # Update the BABrainGenerator initialization in train_synth.py
     brain_generator = BABrainGenerator(
         # Required parameters
         prior_means  = prior_means,
@@ -152,6 +153,14 @@ def main() -> None:
         gibbs_alpha   = bg_cfg.get("gibbs_alpha", 0.4),
         blur_sigma    = bg_cfg.get("blur_sigma", 0.25),
         bias_field_rng= tuple(bg_cfg.get("bias_field_rng", [0.0, 0.5])),
+        
+        # Motion artifacts
+        motion_degrees = bg_cfg.get("motion_degrees", 3),
+        motion_translation = bg_cfg.get("motion_translation", 5),
+        motion_num_transforms = bg_cfg.get("motion_num_transforms", 4),
+        ghost_num = tuple(bg_cfg.get("ghost_num", [1, 4])),
+        ghost_intensity = tuple(bg_cfg.get("ghost_intensity", [0.1, 0.6])),
+        torchio_noise_std = bg_cfg.get("torchio_noise_std", [0, 0.5]),
 
         # Resolution parameters
         min_res       = bg_cfg.get("min_res", 0.8),
@@ -175,6 +184,8 @@ def main() -> None:
         output_shape = tuple(bg_cfg.get("output_shape", [182, 218, 182])),
         use_random_cropping          = bg_cfg.get("use_random_cropping", True),
         return_gradients             = bg_cfg.get("return_gradients", False),
+        return_segmentation          = bg_cfg.get("return_segmentation", False),
+        device                       = device,
     )
     print(f"Brain Generator config: {bg_cfg}")
             
@@ -233,7 +244,9 @@ def main() -> None:
     )
     
     logger.info("Creating validation dataset")
-    val_ds   = BADataset(
+    
+    
+    val_ds = BADataset(
         file_paths   = val_p,
         age_labels   = val_a,
         sexes        = val_s,

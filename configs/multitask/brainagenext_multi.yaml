@@ -1,19 +1,19 @@
 # ────────────────────────────  DATA  ──────────────────────────── #
 data:
-  real_data_dir: "/scratch-shared/ajoos1/brain_age_preprocessed_no_csf/"   
-  segmented_data_dir: "/scratch-shared/ajoos1/brain_age_segmented/"   
+  real_data_dir: "/scratch-shared/ajoos1/brain_age_preprocessed_no_csf/"
+  segmented_data_dir: "/scratch-shared/ajoos1/brain_age_segmented/"
   train_csv: "/home/ajoos1/brain_age_pred/data/labels/train_labels.csv"
   val_csv:   "/home/ajoos1/brain_age_pred/data/labels/val_labels.csv"
   test_csv:  "/home/ajoos1/brain_age_pred/data/labels/test_labels.csv"
 
   image_key:  "image_path"
   age_key:    "age"
-  weight_key: "age_modality_frequency"             
+  weight_key: "age_modality_frequency"
 
-  # loading / caching
+  # loading / caching (only num_workers and pin_memory are used by the new script; the rest are safe to keep)
   cache_dir: "data/cache"
-  cache_mode: "memory"   
-  cache_size: 0            
+  cache_mode: "memory"
+  cache_size: 0
   shared_cache: 0
   preload: true
   num_workers: 8
@@ -21,20 +21,42 @@ data:
   pin_memory_device: ""
   persistent_workers: true
   prefetch_factor: 4
-  target_shape: [160, 192, 160]            # (D,H,W) after optional resize
+  target_shape: [160, 192, 160]
   age_min: 20
   age_max: 80
 
 # ───────────────────────────  MODEL  ──────────────────────────── #
 model:
-  type: "brainagenext"                             # sfcn | resnet3d | efficientnet3d
+  type: "brainagenext"           # for reference
   in_channels: 1
   dropout_rate: 0.2
-  use_attention: false                   
-  checkpoint: "/home/ajoos1/model_files/BrainAge_1.pth"
+  model_id: "B"
+  kernel_size: 3
+  deep_supervision: true
+  feature_size: 512
+  hidden_size: 64
 
+  # Load your good brain-age weights into the encoder+age head
+  brain_age_checkpoint: "/home/ajoos1/model_files/BrainAge_1.pth"
+
+  # Optional: resume full multi-task (encoder+age+decoder) checkpoint
+  # multitask_checkpoint: "/path/to/multitask_checkpoint.pt"
+
+  # Legacy key; treated as multitask_checkpoint by the script if set
+  # checkpoint: "/path/to/legacy_checkpoint.pt"
+
+  # Segmentation decoder settings (UNet-style upsampling without skips)
+  seg:
+    # num_classes will default to len(GENERATION_LABELS); override if needed
+    # num_classes: 1
+    num_upsamples: 4     # set to match total encoder downsampling (2^4 typical)
+    end_channels: 32
+    dropout: 0.0
+    norm: "in"           # "bn" or "in"
 
 brain_generator:
+  return_segmentation: true
+
   # Prior distribution for GMM sampling (intensities)
   distribution: "uniform"  # "normal" or "uniform"
   mean_loc: 125.0          # Mid-point of distribution for means
@@ -101,52 +123,57 @@ brain_generator:
   tumor_perlin_res: [4, 4, 4]   
   tumor_percentile_range: [90.0, 99.6]
   tumor_size_factor_range: [0.5, 2.0]
-  tumor_use_fluid_dynamics: True,        
+  tumor_use_fluid_dynamics: True,       
 
 # ──────────────────────────  TRAINING  ────────────────────────── #
 training:
-  batch_size: 4
-  epochs: 150
+  batch_size: 2
+  epochs: 120
 
-  # optimiser & LR
-  learning_rate: 0.000005 #0.002193
-  weight_decay:  0.001
-  optimizer: "adamw"                       # adam | adamw | sgd | rmsprop | radam | novograd
-  scheduler: "step"                      # cosine | plateau | onecycle | step | none
-  scheduler_params:
-    T_max: 100
-    eta_min: 0.00001
-    epochs: 200
-    steps_per_epoch: 534
+  # Optimizer & Scheduler (MultiTaskTrainer-compatible style)
+  optimizer:
+    optimizer_type: "adamw"
+    learning_rate: 0.0001     # finetune-friendly; adjust up to 3e-4 if needed
+    weight_decay: 0.001
 
+  scheduler:
+    scheduler_type: "cosine"  # "cosine" | "step" | "plateau" | "none"
+    T_max: 120
     step_size: 10
     gamma: 0.8
 
-  # losses
-  loss: "huber"                      
-  loss_params:
-    delta: 5.0
-    mae_weight: 0.5
+  # Multi-task loss settings; trainer should read these
+  loss:
+    age_loss_fn: "mae"        # mae | mse | huber
+    seg_loss_fn: "dice"       # dice for segmentation
+    include_background: true
+    softmax: true             # set true for multi-class; set false and use sigmoid if binary
+    to_onehot_y: true         # for multi-class targets
+    weights:
+      age: 1.0
+      seg: 1.0
 
-  # misc
   early_stopping_patience: 30
   gradient_accumulation_steps: 1
-  use_amp: true                            # mixed precision if CUDA present
+  use_amp: true
+
+  # Optional toggles used by the new script
+  age_only_mode: false        # if true, trains only age head (seg head frozen)
+  freeze_encoder: false       # only meaningful when age_only_mode is true
 
 # ────────────────────────────  OUTPUT  ────────────────────────── #
 output:
-  output_dir: "/home/ajoos1/run_output/brainagenext_synthetic_finetune"
+  output_dir: "/home/ajoos1/run_output/brainagenext_multitask_finetune"
   checkpoint_dir: "checkpoints"
   log_dir: "logs"
-  experiment_name: brainagenext_synthetic_finetune #"brain_age_with_tumors"                   # auto-generate if left null
+  experiment_name: "brainagenext_multitask_finetune"
 
 # ─────────────────────────────  W&B  ──────────────────────────── #
 wandb:
-  use_wandb: true                         # still requires $WANDB_API env-var
+  use_wandb: true
   project: "paper_check"
-
   entity: null
 
 # ───────────────────────── MISCELLANEOUS ───────────────────────── #
 seed: 42
-device: "cuda"                              # cuda if available, else cpu
+device: "cuda"

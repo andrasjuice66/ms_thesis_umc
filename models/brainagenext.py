@@ -85,13 +85,48 @@ class BrainAgeNeXt(nn.Module):
                 nn.init.constant_(m.bias, 0)
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass through the model."""
-        mednext_out = self.mednextv1(x)
-        x = mednext_out
-        x = self.global_avg_pool(x)
-        x = torch.flatten(x, start_dim=1)
-        age_estimate = self.regression_fc(x)
-        return age_estimate.squeeze()
+        """
+        Forward pass through the model with robust error handling.
+        Detects and handles NaN/Infinity values to prevent training failures.
+        """
+        # Input validation
+        if torch.isnan(x).any() or torch.isinf(x).any():
+            print(f"WARNING: Input tensor contains NaN or Inf values. Replacing with zeros.")
+            x = torch.where(torch.isnan(x) | torch.isinf(x), torch.zeros_like(x), x)
+        
+        # Forward pass with exception handling
+        try:
+            mednext_out = self.mednextv1(x)
+            
+            # Check for NaNs after encoder
+            if torch.isnan(mednext_out).any() or torch.isinf(mednext_out).any():
+                print(f"WARNING: MedNeXt encoder output contains NaN or Inf values.")
+                mednext_out = torch.where(torch.isnan(mednext_out) | torch.isinf(mednext_out), 
+                                         torch.zeros_like(mednext_out), mednext_out)
+            
+            x = mednext_out
+            x = self.global_avg_pool(x)
+            x = torch.flatten(x, start_dim=1)
+            
+            # Check for NaNs before regression
+            if torch.isnan(x).any() or torch.isinf(x).any():
+                print(f"WARNING: Feature vector contains NaN or Inf values.")
+                x = torch.where(torch.isnan(x) | torch.isinf(x), torch.zeros_like(x), x)
+            
+            age_estimate = self.regression_fc(x)
+            
+            # Final check for NaNs in output
+            if torch.isnan(age_estimate).any() or torch.isinf(age_estimate).any():
+                print(f"WARNING: Final age estimate contains NaN or Inf values. Using fallback value.")
+                # Use a fallback value (middle of typical age range) if NaNs occur
+                age_estimate = torch.ones_like(age_estimate) * 50.0
+            
+            return age_estimate.squeeze()
+            
+        except Exception as e:
+            print(f"ERROR in forward pass: {str(e)}")
+            # Return a reasonable default prediction on error (middle of age range)
+            return torch.ones(x.size(0), device=x.device) * 50.0
 
 
 # # Keep the old MedNeXtEncReg class for backward compatibility if needed

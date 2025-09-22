@@ -1,0 +1,497 @@
+#!/usr/bin/env python
+"""
+Multi-task training script for brain age prediction and segmentation.
+"""
+import os, sys, time, json
+from datetime import datetime
+from pathlib import Path
+from typing import List, Tuple, Optional, Dict
+import multiprocessing as mp
+
+import pandas as pd
+import numpy as np
+import torch
+import wandb
+
+# Set multiprocessing start method to 'spawn' for CUDA compatibility
+mp.set_start_method('spawn', force=True)
+
+project_root = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(project_root))
+
+from brain_age_pred.configs.config import Config
+from brain_age_pred.dataset.dataset import BADataset
+# IMPORTANT: Adjust these imports to where you placed the classes
+# BrainAgeNeXt: the encoder + brain age head model (with your good weights)
+# MultiTaskBrainAgeNeXt: wrapper that adds a 3D decoder and returns {"age", "seg"}
+from brain_age_pred.models.brainagenext import BrainAgeNeXt
+from brain_age_pred.models.multitask_brainagenext import MultiTaskBrainAgeNeXt
+
+from brain_age_pred.training.trainer_multi_task import MultiTaskTrainer
+from brain_age_pred.utils.logger import setup_logger
+from brain_age_pred.utils.utils import set_seed, read_csv
+from torch.utils.data import WeightedRandomSampler, DataLoader
+from brain_age_pred.brain_gen.brain_generator import BABrainGenerator
+from brain_age_pred.brain_gen.validation_generator import ValidationGenerator
+from brain_age_pred.brain_gen.labels import GENERATION_CLASSES, GENERATION_LABELS, N_NEUTRAL_LABELS
+
+
+def load_state_dict_safely(
+    module: torch.nn.Module,
+    checkpoint_path: str,
+    device: torch.device,
+    logger,
+    strict: bool = False,
+    key_in_state: Optional[str] = None,
+) -> Dict[str, list]:
+    """
+    Load a checkpoint into `module` robustly. Strips 'module.' prefixes if present.
+    If `key_in_state` is provided, tries to read state from state[key_in_state] first.
+    Returns dict with missing and unexpected keys if available.
+    """
+    if not checkpoint_path or not Path(checkpoint_path).exists():
+        raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
+
+    logger.info(f"Loading checkpoint from: {checkpoint_path} (strict={strict})")
+    state = torch.load(checkpoint_path, map_location=device)
+
+    # Extract inner state dict if saved as {"state_dict": ..., ...}
+    if isinstance(state, dict) and key_in_state and key_in_state in state:
+        state_dict = state[key_in_state]
+    elif isinstance(state, dict) and "state_dict" in state and isinstance(state["state_dict"], dict):
+        state_dict = state["state_dict"]
+    elif isinstance(state, dict):
+        # assume it's already a state dict
+        state_dict = state
+    else:
+        # unexpected format
+        raise RuntimeError(f"Unsupported checkpoint format at {checkpoint_path}")
+
+    # Strip DistributedDataParallel 'module.' prefix if present
+    if any(k.startswith("module.") for k in state_dict.keys()):
+        state_dict = {k.replace("module.", "", 1): v for k, v in state_dict.items()}
+
+    # Try to load
+    try:
+        result = module.load_state_dict(state_dict, strict=strict)
+        # PyTorch returns IncompatibleKeys in newer versions; in older versions returns None
+        if hasattr(result, "missing_keys") or hasattr(result, "unexpected_keys"):
+            mk = getattr(result, "missing_keys", [])
+            uk = getattr(result, "unexpected_keys", [])
+            logger.info(f"Checkpoint loaded with missing keys: {mk}")
+            logger.info(f"Checkpoint loaded with unexpected keys: {uk}")
+            return {"missing_keys": mk, "unexpected_keys": uk}
+        else:
+            logger.info("Checkpoint loaded.")
+            return {"missing_keys": [], "unexpected_keys": []}
+    except Exception as e:
+        logger.error(f"Failed to load checkpoint: {e}", exc_info=True)
+        raise
+
+
+def build_multitask_model(cfg: Config, device: torch.device, n_classes: int, logger):
+    """
+    1) Build base BrainAgeNeXt (encoder + age head)
+    2) Optionally load a brain-age-only checkpoint into it
+    3) Wrap into MultiTaskBrainAgeNeXt (adds 3D segmentation decoder)
+    4) Optionally load a full multi-task checkpoint (includes decoder) with strict=False
+    """
+
+    # Base BrainAgeNeXt hyperparameters
+    in_channels       = cfg.get("model.in_channels", 1)
+    dropout_rate      = cfg.get("model.dropout_rate", 0.0)
+    model_id          = cfg.get("model.model_id", "B")
+    kernel_size       = cfg.get("model.kernel_size", 3)
+    deep_supervision  = cfg.get("model.deep_supervision", True)
+    feature_size      = cfg.get("model.feature_size", 512)
+    hidden_size       = cfg.get("model.hidden_size", 64)
+
+    # Decoder / segmentation hyperparameters
+    seg_num_classes   = cfg.get("model.seg.num_classes", n_classes)
+    seg_num_upsamples = cfg.get("model.seg.num_upsamples", 4)
+    seg_end_channels  = cfg.get("model.seg.end_channels", 32)
+    seg_dropout       = cfg.get("model.seg.dropout", 0.0)
+    seg_norm          = cfg.get("model.seg.norm", "bn")
+
+    # Checkpoint paths
+    # - brain_age_checkpoint: weights for encoder + age head (no decoder)
+    # - multitask_checkpoint: full wrapper (encoder/age head/decoder)
+    brain_age_ckpt     = cfg.get("model.brain_age_checkpoint")
+    multitask_ckpt     = cfg.get("model.multitask_checkpoint")
+    legacy_ckpt        = cfg.get("model.checkpoint")  # backward-compat: treat as multitask_ckpt if set
+    if legacy_ckpt and not multitask_ckpt:
+        multitask_ckpt = legacy_ckpt
+
+    # 1) Create the base brain age model
+    logger.info("Instantiating BrainAgeNeXt (encoder + age head)...")
+    base_age_model = BrainAgeNeXt(
+        in_channels=in_channels,
+        dropout_rate=dropout_rate,
+        model_id=model_id,
+        kernel_size=kernel_size,
+        deep_supervision=deep_supervision,
+        feature_size=feature_size,
+        hidden_size=hidden_size,
+    ).to(device)
+
+    # 2) Load brain-age-only checkpoint if provided
+    if brain_age_ckpt:
+        try:
+            load_state_dict_safely(
+                module=base_age_model,
+                checkpoint_path=brain_age_ckpt,
+                device=device,
+                logger=logger,
+                strict=True,           # strict for exact shape match on age model
+            )
+            logger.info("Loaded brain-age checkpoint into base model successfully.")
+        except Exception as e:
+            logger.warning(f"Failed to strictly load brain-age checkpoint into base model. "
+                           f"Proceeding without it. Details: {e}")
+
+    # 3) Wrap into MultiTaskBrainAgeNeXt (adds decoder)
+    logger.info("Wrapping BrainAgeNeXt with MultiTaskBrainAgeNeXt (adds segmentation decoder)...")
+    model = MultiTaskBrainAgeNeXt(
+        brain_age_model=base_age_model,
+        num_seg_classes=seg_num_classes,
+        seg_num_upsamples=seg_num_upsamples,
+        seg_end_channels=seg_end_channels,
+        seg_dropout=seg_dropout,
+        norm=seg_norm,
+    ).to(device)
+
+    # 4) If a full multitask checkpoint exists, load with strict=False
+    if multitask_ckpt:
+        try:
+            # strict=False so that it can load a brain-age-only checkpoint as well,
+            # or resume a full multitask checkpoint where decoder weights exist.
+            load_state_dict_safely(
+                module=model,
+                checkpoint_path=multitask_ckpt,
+                device=device,
+                logger=logger,
+                strict=False,
+            )
+            logger.info("Loaded multitask checkpoint (non-strict) into wrapped model.")
+        except Exception as e:
+            logger.warning(f"Non-strict load of multitask checkpoint failed; continuing with base weights. Details: {e}")
+
+    # Report trainable parameter counts by group (encoder+age head vs decoder)
+    enc_params = sum(p.numel() for p in model.mednextv1.parameters() if p.requires_grad)
+    age_params = sum(p.numel() for p in model.regression_fc.parameters() if p.requires_grad)
+    dec_params = sum(p.numel() for p in model.seg_decoder.parameters() if p.requires_grad)
+    total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    logger.info(f"Trainable params - Encoder: {enc_params:,} | Age head: {age_params:,} | "
+                f"Decoder: {dec_params:,} | Total: {total_params:,}")
+
+    return model
+
+
+def main() -> None:
+
+    # 1. ─── configuration & reproducibility ─────────────────── #
+    timestamp       = datetime.now().strftime("%Y%m%d_%H%M%S")
+    cfg_file = sys.argv[1] if len(sys.argv) > 1 else "configs/default.yaml"
+    cfg      = Config(cfg_file)
+    
+    # 2. ─── experiment naming / I/O ─────────────────────────── #
+    experiment_name = cfg.get("output.experiment_name")
+    if not experiment_name:
+        experiment_name = f'multitask_{timestamp}'
+    out_root  = Path(cfg.get("output.output_dir", "output"))
+    ckpt_dir  = out_root / "checkpoints" / experiment_name
+    log_dir   = out_root / "logs"        / experiment_name
+    ckpt_dir.mkdir(parents=True, exist_ok=True)
+    log_dir.mkdir(parents=True, exist_ok=True)
+    logger = setup_logger("brain-age-multitask", log_file=log_dir / "train.log")
+    
+    logger.info("Initializing configuration...")
+    set_seed(cfg.get("seed", 42))
+    logger.info(f"Experiment: {experiment_name}\nConfig   : {cfg_file}")
+    logger.info(f"Using config: {cfg.config}")
+
+    # 3. ─── W&B init ─────────────────────────────────────────── #
+    logger.info("Initializing Weights & Biases...")
+    use_wandb = cfg.get("wandb.use_wandb", True)
+    if use_wandb:
+        logger.info("Setting up W&B tracking")
+        # Ensure you have your WANDB_API_KEY in your environment variables
+        wandb.login(key="2abdb867a9244072f2237704a3cacc77fa548dd8")
+        wandb.init(
+            project = cfg.get("wandb.project", "brain-age-multitask"),
+            entity  = cfg.get("wandb.entity"),
+            name    = experiment_name,
+            config  = cfg.config,
+            reinit  = True,
+        )
+        cfg.save_config(ckpt_dir / "config.yaml")
+
+    # 4. ─── device ───────────────────────────────────────────── #
+    logger.info("Setting up device...")
+    device = torch.device(cfg.get("device") or ("cuda" if torch.cuda.is_available() else "cpu"))
+    logger.info(f"Using device: {device}")
+
+    # 6. ─── CSV → dataset / sampler ─────────────────────────── #
+    logger.info("Reading CSV files...")
+    train_csv = Path(cfg.get("data.train_csv"))
+    val_csv   = Path(cfg.get("data.val_csv"))
+    test_csv  = Path(cfg.get("data.test_csv"))
+    segmented_data_dir = Path(cfg.get("data.segmented_data_dir"))
+    real_data_dir  = Path(cfg.get("data.real_data_dir"))
+
+    logger.info(f"Reading train CSV from {train_csv}")
+    train_p, train_a, train_w, train_s, train_m = read_csv(train_csv, segmented_data_dir)
+    logger.info(f"Reading val CSV from {val_csv}")
+    val_p, val_a, val_w, val_s, val_m = read_csv(val_csv, real_data_dir)
+    logger.info(f"Reading test CSV from {test_csv}")
+    test_p, test_a, test_w, test_s, test_m = read_csv(test_csv, real_data_dir)
+
+    logger.info(f"Train={len(train_p)}  Val={len(val_p)}  Test={len(test_p)}")
+
+    # Add this right after reading CSVs
+    print("=== AGE RANGES  ===")
+    print(f"Train ages: min={min(train_a):.2f}, max={max(train_a):.2f}, mean={np.mean(train_a):.2f}, std={np.std(train_a):.2f}")
+    print(f"Val ages:   min={min(val_a):.2f}, max={max(val_a):.2f}, mean={np.mean(val_a):.2f}, std={np.std(val_a):.2f}")
+    print(f"Test ages:  min={min(test_a):.2f}, max={max(test_a):.2f}, mean={np.mean(test_a):.2f}, std={np.std(test_a):.2f}")
+    print("Sample train ages:", train_a[:50])
+    print("Sample val ages:", val_a[:50])
+    print("Sample test ages:", test_a[:50])
+
+    # 5. ─── Brain Generator ──────────────────────────────────── #
+    logger.info("Initializing Brain Generator...")
+    bg_cfg = cfg.get("brain_generator", {})
+
+    prob = bg_cfg.get("prob", {
+        "flip": 0.5,
+        "affine": 0.0,
+        "contrast": 0.3,
+        "gamma": 0.3,
+        "scale_int": 0.3,
+        "shift_int": 0.3,
+        "hist_shift": 0.3,
+        "noise": 0.3,
+        "rician": 0.3,
+        "gibbs": 0.3,
+        "blur": 0.3,
+        "bias": 0.0,
+        "resolution": 0.3,
+    })
+    
+    n_classes = GENERATION_CLASSES.max() + 1     # = 15 with the default label set
+
+    # Prior distribution parameters
+    mean_loc = bg_cfg.get("mean_loc", 125.0)
+    mean_scale = bg_cfg.get("mean_scale", 100.0)
+    std_loc = bg_cfg.get("std_loc", 15.0)
+    std_scale = bg_cfg.get("std_scale", 10.0)
+    
+    n_classes = len(GENERATION_LABELS)
+
+    # "loc" = mid-point,  "scale" = half-range
+    prior_means = np.vstack([
+        np.full(n_classes, mean_loc,   dtype=float),
+        np.full(n_classes, mean_scale, dtype=float),
+    ])
+
+    prior_stds = np.vstack([
+        np.full(n_classes, std_loc,    dtype=float),
+        np.full(n_classes, std_scale,  dtype=float),
+    ])
+
+    # Set background class (label 0) to zero
+    prior_means[:, 0] = 0.0    
+    prior_stds[:, 0] = 0.0   
+
+    # Update the BABrainGenerator initialization in train_synth.py
+    brain_generator = BABrainGenerator(
+        # Required parameters
+        prior_means  = prior_means,
+        prior_stds   = prior_stds,
+        distribution = bg_cfg.get("distribution", "normal"),
+        prob         = prob,
+
+        # Spatial augmentation parameters
+        rotation_range     = bg_cfg.get("rotation_range", 10),
+        scaling_range      = bg_cfg.get("scaling_range", 0.1),
+        shear_bounds       = bg_cfg.get("shear_bounds", 0.005),
+        translation_bounds = bg_cfg.get("translation_bounds", False),
+
+        # Intensity augmentation parameters
+        contrast_range      = tuple(bg_cfg.get("contrast_range", [0.8, 1.2])),
+        log_gamma_std       = bg_cfg.get("log_gamma_std", 0.1),
+        shift_offset        = bg_cfg.get("shift_offset", 0.1),
+        hist_control_points = bg_cfg.get("hist_control_points", 5),
+
+        # Artefacts parameters
+        noise_mean    = bg_cfg.get("noise_mean", 0.02),
+        noise_std     = bg_cfg.get("noise_std", 0.015),
+        rician_std    = bg_cfg.get("rician_std", 0.01),
+        gibbs_alpha   = bg_cfg.get("gibbs_alpha", 0.4),
+        blur_sigma    = bg_cfg.get("blur_sigma", 0.25),
+        bias_field_rng= tuple(bg_cfg.get("bias_field_rng", [0.0, 0.5])),
+        
+        # Motion artifacts
+        motion_degrees = bg_cfg.get("motion_degrees", 3),
+        motion_translation = bg_cfg.get("motion_translation", 5),
+        motion_num_transforms = bg_cfg.get("motion_num_transforms", 4),
+        ghost_num = tuple(bg_cfg.get("ghost_num", [1, 4])),
+        ghost_intensity = tuple(bg_cfg.get("ghost_intensity", [0.1, 0.6])),
+        torchio_noise_std = bg_cfg.get("torchio_noise_std", [0, 0.5]),
+
+        # Resolution parameters
+        min_res       = bg_cfg.get("min_res", 0.8),
+        max_res_iso   = bg_cfg.get("max_res_iso", 2.0),
+        max_res_aniso = bg_cfg.get("max_res_aniso", 2.0),
+        atlas_res     = bg_cfg.get("atlas_res", 1.0),
+        thickness     = bg_cfg.get("thickness", None),
+
+        # SynthSeg label config parameters
+        generation_labels = GENERATION_LABELS,
+        n_neutral_labels  = N_NEUTRAL_LABELS,
+        output_labels     = None,
+
+        # Toggle parameters
+        use_sample                    = bg_cfg.get("use_sample", True),
+        use_hemisphere_aware_flip     = bg_cfg.get("use_hemisphere_aware_flip", True),
+        use_dynamic_resolution        = bg_cfg.get("use_dynamic_resolution", True),
+        use_intensity_clip_normalize  = bg_cfg.get("use_intensity_clip_normalize", True),
+        n_channels                    = bg_cfg.get("n_channels", 1),
+        use_specific_stats_for_channel= bg_cfg.get("use_specific_stats_for_channel", False),
+        output_shape = tuple(bg_cfg.get("output_shape", [182, 218, 182])),
+        use_random_cropping          = bg_cfg.get("use_random_cropping", True),
+        return_gradients             = bg_cfg.get("return_gradients", False),
+        return_segmentation          = bg_cfg.get("return_segmentation", True),
+        device                       = device,
+    )
+    print(f"Brain Generator config: {bg_cfg}")
+    
+    validation_generator = ValidationGenerator(
+        segmented_data_dir=segmented_data_dir,
+        return_segmentation=True,
+        use_intensity_clip_normalize=True,
+    )
+
+    logger.info("Initializing datasets...")
+    train_ds = BADataset(
+        file_paths=train_p,
+        age_labels=train_a, 
+        sample_wts=train_w,
+        sexes=train_s,
+        modalities=train_m,
+        transform=brain_generator,
+        mode="train",
+    )
+    val_ds = BADataset(
+        file_paths=val_p,
+        age_labels=val_a,
+        sample_wts=val_w,
+        sexes=val_s,
+        modalities=val_m,
+        transform=validation_generator,  
+        mode="val",
+    )
+
+    test_ds = BADataset(
+        file_paths=test_p,
+        age_labels=test_a,
+        sample_wts=test_w,
+        sexes=test_s,
+        modalities=test_m,
+        transform=validation_generator,  
+        mode="test",
+    )
+
+    sampler = WeightedRandomSampler(weights=train_w, num_samples=len(train_w), replacement=True)
+    dl_kwargs = dict(
+        num_workers=cfg.get("data.num_workers", 6),
+        pin_memory=cfg.get("data.pin_memory", True),
+    )
+    train_loader = DataLoader(train_ds, batch_size=cfg.get("training.batch_size", 8), sampler=sampler, **dl_kwargs)
+    val_loader = DataLoader(val_ds, batch_size=cfg.get("training.batch_size", 8), shuffle=False, **dl_kwargs)
+    test_loader = DataLoader(test_ds, batch_size=cfg.get("training.batch_size", 8), shuffle=False, **dl_kwargs)
+
+    # 7. ─── model ─────────────────────────────────────────────── #
+    logger.info("Initializing MultiTaskBrainAgeNeXt model (encoder+age head+decoder)...")
+    model = build_multitask_model(cfg, device, n_classes=n_classes, logger=logger)
+    print(f"Model hyperparameters: {cfg.get('model')}")
+
+    if use_wandb:
+        wandb.watch(model, log="all", log_graph=False)
+
+    # 8. ─── trainer ──────────────────────────────────────────── #
+    logger.info("Initializing MultiTaskTrainer...")
+    print(f"Trainer config: {cfg.get('training')}")
+    trainer = MultiTaskTrainer(
+        model=model,
+        train_loader=train_loader,
+        val_loader=val_loader,
+        test_loader=test_loader,
+        config=cfg.get("training"),
+        device=device,
+        checkpoint_dir=ckpt_dir,
+        log_dir=log_dir,
+        use_wandb=use_wandb,
+        wandb_project=cfg.get("wandb.project", "brain-age-multitask"),
+        wandb_entity=cfg.get("wandb.entity"),
+        wandb_config=cfg.config,
+        experiment_name=experiment_name,
+    )
+    logger.info("Trainer initialized")
+
+    # Check if we should switch to age-only mode
+    age_only_mode = cfg.get("training.age_only_mode", False)
+    freeze_encoder = cfg.get("training.freeze_encoder", False)
+
+    if age_only_mode:
+        if freeze_encoder:
+            logger.info("Switching to age-head-only fine-tuning (encoder + seg head frozen)")
+        else:
+            logger.info("Switching to age-only fine-tuning (encoder trainable, seg head frozen)")
+        trainer.switch_to_age_only_mode(freeze_encoder=freeze_encoder)
+
+    # 9. ─── train ────────────────────────────────────────────── #
+    logger.info("Starting multi-task training...")
+    try:
+        t0 = time.time()
+        results = trainer.train()
+        history = results["history"]
+        best_mae_info = results["best_mae_info"]
+        
+        logger.info(f"Training finished in {time.time()-t0:.1f}s")
+        json.dump(history, (ckpt_dir / "history.json").open("w"), indent=2)
+        json.dump(best_mae_info, (ckpt_dir / "best_mae_info.json").open("w"), indent=2)
+        
+        if use_wandb:
+            wandb.log({"train/duration_s": time.time() - t0})
+            wandb.log({
+                "best_val_mae": best_mae_info["value"],
+                "best_val_mae_epoch": best_mae_info["epoch"] + 1
+            })
+
+        if np.isinf(best_mae_info["value"]):
+            raise Exception("Best validation MAE was not set.")
+
+    except Exception as e:
+        logger.error(f"Training failed: {e}", exc_info=True)
+        raise
+
+    # 10. ─── evaluate ───────────────────────────────────────────── #
+    try:
+        logger.info("Starting evaluation using best MAE checkpoint...")
+        best_mae_checkpoint = best_mae_info["checkpoint_path"]
+        logger.info(f"Loading best checkpoint from epoch {best_mae_info['epoch']+1} with MAE {best_mae_info['value']:.4f}")
+        
+        test_metrics = trainer.evaluate(test_loader, checkpoint_path=best_mae_checkpoint)
+        logger.info(f"Test results: {test_metrics}")
+        if use_wandb:
+            wandb.log({f"test/{k}": v for k, v in test_metrics.items()})
+
+    except Exception as e:
+        logger.error(f"Evaluation failed: {e}", exc_info=True)
+    finally:
+        if use_wandb:
+            wandb.finish()
+        logger.info("All done.")
+
+if __name__ == "__main__":
+    main()
