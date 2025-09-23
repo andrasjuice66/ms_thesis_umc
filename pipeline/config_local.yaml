@@ -5,7 +5,7 @@ pipeline:
   csv_base_dir: /mnt/c/Projects/thesis_project/Data/brain_age_mp_rage                     # if CSV uses relative paths; defaults to CSV's directory
   output_dir: ./outputs                  # root folder for intermediates/results
   results_csv: null     # optional; set null to skip saving a CSV
-  max_workers: 0                 # how many images to process in parallel (CPU + IO heavy)
+  max_workers: 4                # how many images to process in parallel (CPU + IO heavy)
 
 preprocess:
   enabled: false                          # set false to skip preprocessing entirely

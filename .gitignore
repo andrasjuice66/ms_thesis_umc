@@ -8,6 +8,7 @@ HD_BET/
 # DataExp/
 # *.pth
 una.pth
+BrainAge_*.pth
 *.pt
 __pycache__/
 *.log
