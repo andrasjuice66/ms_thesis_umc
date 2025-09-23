@@ -1,0 +1,29 @@
+pipeline:
+  # Exactly one of "input" or "csv" must be provided
+  input: null  # or null if using CSV
+  csv: /mnt/c/Projects/thesis_project/brain_age_pred/data/labels/test_labels.csv                              # e.g., /path/to/metadata.csv
+  csv_base_dir: /mnt/c/Projects/thesis_project/Data/brain_age_mprage                     # if CSV uses relative paths; defaults to CSV's directory
+  output_dir: ./outputs                  # root folder for intermediates/results
+  results_csv: ./outputs/results.csv     # optional; set null to skip saving a CSV
+  max_workers: 1                         # how many images to process in parallel (CPU + IO heavy)
+
+preprocess:
+  enabled: false                          # set false to skip preprocessing entirely
+  mni: ./MNI152_T1_1mm_Brain.nii.gz      # required if preprocess.enabled is true
+  docker_gpu: false                      # enable GPU for Docker stages (SynthSR/Strip/Morph)
+  threads: 8                             # SynthSR threads
+
+brain_age:
+  device: cuda                           # cuda or cpu
+  models_dir: ./models                   # directory with BrainAge_1.pth ... BrainAge_5.pth
+  folds: [1, 2, 3, 4, 5]                 # which folds to ensemble (median)
+
+single_image:
+  age: null                              # optional CA when using a single image (bias-corrects if > 18)
+
+wandb:
+  enabled: true
+  project: t1-pipeline
+  run_name: ba_preproc
+  tags: [brainage, preprocess]
+  notes: ""
