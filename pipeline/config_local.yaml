@@ -2,7 +2,7 @@ pipeline:
   # Exactly one of "input" or "csv" must be provided
   input: null  # or null if using CSV
   csv: /mnt/c/Projects/thesis_project/brain_age_pred/data/labels/test_labels_ixi.csv                              # e.g., /path/to/metadata.csv
-  csv_base_dir: /mnt/c/Projects/thesis_project/Data/brain_age_mp_rage                     # if CSV uses relative paths; defaults to CSV's directory
+  csv_base_dir: /mnt/c/Projects/thesis_project/Data/brain_age_preprocessed_no_csf                     # if CSV uses relative paths; defaults to CSV's directory
   output_dir: ./outputs                  # root folder for intermediates/results
   results_csv: null     # optional; set null to skip saving a CSV
   max_workers: 4                # how many images to process in parallel (CPU + IO heavy)
@@ -24,6 +24,6 @@ single_image:
 wandb:
   enabled: true
   project: t1-pipeline
-  run_name: test-set
+  run_name: test-set-normal
   tags: [brainage, test-set, synthsr]
   notes: "first run of BrainAgeNeXt on the test set with synthsr preprocessing"

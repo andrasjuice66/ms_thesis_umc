@@ -340,12 +340,8 @@ def main(data_root, out_root):
 
 
 if __name__ == "__main__":
-    
-    data_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed_no_csf/IXI")
-    out_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_mp_rage/IXI")
-    main(data_root, out_root)
 
-    data_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed_no_csf/OpenNeuro/BoldVariability")
-    out_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_mp_rage/OpenNeuro/BoldVariability")
+    data_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed_no_csf/OpenNeuro/")
+    out_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_mp_rage/OpenNeuro/")
     main(data_root, out_root)
     
