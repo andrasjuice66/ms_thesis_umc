@@ -265,42 +265,101 @@ def brain_age_predict(
     from monai.data import CacheDataset
     from torch.utils.data import DataLoader
 
+    log = logging.getLogger()
+    
+    log.info(f"🧠 Starting Brain Age prediction for {len(images)} images using {len(folds)} model folds")
+    log.info(f"🔧 Device: {device_str}, Models directory: {models_dir}")
+    
+    # Create data dictionaries
+    log.info("📋 Preparing data dictionaries...")
     data_dicts = [{'image': str(p), 'label': 0.0} for p in images]  # label not used
 
+    # Build transforms and dataset
+    log.info("🔄 Building transforms and loading dataset...")
+    transforms_start = time.time()
     transforms = build_monai_torchio_transforms()
+    log.info(f"✅ Transforms built in {time.time() - transforms_start:.2f}s")
+    
+    dataset_start = time.time()
     dataset = CacheDataset(data=data_dicts, transform=transforms, cache_rate=0.0, num_workers=0)
-    dataloader = DataLoader(dataset, batch_size=1, num_workers=0, shuffle=False, pin_memory=(device_str == "cuda" and torch.cuda.is_available()))
+    log.info(f"✅ Dataset created in {time.time() - dataset_start:.2f}s")
+    
+    dataloader = DataLoader(dataset, batch_size=1, num_workers=0, shuffle=False, 
+                          pin_memory=(device_str == "cuda" and torch.cuda.is_available()))
+    log.info(f"📦 DataLoader ready with batch_size=1")
 
     MedNeXtEncReg = create_mednext_encoder()
     device = torch.device("cuda" if (device_str == "cuda" and torch.cuda.is_available()) else "cpu")
+    log.info(f"🎯 Using device: {device}")
 
     fold_preds = []
-    for i in folds:
+    total_prediction_start = time.time()
+    
+    for fold_idx, i in enumerate(folds):
+        fold_start = time.time()
+        log.info(f"🔮 Processing fold {i} ({fold_idx + 1}/{len(folds)})...")
+        
         model_path = models_dir / model_pattern.format(i)
         if not model_path.exists():
             raise FileNotFoundError(f"Missing model checkpoint: {model_path}")
+        
+        log.info(f"📁 Loading model: {model_path.name}")
+        model_load_start = time.time()
         model = MedNeXtEncReg().to(device)
         state = torch.load(str(model_path), map_location=device)
         model.load_state_dict(state)
         model.eval()
+        log.info(f"✅ Model loaded and moved to {device} in {time.time() - model_load_start:.2f}s")
 
+        log.info(f"🔍 Running predictions on {len(images)} images...")
         preds = []
+        batch_start = time.time()
+        
         with torch.no_grad():
-            for batch_data in dataloader:
+            for batch_idx, batch_data in enumerate(dataloader):
+                if batch_idx % 50 == 0 and batch_idx > 0:  # Log every 50 batches
+                    elapsed = time.time() - batch_start
+                    avg_time_per_batch = elapsed / batch_idx
+                    remaining_batches = len(dataloader) - batch_idx
+                    eta = remaining_batches * avg_time_per_batch
+                    log.info(f"  📊 Fold {i}: [{batch_idx}/{len(dataloader)}] "
+                           f"({batch_idx/len(dataloader)*100:.1f}%) "
+                           f"ETA: {eta:.1f}s")
+                
                 images_tensor = batch_data['image'].to(device)
                 pred = model(images_tensor)
                 preds.append(pred.detach().cpu().numpy())
+        
+        fold_time = time.time() - fold_start
+        log.info(f"✅ Fold {i} completed in {fold_time:.2f}s "
+               f"(avg: {fold_time/len(images):.3f}s per image)")
+        
         fold_preds.append(np.array(preds).reshape(-1))
         del model
         if device.type == "cuda":
             torch.cuda.empty_cache()
+            log.info(f"🧹 GPU memory cleared after fold {i}")
 
-    import numpy as np
+    total_prediction_time = time.time() - total_prediction_start
+    log.info(f"🎉 All {len(folds)} folds completed in {total_prediction_time:.2f}s")
+    
+    # Ensemble predictions
+    log.info("🔄 Computing ensemble predictions (median across folds)...")
+    ensemble_start = time.time()
     avg_preds = np.median(np.stack(fold_preds, axis=0), axis=0)  # (N,)
+    log.info(f"✅ Ensemble completed in {time.time() - ensemble_start:.2f}s")
 
+    # Create results dictionary
+    log.info("📝 Preparing final results...")
     results = {}
     for idx, p in enumerate(images):
         results[p] = float(avg_preds[idx])
+    
+    total_time = time.time() - total_prediction_start
+    log.info(f"🏁 Brain Age prediction completed! "
+           f"Total time: {total_time:.2f}s "
+           f"(avg: {total_time/len(images):.3f}s per image)")
+    
     return results
 
 # =========================
@@ -695,6 +754,7 @@ def main():
             log.info(f"Elapsed {timedelta(seconds=int(elapsed))}, ETA {timedelta(seconds=int(eta))}")
 
     # Brain Age predictions
+    log.info(f"�� Starting Brain Age prediction phase...")
     ba_inputs = [input_to_ba_used[p] for p in input_images if p in input_to_ba_used]
     seen = set()
     ba_inputs_unique: List[Path] = []
@@ -703,18 +763,38 @@ def main():
             seen.add(pth)
             ba_inputs_unique.append(pth)
 
+    log.info(f"📊 Brain Age prediction summary:")
+    log.info(f"  • Total input images: {len(input_images)}")
+    log.info(f"  • Successfully processed: {len(ba_inputs)}")
+    log.info(f"  • Unique images for prediction: {len(ba_inputs_unique)}")
+
     if not ba_inputs_unique:
-        logging.error("No images available for BrainAge prediction.")
+        logging.error("❌ No images available for BrainAge prediction.")
         wandb_log(run, {"error": "no_images_for_brainage"})
         wandb_finish(run)
         sys.exit(1)
 
+    prediction_start = time.time()
     ba_predictions: Dict[Path, float] = brain_age_predict(
         images=ba_inputs_unique,
         device_str=str(brainage_cfg["device"]).lower(),
         models_dir=models_dir.resolve(),
         folds=tuple(brainage_cfg.get("folds", [1,2,3,4,5])),
     )
+    prediction_time = time.time() - prediction_start
+
+    log.info(f"✅ Brain Age prediction completed in {prediction_time:.2f}s")
+    log.info(f"⚡ Average prediction time: {prediction_time/len(ba_inputs_unique):.3f}s per image")
+
+    # Log prediction statistics
+    if ba_predictions:
+        import numpy as np
+        pred_values = list(ba_predictions.values())
+        log.info(f"📊 Prediction statistics:")
+        log.info(f"  • Min Brain Age: {min(pred_values):.2f} years")
+        log.info(f"  • Max Brain Age: {max(pred_values):.2f} years") 
+        log.info(f"  • Mean Brain Age: {np.mean(pred_values):.2f} years")
+        log.info(f"  • Median Brain Age: {np.median(pred_values):.2f} years")
 
     # Reporting
     results_rows = []

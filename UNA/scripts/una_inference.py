@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 # UNA inference script
-
 import os
-import sysq
-import argparse
+import sys
 import torch
 from pathlib import Path
 
@@ -29,8 +27,8 @@ def run_una_inference(input_path, output_dir, model_path, win_size=[160, 160, 16
     print(f"Using device: {device}")
     
     # Set up paths
-    model_cfg = os.path.join(una_repo_path, 'cfgs/trainer/test/test.yaml')
-    gen_cfg = os.path.join(una_repo_path, 'cfgs/generator/test/test.yaml')
+    model_cfg = os.path.join(una_repo_path, '/mnt/c/Projects/thesis_project/brain_age_pred/UNA/cfgs/trainer/test/test.yaml')
+    gen_cfg = os.path.join(una_repo_path, '/mnt/c/Projects/thesis_project/brain_age_pred/UNA/cfgs/generator/test/test.yaml')
     
     # Create output directory
     output_dir = make_dir(output_dir, reset=False)
@@ -46,11 +44,11 @@ def run_una_inference(input_path, output_dir, model_path, win_size=[160, 160, 16
     # Read the original image
     _, img, _, aff = utils.prepare_image(input_path, win_size=win_size, im_only=True, device=device)
     
-    # Create flipped version (simplified approach)
+    # Create flipped version - save to output directory temporarily
     img_flip = torch.flip(img, dims=[0])
-    flip_path = os.path.join(output_dir, f"{base_name}_flip_reg2orig.nii.gz")
-    viewVolume(img_flip, aff, names=[f"{base_name}_flip_reg2orig"], save_dir=output_dir)
-    img_flip_reg2orig_path = os.path.join(output_dir, f"{base_name}_flip_reg2orig.nii.gz")
+    flip_name = f"{base_name}_flip_reg2orig"
+    viewVolume(img_flip, aff, names=[flip_name], save_dir=output_dir)
+    img_flip_reg2orig_path = os.path.join(output_dir, f"{flip_name}.nii.gz")
     
     # Read the flipped image back (to match UNA's pipeline)
     _, img_flip_reg2orig, _, _ = utils.prepare_image(img_flip_reg2orig_path, win_size=win_size, spacing=None, im_only=True, device=device)
@@ -59,24 +57,27 @@ def run_una_inference(input_path, output_dir, model_path, win_size=[160, 160, 16
     print("Running UNA inference...")
     outs = utils.evaluate_image(img, img_flip_reg2orig, ckp_path=model_path, device=device, gen_cfg=gen_cfg, model_cfg=model_cfg)
     
-    # Save results
-    for k, v in outs.items():
-        if isinstance(v, torch.Tensor):
-            viewVolume(v, aff, names=[f"out_{k}"], save_dir=output_dir)
+    # Save only the T1 result with the original filename
+    if 'T1' in outs and isinstance(outs['T1'], torch.Tensor):
+        viewVolume(outs['T1'], aff, names=[base_name], save_dir=output_dir)
+        print(f"T1 conversion saved as: {os.path.join(output_dir, input_name)}")
+    else:
+        print("Warning: No T1 output found in results")
+        print(f"Available outputs: {list(outs.keys())}")
     
-    print(f"Results saved to: {output_dir}")
+    # Clean up the temporary flip file
+    if os.path.exists(img_flip_reg2orig_path):
+        os.remove(img_flip_reg2orig_path)
+        print(f"Cleaned up temporary file: {img_flip_reg2orig_path}")
+    
     return outs
 
-def main():
-    parser = argparse.ArgumentParser(description="Run UNA inference on a brain MRI")
-    parser.add_argument("--input", type=str, required=True, help="Path to input image (.nii.gz)")
-    parser.add_argument("--output", type=str, default="./una_results", help="Output directory")
-    parser.add_argument("--model", type=str, default="./una.pth", help="Path to UNA model weights (una.pth)")
-    parser.add_argument("--win_size", type=int, nargs=3, default=[160, 160, 160], help="Window size for processing")
-    
-    args = parser.parse_args()
-    
-    run_una_inference(args.input, args.output, args.model, args.win_size)
-
 if __name__ == "__main__":
-    main()
+    # Hardcoded values - modify these as needed
+    input_path = "/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed_no_csf/IXI/IXI012-HH-1211-T2.nii.gz"  
+
+    output_dir = "/mnt/c/Projects/thesis_project/Data/una_results/IXI/"         # Output directory
+    model_path = "/mnt/c/Projects/thesis_project/brain_age_pred/UNA/assets/una-001.pth"            # Path to UNA model weights
+    win_size = [160, 160, 160]          # Window size for processing
+    
+    run_una_inference(input_path, output_dir, model_path, win_size)

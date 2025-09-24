@@ -439,7 +439,7 @@ def load_checkpoint(
 
 
     with pathmgr.open(path_to_checkpoint, "rb") as f:
-        checkpoint = torch.load(f, map_location="cpu") 
+        checkpoint = torch.load(f, map_location="cpu", weights_only=False) 
 
     for i, model in enumerate(models):
         ms = model
