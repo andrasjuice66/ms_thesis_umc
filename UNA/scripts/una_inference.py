@@ -2,7 +2,7 @@
 # UNA inference script
 
 import os
-import sys
+import sysq
 import argparse
 import torch
 from pathlib import Path

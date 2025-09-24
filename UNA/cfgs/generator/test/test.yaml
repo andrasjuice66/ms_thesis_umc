@@ -27,7 +27,7 @@ task:
   encode_anomaly: True
 
   T1: True
-  T2: False
+  T2: True
   FLAIR: False
   CT: False 
 
