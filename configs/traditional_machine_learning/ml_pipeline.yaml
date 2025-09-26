@@ -1,0 +1,65 @@
+# Tabular ML Configuration for Brain Age Prediction
+experiment_name: "tabular_brain_age_prediction"
+seed: 42
+use_wandb: true
+wandb_project: "brain-age-tabular"
+
+# Data configuration
+data:
+  train_csv: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels_tabular/train_labels.csv"
+  val_csv: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels_tabular/val_labels.csv"
+  test_csv: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels_tabular/test_labels.csv"
+  segmented_data_dir: "/mnt/c/Projects/thesis_project/Data/brain_age_segmented"
+
+# Preprocessing configuration
+preprocessing:
+  scaler: "standard"  # standard, robust, minmax
+  handle_missing: "median"  # median, mean, drop
+  feature_selection: false
+  feature_selection_k: 50
+
+# Model configuration
+models:
+  xgboost:
+    enabled: true
+    n_estimators: 1000
+    max_depth: 6
+    learning_rate: 0.1
+    subsample: 0.8
+    colsample_bytree: 0.8
+    
+  lightgbm:
+    enabled: true
+    n_estimators: 1000
+    max_depth: 6
+    learning_rate: 0.1
+    subsample: 0.8
+    colsample_bytree: 0.8
+    
+  random_forest:
+    enabled: true
+    n_estimators: 500
+    max_depth: 10
+    
+  ridge:
+    enabled: true
+    alpha: 1.0
+    
+  lasso:
+    enabled: true
+    alpha: 1.0
+
+# Training configuration
+training:
+  test_size: 0.2
+  val_size: 0.2
+  cv_folds: 5
+  optimize_hyperparams: true
+  n_trials: 100
+
+# Output configuration
+output:
+  output_dir: "output/tabular_ml"
+  save_models: true
+  save_predictions: true
+  generate_plots: true
