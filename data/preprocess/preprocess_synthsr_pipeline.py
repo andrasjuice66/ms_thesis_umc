@@ -341,7 +341,7 @@ def main(data_root, out_root):
 
 if __name__ == "__main__":
 
-    data_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed_no_csf/OpenNeuro/")
-    out_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_mp_rage/OpenNeuro/")
+    data_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed_no_csf/")
+    out_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_mp_rage/")
     main(data_root, out_root)
     
