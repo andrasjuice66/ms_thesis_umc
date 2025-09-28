@@ -11,6 +11,8 @@ import warnings
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Tuple, Optional, Union
+from time import perf_counter
+from contextlib import contextmanager
 import argparse
 
 import pandas as pd
@@ -36,6 +38,8 @@ import optuna
 import matplotlib.pyplot as plt
 import seaborn as sns
 import wandb
+from tqdm import tqdm
+import re
 
 # Add project root to path
 project_root = Path(__file__).resolve().parent.parent
@@ -58,6 +62,8 @@ class TabularBrainAgePredictor:
         self.encoders = {}
         self.feature_names = []
         self.results = {}
+        self.icv_resid_params = {}   # per-feature {col: (intercept, slope)} fit on train
+        self.eps = 1e-8              # small epsilon for divisions
         
         # Initialize logger
         self.logger = setup_logger(
@@ -75,59 +81,183 @@ class TabularBrainAgePredictor:
                 name=config.get('experiment_name'),
                 config=config
             )
+        # Run summary
+        tr_cfg = self.config.get('training', {})
+        enabled_models = [m for m, cfg in self.config.get('models', {}).items() if cfg.get('enabled', True)]
+        self.logger.info(
+            f"Experiment '{self.config.get('experiment_name')}' seed={self.config.get('seed', 42)} "
+            f"cv_folds={tr_cfg.get('cv_folds', 5)} n_trials={tr_cfg.get('n_trials', 100)} "
+            f"optimize={tr_cfg.get('optimize_hyperparams', False)} models={enabled_models}"
+        )
+
+    @contextmanager
+    def _log_section(self, title: str):
+        start = perf_counter()
+        self.logger.info(f"[start] {title}")
+        try:
+            yield
+        finally:
+            self.logger.info(f"[done]  {title} in {perf_counter() - start:.2f}s")
+
+    def _log_dataframe_overview(self, df: pd.DataFrame, name: str):
+        self.logger.info(f"{name}: shape={df.shape}, columns={len(df.columns)}")
+        if df.isnull().any().any():
+            na = df.isnull().sum()
+            na = na[na > 0].sort_values(ascending=False).head(10)
+            if not na.empty:
+                self.logger.info(f"{name}: top missing columns: {na.to_dict()}")
     
-    def load_segmentation_data(self) -> pd.DataFrame:
+    def _csv_line_from_index(self, idx: Union[int, np.integer]) -> int:
+        """Return 1-based CSV line number (including header) for a 0-based DataFrame index."""
+        try:
+            return int(idx) + 2
+        except Exception:
+            return -1
+
+    def _validate_labels(self, labels_df: pd.DataFrame, split_name: str, source_csv: str) -> pd.DataFrame:
+        """Validate labels and log precise issues with CSV line numbers and file path."""
+        required_cols = ['subject_id', 'age', 'sex', 'modality', 'dataset', 'image_path']
+        missing_cols = [c for c in required_cols if c not in labels_df.columns]
+        if missing_cols:
+            self.logger.error(f"[{split_name}] Labels file '{source_csv}' missing required columns: {missing_cols}")
+            raise ValueError(f"Missing columns in {source_csv}: {missing_cols}")
+
+        # Age numeric validation
+        age_num = pd.to_numeric(labels_df['age'], errors='coerce')
+        invalid_age = labels_df[age_num.isna()]
+        for idx, row in invalid_age.iterrows():
+            line_no = self._csv_line_from_index(idx)
+            self.logger.error(
+                f"[{split_name}] Labels '{source_csv}' line {line_no}: invalid age='{row.get('age')}' "
+                f"subject_id={row.get('subject_id')} image_path={row.get('image_path')}"
+            )
+        # Replace age with numeric and drop invalids
+        labels_df = labels_df.copy()
+        labels_df['age'] = age_num
+        if len(invalid_age) > 0:
+            self.logger.warning(f"[{split_name}] Dropping {len(invalid_age)} rows with invalid age from '{source_csv}'")
+            labels_df = labels_df[labels_df['age'].notna()]
+
+        # Age plausible range (optional but helpful)
+        out_of_range = labels_df[(labels_df['age'] < 0) | (labels_df['age'] > 120)]
+        for idx, row in out_of_range.iterrows():
+            line_no = self._csv_line_from_index(idx)
+            self.logger.warning(
+                f"[{split_name}] Labels '{source_csv}' line {line_no}: implausible age={row.get('age')} "
+                f"subject_id={row.get('subject_id')} image_path={row.get('image_path')}"
+            )
+
+        # image_path presence
+        missing_path = labels_df[labels_df['image_path'].isna() | (labels_df['image_path'].astype(str).str.strip() == '')]
+        for idx, row in missing_path.iterrows():
+            line_no = self._csv_line_from_index(idx)
+            self.logger.error(
+                f"[{split_name}] Labels '{source_csv}' line {line_no}: missing image_path "
+                f"subject_id={row.get('subject_id')}"
+            )
+        if len(missing_path) > 0:
+            self.logger.warning(f"[{split_name}] Dropping {len(missing_path)} rows with missing image_path from '{source_csv}'")
+            labels_df = labels_df[~labels_df.index.isin(missing_path.index)]
+
+        # Duplicates
+        dup_mask = labels_df.duplicated(subset=['image_path'], keep=False)
+        dups = labels_df[dup_mask]
+        if len(dups) > 0:
+            sample = min(10, len(dups))
+            self.logger.warning(f"[{split_name}] Found {len(dups)} duplicate image_path rows in '{source_csv}'. Showing first {sample}:")
+            for idx, row in dups.head(sample).iterrows():
+                line_no = self._csv_line_from_index(idx)
+                self.logger.warning(
+                    f"  line {line_no}: subject_id={row.get('subject_id')} image_path={row.get('image_path')}"
+                )
+
+        # Missing sex (will be imputed later but log explicitly)
+        missing_sex = labels_df[labels_df['sex'].isna() | (labels_df['sex'].astype(str).str.strip() == '')]
+        for idx, row in missing_sex.iterrows():
+            line_no = self._csv_line_from_index(idx)
+            self.logger.warning(
+                f"[{split_name}] Labels '{source_csv}' line {line_no}: missing sex subject_id={row.get('subject_id')}"
+            )
+
+        return labels_df
+    
+    def load_segmentation_data(self) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         """
-        Load and combine all CSV segmentation files with demographics.
+        Load CSV labels for train/val/test and join with per-image segmentation features.
+        Returns three dataframes: train_df, val_df, test_df.
         """
         self.logger.info("Loading segmentation data...")
-        
-        # Load demographic data
-        train_df = pd.read_csv(self.config['data']['train_csv'])
-        val_df = pd.read_csv(self.config['data']['val_csv'])
-        test_df = pd.read_csv(self.config['data']['test_csv'])
-        
-        # Combine all splits for now - we'll re-split later
-        demo_df = pd.concat([train_df, val_df, test_df], ignore_index=True)
-        
-        self.logger.info(f"Loaded {len(demo_df)} demographic records")
-        
-        # Load segmentation features
+
+        # Load label CSVs
+        with self._log_section("Read label CSVs"):
+            train_csv = self.config['data']['train_csv']
+            val_csv = self.config['data']['val_csv']
+            test_csv = self.config['data']['test_csv']
+            labels_train = pd.read_csv(train_csv)
+            labels_val = pd.read_csv(val_csv)
+            labels_test = pd.read_csv(test_csv)
+
+        # Validate labels with detailed logs
+        labels_train = self._validate_labels(labels_train, 'train', train_csv)
+        labels_val = self._validate_labels(labels_val, 'val', val_csv)
+        labels_test = self._validate_labels(labels_test, 'test', test_csv)
+
+        self._log_dataframe_overview(labels_train, "labels_train")
+        self._log_dataframe_overview(labels_val, "labels_val")
+        self._log_dataframe_overview(labels_test, "labels_test")
+
         seg_data_dir = Path(self.config['data']['segmented_data_dir'])
-        all_seg_data = []
-        
-        for _, row in demo_df.iterrows():
-            # Construct path to segmentation CSV
-            image_path = row['image_path']
-            # Convert .nii.gz to .csv
-            seg_csv_path = seg_data_dir / (image_path.replace('.nii.gz', '.csv'))
-            
-            if seg_csv_path.exists():
-                try:
-                    seg_df = pd.read_csv(seg_csv_path)
-                    if len(seg_df) > 0:
-                        # Add demographics to segmentation data
-                        seg_row = seg_df.iloc[0].to_dict()  # First row contains the data
-                        seg_row.update({
-                            'subject_id': row['subject_id'],
-                            'age': row['age'],
-                            'sex': row['sex'],
-                            'modality': row['modality'],
-                            'dataset': row['dataset'],
-                            'image_path': row['image_path']
-                        })
-                        all_seg_data.append(seg_row)
-                except Exception as e:
-                    self.logger.warning(f"Failed to load {seg_csv_path}: {e}")
-            else:
-                self.logger.warning(f"Segmentation file not found: {seg_csv_path}")
-        
-        combined_df = pd.DataFrame(all_seg_data)
-        self.logger.info(f"Successfully loaded {len(combined_df)} samples with segmentation features")
-        
-        return combined_df
+
+        def load_split(labels_df: pd.DataFrame, split_name: str) -> pd.DataFrame:
+            rows: List[dict] = []
+            missing = 0
+            failed = 0
+            with self._log_section(f"Load segmentation CSVs [{split_name}]"):
+                for i, (_, row) in enumerate(tqdm(labels_df.iterrows(), total=len(labels_df), desc=f"seg {split_name}", leave=False)):
+                    image_path = row['image_path']
+                    seg_csv_path = seg_data_dir / (image_path.replace('.nii.gz', '.csv'))
+                    if seg_csv_path.exists():
+                        try:
+                            seg_df = pd.read_csv(seg_csv_path)
+                            if len(seg_df) > 0:
+                                seg_row = seg_df.iloc[0].to_dict()
+                                seg_row.update({
+                                    'subject_id': row['subject_id'],
+                                    'age': row['age'],
+                                    'sex': row['sex'],
+                                    'modality': row['modality'],
+                                    'dataset': row['dataset'],
+                                    'image_path': row['image_path']
+                                })
+                                rows.append(seg_row)
+                        except Exception as e:
+                            failed += 1
+                            csv_line = self._csv_line_from_index(i)
+                            self.logger.warning(f"[{split_name}] Failed to load {seg_csv_path} (from labels line {csv_line}): {e}")
+                    else:
+                        missing += 1
+                        if missing <= 10:
+                            csv_line = self._csv_line_from_index(i)
+                            self.logger.warning(f"[{split_name}] Segmentation file not found: {seg_csv_path} (labels line {csv_line})")
+            if missing > 10:
+                self.logger.warning(f"[{split_name}] {missing} segmentation CSVs missing (first 10 shown above)")
+            if failed > 0:
+                self.logger.warning(f"[{split_name}] {failed} segmentation CSVs failed to read")
+            df = pd.DataFrame(rows)
+            self._log_dataframe_overview(df, f"features_{split_name}")
+            self.logger.info(f"[{split_name}] loaded {len(df)} samples with segmentation features")
+            return df
+
+        train_df = load_split(labels_train, 'train')
+        val_df = load_split(labels_val, 'val')
+        test_df = load_split(labels_test, 'test')
+
+        self.logger.info(
+            f"Loaded splits -> train:{len(train_df)} val:{len(val_df)} test:{len(test_df)}"
+        )
+        return train_df, val_df, test_df
     
-    def preprocess_features(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Series]:
+    def preprocess_features(self, df: pd.DataFrame, split_name: str = 'train') -> Tuple[pd.DataFrame, pd.Series]:
         """
         Preprocess features including scaling and encoding.
         """
@@ -135,127 +265,376 @@ class TabularBrainAgePredictor:
         
         # Separate features and target
         target_col = 'age'
-        exclude_cols = ['subject_id', 'image_path', 'age', 'subject']
+        exclude_cols = ['subject_id', 'image_path', 'age', 'subject', 'sex', 'modality', 'dataset']
         
         # Get volumetric features (all numeric columns except metadata)
         numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
         volumetric_features = [col for col in numeric_cols if col not in exclude_cols]
         
-        # Get categorical features
-        categorical_features = ['sex', 'modality', 'dataset']
+        # Remove categorical features - only use segmentation features
+        categorical_features = []  # Empty list - no categorical features from labels
         
         self.logger.info(f"Found {len(volumetric_features)} volumetric features")
-        self.logger.info(f"Found {len(categorical_features)} categorical features")
+        self.logger.info(f"Using only segmentation features, excluding label metadata")
         
-        # Create feature matrix
-        X = df[volumetric_features + categorical_features].copy()
+        # Create feature matrix - only volumetric features
+        X = df[volumetric_features].copy()
         y = df[target_col].copy()
         
-        # Handle missing values
+        # Handle missing values - only numeric imputation needed
+        self.logger.info("Imputing missing: numeric=median")
         X[volumetric_features] = X[volumetric_features].fillna(X[volumetric_features].median())
-        X[categorical_features] = X[categorical_features].fillna('unknown')
         
-        # Encode categorical variables
-        for col in categorical_features:
-            if col not in self.encoders:
-                self.encoders[col] = LabelEncoder()
-                X[col] = self.encoders[col].fit_transform(X[col])
-            else:
-                X[col] = self.encoders[col].transform(X[col])
+        # No categorical encoding needed since we're not using categorical features
         
         # Feature engineering
-        X = self._engineer_features(X, volumetric_features)
-        
-        # Store feature names
-        self.feature_names = X.columns.tolist()
+        with self._log_section("Feature engineering"):
+            X = self._engineer_features(X, volumetric_features, split_name=split_name)  
+                  
+        # Store feature names if not already set (train first)
+        if not self.feature_names:
+            self.feature_names = X.columns.tolist()
+            self.logger.info(f"Feature count after preprocessing (train): {len(self.feature_names)}")
         
         return X, y
+
+    def _align_features(self, X: pd.DataFrame) -> pd.DataFrame:
+        if not self.feature_names:
+            return X
+        return X.reindex(columns=self.feature_names, fill_value=0)
     
-    def _engineer_features(self, X: pd.DataFrame, volumetric_features: List[str]) -> pd.DataFrame:
+    def _engineer_features(self, X: pd.DataFrame, volumetric_features: List[str], split_name: str = 'train') -> pd.DataFrame:
         """
-        Create additional engineered features.
+        Create engineered features:
+        - ICV normalization and residualization (fit on train, apply to val/test)
+        - Left-right bilateral sums, differences, asymmetries
+        - Tissue/system composites (cortex, WM, subcortex, ventricles, CSF, basal ganglia, limbic)
+        - Ratios capturing atrophy patterns
+        - Limited nonlinearities (log1p for skewed ratios; a few squared terms and interactions)
         """
         self.logger.info("Engineering additional features...")
+
+        df = X.copy()
+        cols_lower = {c.lower(): c for c in df.columns}
+
+        # Identify ICV column (robust to naming)
+        icv_aliases = {
+            'total intracranial',
+            'intracranial volume',
+            'estimated total intracranial volume',
+            'total_intracranial',
+            'etiv'
+        }
+        icv_col = None
+        for lc, orig in cols_lower.items():
+            if lc in icv_aliases:
+                icv_col = orig
+                break
+
+        # Helper functions
+        def has_col(name: str) -> bool:
+            return name in df.columns
+
+        def pick(name_variants: List[str]) -> Optional[str]:
+            """Pick the first existing column from a list of variants."""
+            for v in name_variants:
+                if v in df.columns:
+                    return v
+            return None
+
+        def safe_div(a: pd.Series, b: pd.Series) -> pd.Series:
+            return a / (b.replace(0, np.nan) + self.eps)
+
+        def regex_strip_side(name: str) -> str:
+            """Remove leading 'left ' or 'right ' (case-insensitive) as whole word."""
+            return re.sub(r'^(left|right)\s+', '', name, flags=re.IGNORECASE)
+
+        # 1) ICV normalization
+        if icv_col is not None:
+            base_feats = [c for c in volumetric_features if c != icv_col and c in df.columns]
+            for col in base_feats:
+                df[f'{col}_nicv'] = safe_div(df[col], df[icv_col])
+
+        # 2) ICV residualization (fit on train only)
+        #    For each raw region f: fit f ~ a + b*ICV on train; store (a,b) and create f_icv_resid = f - (a + b*ICV)
+        if icv_col is not None:
+            base_feats = [c for c in volumetric_features if c != icv_col and c in df.columns]
+            icv = df[icv_col]
+
+            if split_name == 'train':
+                self.icv_resid_params = {}
+                icv_mean = icv.mean()
+                icv_var = icv.var(ddof=0) + self.eps
+
+                for col in base_feats:
+                    y = df[col]
+                    cov = ((y - y.mean()) * (icv - icv_mean)).mean()
+                    b = cov / icv_var
+                    a = y.mean() - b * icv_mean
+                    self.icv_resid_params[col] = (float(a), float(b))
+                    df[f'{col}_icv_resid'] = y - (a + b * icv)
+            else:
+                # val/test: apply stored params if available
+                for col in base_feats:
+                    if col in self.icv_resid_params:
+                        a, b = self.icv_resid_params[col]
+                        df[f'{col}_icv_resid'] = df[col] - (a + b * df[icv_col])
+
+        # 3) Left-right bilateral/Asymmetry features
+        #    Match left/right as a leading token only, to avoid 'lateral' false matches.
+        all_cols = df.columns.tolist()
+        left_cols = [c for c in all_cols if re.match(r'^(?i)left\s+', c)]
+        # map by base name
+        base_to_pair = {}
+        for lc in left_cols:
+            base = regex_strip_side(lc).lower()
+            # find a right column with same base
+            candidates = [c for c in all_cols if re.match(r'^(?i)right\s+', c) and regex_strip_side(c).lower() == base]
+            if candidates:
+                rc = candidates[0]
+                base_to_pair[lc] = rc
+
+        for lcol, rcol in base_to_pair.items():
+            # Sums/Diffs/Asymmetry on raw
+            df[f'{lcol}_bilateral'] = df[lcol] + df[rcol]
+            df[f'{lcol}_diff'] = df[lcol] - df[rcol]
+            df[f'{lcol}_asymmetry'] = safe_div(df[lcol] - df[rcol], df[lcol] + df[rcol])
+
+            # Also on nicv if present
+            if icv_col is not None:
+                ln = f'{lcol}_nicv'
+                rn = f'{rcol}_nicv'
+                if ln in df.columns and rn in df.columns:
+                    df[f'{lcol}_bilateral_nicv'] = df[ln] + df[rn]
+                    df[f'{lcol}_asymmetry_nicv'] = safe_div(df[ln] - df[rn], df[ln] + df[rn])
+
+            # Also on residuals if present
+            lr = f'{lcol}_icv_resid'
+            rr = f'{rcol}_icv_resid'
+            if lr in df.columns and rr in df.columns:
+                df[f'{lcol}_bilateral_resid'] = df[lr] + df[rr]
+                df[f'{lcol}_asymmetry_resid'] = safe_div(df[lr] - df[rr], df[lr] + df[rr])
+
+        # 4) Tissue/system composites
+        # Cerebral cortex vs Cerebellum cortex
+        cortex_cerebral = [c for c in all_cols if 'cerebral cortex' in c.lower()]
+        cortex_cerebellum = [c for c in all_cols if 'cerebellum cortex' in c.lower()]
+        wm_cerebral = [c for c in all_cols if 'cerebral white matter' in c.lower()]
+        wm_cerebellum = [c for c in all_cols if 'cerebellum white matter' in c.lower()]
+
+        # Subcortical nuclei
+        sub_tokens = ['thalamus', 'caudate', 'putamen', 'pallidum', 'hippocampus', 'amygdala', 'accumbens', 'ventral dc']
+        subcort_cols = [c for c in all_cols if any(t in c.lower() for t in sub_tokens)]
+
+        # Ventricles and CSF
+        lat_L = pick([c for c in all_cols if c.lower() == 'left lateral ventricle'])
+        lat_R = pick([c for c in all_cols if c.lower() == 'right lateral ventricle'])
+        inf_lat_L = pick([c for c in all_cols if c.lower() == 'left inferior lateral ventricle'])
+        inf_lat_R = pick([c for c in all_cols if c.lower() == 'right inferior lateral ventricle'])
+        third = pick(['3rd ventricle', 'third ventricle'])
+        fourth = pick(['4th ventricle', 'fourth ventricle'])
+        csf_col = pick(['csf'])
+
+        # Totals
+        if cortex_cerebral:
+            df['cortex_total'] = df[cortex_cerebral].sum(axis=1)
+        if cortex_cerebellum:
+            df['cerebellum_cortex_total'] = df[cortex_cerebellum].sum(axis=1)
+        if wm_cerebral:
+            df['cerebral_wm_total'] = df[wm_cerebral].sum(axis=1)
+        if wm_cerebellum:
+            df['cerebellum_wm_total'] = df[wm_cerebellum].sum(axis=1)
+
+        if subcort_cols:
+            df['gm_subcort_total'] = df[subcort_cols].sum(axis=1)
+
+        if 'cortex_total' in df.columns and 'gm_subcort_total' in df.columns and 'cerebellum_cortex_total' in df.columns:
+            df['gm_total'] = df['cortex_total'] + df['gm_subcort_total'] + df['cerebellum_cortex_total']
+
+        if 'cerebral_wm_total' in df.columns and 'cerebellum_wm_total' in df.columns:
+            df['wm_total'] = df['cerebral_wm_total'] + df['cerebellum_wm_total']
+
+        # Ventricular totals
+        lat_total = None
+        if lat_L and lat_R:
+            df['lat_ventricles_total'] = df[lat_L] + df[lat_R]
+            lat_total = 'lat_ventricles_total'
+        inf_lat_total = None
+        if inf_lat_L and inf_lat_R:
+            df['inf_lat_ventricles_total'] = df[inf_lat_L] + df[inf_lat_R]
+            inf_lat_total = 'inf_lat_ventricles_total'
+
+        v_parts = []
+        for v in [lat_total, inf_lat_total, third, fourth]:
+            if v and has_col(v):
+                v_parts.append(v)
+            elif isinstance(v, str) and v in df.columns:
+                v_parts.append(v)
+        if v_parts:
+            df['ventricles_total'] = df[v_parts].sum(axis=1)
+
+        if csf_col and 'ventricles_total' in df.columns:
+            df['csf_total'] = df[csf_col] + df['ventricles_total']
+
+        # A few system composites
+        # Basal ganglia: caudate + putamen + pallidum + accumbens (bilateral, so summing all columns that match tokens)
+        bg_cols = [c for c in all_cols if any(t in c.lower() for t in ['caudate', 'putamen', 'pallidum', 'accumbens'])]
+        if bg_cols:
+            df['basal_ganglia_total'] = df[bg_cols].sum(axis=1)
+        limbic_cols = [c for c in all_cols if any(t in c.lower() for t in ['hippocampus', 'amygdala'])]
+        if limbic_cols:
+            df['limbic_total'] = df[limbic_cols].sum(axis=1)
+        thal_cols = [c for c in all_cols if 'thalamus' in c.lower()]
+        if thal_cols:
+            df['thalamus_total'] = df[thal_cols].sum(axis=1)
+
+        # 5) Ratios and biologically motivated markers
+        if icv_col is not None:
+            for name in ['cortex_total', 'wm_total', 'ventricles_total', 'csf_total', 'limbic_total', 'thalamus_total']:
+                if name in df.columns:
+                    df[f'{name}_nicv'] = safe_div(df[name], df[icv_col])
+
+            # Additional ratios
+            if 'hippocampus' in ' '.join(all_cols).lower():
+                hip_cols = [c for c in all_cols if 'hippocampus' in c.lower()]
+                df['hippocampus_total'] = df[hip_cols].sum(axis=1)
+                df['hippocampus_total_nicv'] = safe_div(df['hippocampus_total'], df[icv_col])
+
+            if 'cortex_total' in df.columns and 'wm_total' in df.columns:
+                df['cortex_to_wm'] = safe_div(df['cortex_total'], df['wm_total'])
+
+            if 'gm_subcort_total' in df.columns and 'cortex_total' in df.columns:
+                df['subcortex_to_cortex'] = safe_div(df['gm_subcort_total'], df['cortex_total'])
+
+            if 'thalamus_total' in df.columns and 'cortex_total' in df.columns:
+                df['thalamus_to_cortex'] = safe_div(df['thalamus_total'], df['cortex_total'])
+
+            if 'basal_ganglia_total' in df.columns and 'cortex_total' in df.columns:
+                df['basal_ganglia_to_cortex'] = safe_div(df['basal_ganglia_total'], df['cortex_total'])
+
+            # Ventricular expansion markers
+            brain_parenchyma = None
+            if 'cortex_total' in df.columns and 'wm_total' in df.columns:
+                df['brain_parenchyma_basic'] = df['cortex_total'] + df['wm_total']
+                brain_parenchyma = 'brain_parenchyma_basic'
+            if 'ventricles_total' in df.columns and brain_parenchyma:
+                df['ventricles_to_parenchyma'] = safe_div(df['ventricles_total'], df[brain_parenchyma])
+
+            # hippocampus/cortex
+            if 'hippocampus_total' in df.columns and 'cortex_total' in df.columns:
+                df['hippocampus_to_cortex'] = safe_div(df['hippocampus_total'], df['cortex_total'])
+
+        # 6) Limited nonlinearities (keep small to avoid overfitting)
+        # log1p on skewed ratios
+        for base in ['ventricles_total_nicv', 'csf_total_nicv', 'ventricles_to_parenchyma']:
+            if base in df.columns:
+                df[f'log1p_{base}'] = np.log1p(df[base].clip(lower=0))
+
+        # Quadratic terms
+        for base in ['cortex_total_nicv', 'wm_total_nicv', 'hippocampus_total_nicv', 'ventricles_total_nicv']:
+            if base in df.columns:
+                df[f'{base}__sq'] = df[base] ** 2
+
+        # A few interactions
+        inter_pairs = [
+            ('ventricles_total_nicv', 'cortex_total_nicv'),
+            ('hippocampus_total_nicv', 'cortex_total_nicv'),
+            ('cortex_total_nicv', 'wm_total_nicv'),
+        ]
+        for a, b in inter_pairs:
+            if a in df.columns and b in df.columns:
+                df[f'{a}__x__{b}'] = df[a] * df[b]
+
+        # 7) Keep existing simpler features (if not already created)
+        # Cortical/WM/Subcortical totals (broad)
+        cortical_regions = [col for col in volumetric_features if 'cortex' in col.lower() and col in df.columns]
+        white_matter_regions = [col for col in volumetric_features if 'white matter' in col.lower() and col in df.columns]
+        subcortical_regions = [col for col in volumetric_features if any(region in col.lower() for region in ['thalamus', 'caudate', 'putamen', 'pallidum', 'hippocampus', 'amygdala']) and col in df.columns]
+
+        if cortical_regions and 'total_cortical' not in df.columns:
+            df['total_cortical'] = df[cortical_regions].sum(axis=1)
+        if white_matter_regions and 'total_white_matter' not in df.columns:
+            df['total_white_matter'] = df[white_matter_regions].sum(axis=1)
+        if subcortical_regions and 'total_subcortical' not in df.columns:
+            df['total_subcortical'] = df[subcortical_regions].sum(axis=1)
+
+        # csf_ratio (legacy)
+        if icv_col is not None and csf_col:
+            df['csf_ratio'] = safe_div(df[csf_col], df[icv_col])
+
+        self.logger.info(f"Engineered features -> shape now: {df.shape[1]} columns")
+        return df
         
-        # Calculate ratios and derived features
-        if 'total intracranial' in volumetric_features:
-            # Normalize all volumes by total intracranial volume
-            for col in volumetric_features:
-                if col != 'total intracranial' and 'total intracranial' in X.columns:
-                    X[f'{col}_normalized'] = X[col] / (X['total intracranial'] + 1e-8)
-        
-        # Left-right asymmetry features
-        left_features = [col for col in volumetric_features if 'left' in col.lower()]
-        for left_col in left_features:
-            right_col = left_col.replace('left', 'right')
-            if right_col in volumetric_features:
-                # Asymmetry index: (L - R) / (L + R)
-                X[f'{left_col}_asymmetry'] = (X[left_col] - X[right_col]) / (X[left_col] + X[right_col] + 1e-8)
-                # Total bilateral volume
-                X[f'{left_col}_bilateral'] = X[left_col] + X[right_col]
-        
-        # Regional groupings
-        cortical_regions = [col for col in volumetric_features if 'cortex' in col.lower()]
-        white_matter_regions = [col for col in volumetric_features if 'white matter' in col.lower()]
-        subcortical_regions = [col for col in volumetric_features if any(region in col.lower() for region in ['thalamus', 'caudate', 'putamen', 'pallidum', 'hippocampus', 'amygdala'])]
-        
-        if cortical_regions:
-            X['total_cortical'] = X[cortical_regions].sum(axis=1)
-        if white_matter_regions:
-            X['total_white_matter'] = X[white_matter_regions].sum(axis=1)
-        if subcortical_regions:
-            X['total_subcortical'] = X[subcortical_regions].sum(axis=1)
-        
-        # Age-related ratios
-        if 'csf' in volumetric_features and 'total intracranial' in volumetric_features:
-            X['csf_ratio'] = X['csf'] / (X['total intracranial'] + 1e-8)
-        
-        return X
-    
     def setup_models(self) -> Dict:
         """
         Initialize all models to be tested.
         """
         self.logger.info("Setting up models...")
         
-        models = {
-            'xgboost': xgb.XGBRegressor(
-                n_estimators=1000,
-                max_depth=6,
-                learning_rate=0.1,
-                subsample=0.8,
-                colsample_bytree=0.8,
-                random_state=42,
-                n_jobs=-1
-            ),
-            'lightgbm': lgb.LGBMRegressor(
-                n_estimators=1000,
-                max_depth=6,
-                learning_rate=0.1,
-                subsample=0.8,
-                colsample_bytree=0.8,
-                random_state=42,
+        mcfg = self.config.get('models', {})
+
+        models: Dict[str, object] = {}
+
+        # XGBoost
+        xgb_cfg = mcfg.get('xgboost', {})
+        if xgb_cfg.get('enabled', True):
+            models['xgboost'] = xgb.XGBRegressor(
+                n_estimators=xgb_cfg.get('n_estimators', 1000),
+                max_depth=xgb_cfg.get('max_depth', 6),
+                learning_rate=xgb_cfg.get('learning_rate', 0.1),
+                subsample=xgb_cfg.get('subsample', 0.8),
+                colsample_bytree=xgb_cfg.get('colsample_bytree', 0.8),
+                random_state=self.config.get('seed', 42),
+                n_jobs=-1,
+                tree_method=xgb_cfg.get('tree_method', 'hist')
+            )
+
+        # LightGBM
+        lgb_cfg = mcfg.get('lightgbm', {})
+        if lgb_cfg.get('enabled', True):
+            models['lightgbm'] = lgb.LGBMRegressor(
+                n_estimators=lgb_cfg.get('n_estimators', 1000),
+                max_depth=lgb_cfg.get('max_depth', 6),
+                learning_rate=lgb_cfg.get('learning_rate', 0.1),
+                subsample=lgb_cfg.get('subsample', 0.8),
+                colsample_bytree=lgb_cfg.get('colsample_bytree', 0.8),
+                random_state=self.config.get('seed', 42),
                 n_jobs=-1,
                 verbose=-1
-            ),
-            'random_forest': RandomForestRegressor(
-                n_estimators=500,
-                max_depth=10,
-                random_state=42,
+            )
+
+        # Random Forest
+        rf_cfg = mcfg.get('random_forest', {})
+        if rf_cfg.get('enabled', True):
+            models['random_forest'] = RandomForestRegressor(
+                n_estimators=rf_cfg.get('n_estimators', 500),
+                max_depth=rf_cfg.get('max_depth', 10),
+                random_state=self.config.get('seed', 42),
                 n_jobs=-1
-            ),
-            'extra_trees': ExtraTreesRegressor(
-                n_estimators=500,
-                max_depth=10,
-                random_state=42,
-                n_jobs=-1
-            ),
-            'ridge': Ridge(alpha=1.0),
-            'lasso': Lasso(alpha=1.0),
-            'elastic_net': ElasticNet(alpha=1.0, l1_ratio=0.5),
-            'svr': SVR(kernel='rbf', C=1.0, epsilon=0.1)
-        }
-        
+            )
+
+        # Extra Trees (always available; no YAML toggle provided in current config)
+        models['extra_trees'] = ExtraTreesRegressor(
+            n_estimators=500,
+            max_depth=10,
+            random_state=self.config.get('seed', 42),
+            n_jobs=-1
+        )
+
+        # Ridge
+        ridge_cfg = mcfg.get('ridge', {})
+        if ridge_cfg.get('enabled', True):
+            models['ridge'] = Ridge(alpha=ridge_cfg.get('alpha', 1.0), random_state=self.config.get('seed', 42))
+
+        # Lasso
+        lasso_cfg = mcfg.get('lasso', {})
+        if lasso_cfg.get('enabled', True):
+            models['lasso'] = Lasso(alpha=lasso_cfg.get('alpha', 1.0), random_state=self.config.get('seed', 42))
+
+        # ElasticNet and SVR are included by default
+        models['elastic_net'] = ElasticNet(alpha=1.0, l1_ratio=0.5, random_state=self.config.get('seed', 42))
+        models['svr'] = SVR(kernel='rbf', C=1.0, epsilon=0.1)
+
         return models
     
     def optimize_hyperparameters(self, X: pd.DataFrame, y: pd.Series, model_name: str) -> Dict:
@@ -263,70 +642,146 @@ class TabularBrainAgePredictor:
         Optimize hyperparameters using Optuna.
         """
         self.logger.info(f"Optimizing hyperparameters for {model_name}...")
-        
+
+        cv_folds = self.config.get('training', {}).get('cv_folds', 5)
+        n_trials = self.config.get('training', {}).get('n_trials', 100)
+        seed = self.config.get('seed', 42)
+
         def objective(trial):
             if model_name == 'xgboost':
                 params = {
-                    'n_estimators': trial.suggest_int('n_estimators', 100, 2000),
-                    'max_depth': trial.suggest_int('max_depth', 3, 10),
-                    'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3),
+                    'n_estimators': trial.suggest_int('n_estimators', 300, 5000, step=100),
+                    'max_depth': trial.suggest_int('max_depth', 3, 12),
+                    'learning_rate': trial.suggest_float('learning_rate', 0.005, 0.3, log=True),
                     'subsample': trial.suggest_float('subsample', 0.6, 1.0),
-                    'colsample_bytree': trial.suggest_float('colsample_bytree', 0.6, 1.0),
-                    'reg_alpha': trial.suggest_float('reg_alpha', 0, 10),
-                    'reg_lambda': trial.suggest_float('reg_lambda', 0, 10),
+                    'colsample_bytree': trial.suggest_float('colsample_bytree', 0.5, 1.0),
+                    'min_child_weight': trial.suggest_float('min_child_weight', 1e-3, 10.0, log=True),
+                    'gamma': trial.suggest_float('gamma', 0.0, 10.0),
+                    'reg_alpha': trial.suggest_float('reg_alpha', 1e-8, 10.0, log=True),
+                    'reg_lambda': trial.suggest_float('reg_lambda', 1e-8, 10.0, log=True),
+                    'tree_method': 'hist',
+                    'random_state': seed,
+                    'n_jobs': -1,
                 }
-                model = xgb.XGBRegressor(**params, random_state=42, n_jobs=-1)
-                
+                model = xgb.XGBRegressor(**params)
+
             elif model_name == 'lightgbm':
                 params = {
-                    'n_estimators': trial.suggest_int('n_estimators', 100, 2000),
-                    'max_depth': trial.suggest_int('max_depth', 3, 10),
-                    'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3),
-                    'subsample': trial.suggest_float('subsample', 0.6, 1.0),
-                    'colsample_bytree': trial.suggest_float('colsample_bytree', 0.6, 1.0),
-                    'reg_alpha': trial.suggest_float('reg_alpha', 0, 10),
-                    'reg_lambda': trial.suggest_float('reg_lambda', 0, 10),
+                    'n_estimators': trial.suggest_int('n_estimators', 300, 5000, step=100),
+                    'learning_rate': trial.suggest_float('learning_rate', 0.005, 0.3, log=True),
+                    'num_leaves': trial.suggest_int('num_leaves', 16, 512, log=True),
+                    'min_child_samples': trial.suggest_int('min_child_samples', 5, 100),
+                    'subsample': trial.suggest_float('subsample', 0.6, 1.0),            # bagging_fraction
+                    'colsample_bytree': trial.suggest_float('colsample_bytree', 0.5, 1.0),  # feature_fraction
+                    'reg_alpha': trial.suggest_float('reg_alpha', 1e-8, 10.0, log=True),
+                    'reg_lambda': trial.suggest_float('reg_lambda', 1e-8, 10.0, log=True),
+                    'min_split_gain': trial.suggest_float('min_split_gain', 0.0, 1.0),
+                    'random_state': seed,
+                    'n_jobs': -1,
                 }
-                model = lgb.LGBMRegressor(**params, random_state=42, n_jobs=-1, verbose=-1)
-                
+                model = lgb.LGBMRegressor(**params, verbose=-1)
+
             elif model_name == 'random_forest':
                 params = {
-                    'n_estimators': trial.suggest_int('n_estimators', 100, 1000),
-                    'max_depth': trial.suggest_int('max_depth', 5, 20),
+                    'n_estimators': trial.suggest_int('n_estimators', 200, 2000, step=100),
+                    'max_depth': trial.suggest_int('max_depth', 5, 50),
                     'min_samples_split': trial.suggest_int('min_samples_split', 2, 20),
                     'min_samples_leaf': trial.suggest_int('min_samples_leaf', 1, 10),
+                    'max_features': trial.suggest_categorical('max_features', ['auto', 'sqrt', 'log2', 0.3, 0.5, 0.8]),
+                    'bootstrap': trial.suggest_categorical('bootstrap', [True, False]),
+                    'random_state': seed,
+                    'n_jobs': -1,
                 }
-                model = RandomForestRegressor(**params, random_state=42, n_jobs=-1)
-            
-            # Cross-validation score
+                model = RandomForestRegressor(**params)
+
+            elif model_name == 'extra_trees':
+                params = {
+                    'n_estimators': trial.suggest_int('n_estimators', 200, 2000, step=100),
+                    'max_depth': trial.suggest_int('max_depth', 5, 50),
+                    'min_samples_split': trial.suggest_int('min_samples_split', 2, 20),
+                    'min_samples_leaf': trial.suggest_int('min_samples_leaf', 1, 10),
+                    'max_features': trial.suggest_categorical('max_features', ['auto', 'sqrt', 'log2', 0.3, 0.5, 0.8]),
+                    'random_state': seed,
+                    'n_jobs': -1,
+                }
+                model = ExtraTreesRegressor(**params)
+
+            elif model_name == 'svr':
+                params = {
+                    'C': trial.suggest_float('C', 0.1, 100.0, log=True),
+                    'epsilon': trial.suggest_float('epsilon', 0.01, 1.0, log=True),
+                    'gamma': trial.suggest_float('gamma', 1e-4, 1.0, log=True),
+                    'kernel': 'rbf'
+                }
+                model = SVR(**params)
+
+            elif model_name == 'ridge':
+                params = {
+                    'alpha': trial.suggest_float('alpha', 1e-5, 100.0, log=True),
+                    'random_state': seed
+                }
+                model = Ridge(**params)
+
+            elif model_name == 'lasso':
+                params = {
+                    'alpha': trial.suggest_float('alpha', 1e-5, 10.0, log=True),
+                    'random_state': seed
+                }
+                model = Lasso(**params)
+
+            elif model_name == 'elastic_net':
+                params = {
+                    'alpha': trial.suggest_float('alpha', 1e-5, 10.0, log=True),
+                    'l1_ratio': trial.suggest_float('l1_ratio', 0.0, 1.0),
+                    'random_state': seed
+                }
+                model = ElasticNet(**params)
+
+            else:
+                raise ValueError(f"Unknown model for optimization: {model_name}")
+
             cv_scores = cross_val_score(
-                model, X, y, 
-                cv=KFold(n_splits=5, shuffle=True, random_state=42),
+                model, X, y,
+                cv=KFold(n_splits=cv_folds, shuffle=True, random_state=seed),
                 scoring='neg_mean_absolute_error',
                 n_jobs=-1
             )
             return -cv_scores.mean()
+
+        study = optuna.create_study(
+            direction='minimize',
+            sampler=optuna.samplers.TPESampler(seed=seed)
+        )
         
-        study = optuna.create_study(direction='minimize')
-        study.optimize(objective, n_trials=100)
-        
+        def _trial_callback(study_obj, trial_obj):
+            try:
+                self.logger.info(
+                    f"[{model_name}] trial {trial_obj.number} value={trial_obj.value:.4f} "
+                    f"best={study_obj.best_value:.4f} params={trial_obj.params}"
+                )
+            except Exception:
+                pass
+
+        self.logger.info(f"{model_name}: tuning with {n_trials} trials, {cv_folds}-fold CV")
+        study.optimize(objective, n_trials=n_trials, callbacks=[_trial_callback])
+
         self.logger.info(f"Best parameters for {model_name}: {study.best_params}")
         return study.best_params
     
-    def train_and_evaluate(self, X: pd.DataFrame, y: pd.Series) -> Dict:
+    def train_and_evaluate(self, X_train: pd.DataFrame, y_train: pd.Series,
+                            X_val: pd.DataFrame, y_val: pd.Series,
+                            X_test: pd.DataFrame, y_test: pd.Series) -> Dict:
         """
-        Train and evaluate all models.
+        Train on train; evaluate on val and test provided by YAML splits.
         """
-        self.logger.info("Training and evaluating models...")
-        
-        # Split data
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.2, random_state=42, stratify=pd.cut(y, bins=10, labels=False)
-        )
-        
-        X_train, X_val, y_train, y_val = train_test_split(
-            X_train, y_train, test_size=0.2, random_state=42, 
-            stratify=pd.cut(y_train, bins=10, labels=False)
+        self.logger.info("Training and evaluating models on provided splits...")
+
+        tr_cfg = self.config.get('training', {})
+        seed = self.config.get('seed', 42)
+        do_opt = tr_cfg.get('optimize_hyperparams', False)
+
+        self.logger.info(
+            f"Split sizes: train={len(X_train)} val={len(X_val)} test={len(X_test)} features={X_train.shape[1]}"
         )
         
         # Scale features
@@ -337,6 +792,7 @@ class TabularBrainAgePredictor:
             scaler = RobustScaler()
         else:
             scaler = MinMaxScaler()
+        self.logger.info(f"Scaler: {scaler.__class__.__name__}")
         
         X_train_scaled = pd.DataFrame(
             scaler.fit_transform(X_train), 
@@ -363,15 +819,14 @@ class TabularBrainAgePredictor:
         for model_name, model in models.items():
             self.logger.info(f"Training {model_name}...")
             
-            # Hyperparameter optimization for key models
-            if model_name in ['xgboost', 'lightgbm', 'random_forest'] and self.config.get('optimize_hyperparams', False):
+            # Hyperparameter optimization for selected models
+            if do_opt and model_name in ['xgboost', 'lightgbm', 'random_forest', 'extra_trees', 'svr', 'ridge', 'lasso', 'elastic_net']:
                 best_params = self.optimize_hyperparameters(X_train_scaled, y_train, model_name)
                 model.set_params(**best_params)
             
             # Train model with proper API for each model type
             try:
                 if model_name == 'xgboost':
-                    # Use callbacks for early stopping in newer XGBoost versions
                     model.fit(
                         X_train_scaled, y_train,
                         eval_set=[(X_val_scaled, y_val)],
@@ -379,19 +834,18 @@ class TabularBrainAgePredictor:
                         verbose=False
                     )
                 elif model_name == 'lightgbm':
-                    # LightGBM still supports early_stopping_rounds
                     model.fit(
                         X_train_scaled, y_train,
                         eval_set=[(X_val_scaled, y_val)],
                         callbacks=[lgb.early_stopping(50), lgb.log_evaluation(0)]
                     )
+                    if hasattr(model, 'best_iteration_') and model.best_iteration_ is not None:
+                        self.logger.info(f"lightgbm best_iteration={model.best_iteration_}")
                 else:
-                    # Standard fit for other models
                     model.fit(X_train_scaled, y_train)
                     
             except Exception as e:
                 self.logger.warning(f"Error with early stopping for {model_name}, using standard fit: {e}")
-                # Fallback to standard fit
                 model.fit(X_train_scaled, y_train)
             
             # Predictions
@@ -624,14 +1078,19 @@ class TabularBrainAgePredictor:
         """
         self.logger.info("Starting tabular ML pipeline...")
         
-        # Load data
-        df = self.load_segmentation_data()
-        
-        # Preprocess
-        X, y = self.preprocess_features(df)
-        
+        # Load data using YAML splits
+        train_df, val_df, test_df = self.load_segmentation_data()
+
+        # Preprocess: fit on train, transform val/test, align to train features
+        X_train, y_train = self.preprocess_features(train_df, split_name='train')
+        X_val, y_val = self.preprocess_features(val_df, split_name='val')
+        X_test, y_test = self.preprocess_features(test_df, split_name='test')
+
+        X_val = self._align_features(X_val)
+        X_test = self._align_features(X_test)
+
         # Train and evaluate
-        results = self.train_and_evaluate(X, y)
+        results = self.train_and_evaluate(X_train, y_train, X_val, y_val, X_test, y_test)
         
         # Feature importance
         importance_data = self.analyze_feature_importance()

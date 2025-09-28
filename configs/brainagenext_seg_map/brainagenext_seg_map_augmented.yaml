@@ -33,7 +33,7 @@ model:
   in_channels: 15
   dropout_rate: 0.2
   use_attention: false                   
-  checkpoint: "/home/ajoos1/run_output/brainagenext_seg_map_augmented_finetune/checkpoints/brainagenext_seg_map_augmented_finetune/brainagenext_seg_map_augmented_finetune_best_mae.pt"
+  checkpoint: # "/home/ajoos1/run_output/brainagenext_seg_map_augmented_finetune/checkpoints/brainagenext_seg_map_augmented_finetune/brainagenext_seg_map_augmented_finetune_best_mae.pt"
 
 # ─────────────────────────  AUGMENTATION  ─────────────────────── #
 # -------------------------------------------------------------------------
@@ -46,8 +46,8 @@ segmentation_augmentation:
   transform_probs:
     flip: 0.5
     affine: 0.5
-    zoom: 0.0
-    rotate: 0.0
+    zoom: 0.3
+    rotate: 0.3
   
   # Spatial transformation parameters
   scaling_range: [0.95, 1.05]  
@@ -94,10 +94,10 @@ training:
 
 # ────────────────────────────  OUTPUT  ────────────────────────── #
 output:
-  output_dir: "/home/ajoos1/run_output/brainagenext_seg_map_augmented_finetune"
+  output_dir: "/home/ajoos1/run_output/brainagenext_seg_map_augmented"
   checkpoint_dir: "checkpoints"
   log_dir: "logs"
-  experiment_name: brainagenext_seg_map_augmented_finetune #"brain_age_with_tumors"                   # auto-generate if left null
+  experiment_name: brainagenext_seg_map_augmented #"brain_age_with_tumors"                   # auto-generate if left null
 
 # ─────────────────────────────  W&B  ──────────────────────────── #
 wandb:
