@@ -117,9 +117,9 @@ def create_augmented_one_hot_transform(n_classes, config=None):
             keys=["image"],
             prob=config.probs["affine"],
             rotate_range=(0, 0, 0),  # Disable rotation since we use RandRotated
-            scale_range=config.params["scaling_range"],  
+            scale_range=(0, 0, 0),   # ← DISABLE scaling like regular images
             shear_range=(config.params["shearing_bounds"],) * 3,
-            mode="nearest",
+            mode="nearest",  # Keep nearest for segmentation
             padding_mode="zeros"
         ),
         
@@ -127,7 +127,7 @@ def create_augmented_one_hot_transform(n_classes, config=None):
         ConvertLabelsD(
             keys=["image"],
             generation_labels=GENERATION_LABELS,
-            output_labels=GENERATION_CLASSES
+            output_labels=GENERATION_LABELS
         ),
         # Remove SqueezeDimd - AsDiscreted needs the channel dimension
         AsDiscreted(keys=["image"], to_onehot=n_classes),
@@ -145,7 +145,7 @@ def get_one_hot_transform(n_classes):
         ConvertLabelsD(
             keys=["image"],
             generation_labels=GENERATION_LABELS,
-            output_labels=GENERATION_CLASSES
+            output_labels=GENERATION_LABELS
         ),
         # Remove SqueezeDimd - AsDiscreted needs the channel dimension
         AsDiscreted(keys=["image"], to_onehot=n_classes),

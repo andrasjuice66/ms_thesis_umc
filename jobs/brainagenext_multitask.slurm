@@ -23,7 +23,7 @@ conda activate brain_age_310
 
 cd $HOME/
 
-python -m brain_age_pred.scripts.train_multitask_brainagenext brain_age_pred/configs/multitask/brainagenext_multi.yaml
+python -m brain_age_pred.scripts.train_multitask brain_age_pred/configs/multitask/multitask_synth.yaml
 
 
 

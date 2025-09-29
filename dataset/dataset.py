@@ -146,7 +146,7 @@ class BADataset(Dataset):
             sample = self.transform(sample)     
 
         # ---- apply center crop SECOND --------------------------------
-        sample = self.center_crop(sample)
+        # sample = self.center_crop(sample)
         
         # ---- apply normalization LAST (after all augmentations) --------------------------------
         if self.always_transforms is not None:

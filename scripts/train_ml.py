@@ -650,59 +650,59 @@ class TabularBrainAgePredictor:
         def objective(trial):
             if model_name == 'xgboost':
                 params = {
-                    'n_estimators': trial.suggest_int('n_estimators', 300, 5000, step=100),
-                    'max_depth': trial.suggest_int('max_depth', 3, 12),
-                    'learning_rate': trial.suggest_float('learning_rate', 0.005, 0.3, log=True),
+                    'n_estimators': trial.suggest_int('n_estimators', 300, 2000, step=100),  # Reduced max
+                    'max_depth': trial.suggest_int('max_depth', 3, 8),  # Reduced max depth
+                    'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3, log=True),
                     'subsample': trial.suggest_float('subsample', 0.6, 1.0),
                     'colsample_bytree': trial.suggest_float('colsample_bytree', 0.5, 1.0),
                     'min_child_weight': trial.suggest_float('min_child_weight', 1e-3, 10.0, log=True),
-                    'gamma': trial.suggest_float('gamma', 0.0, 10.0),
-                    'reg_alpha': trial.suggest_float('reg_alpha', 1e-8, 10.0, log=True),
-                    'reg_lambda': trial.suggest_float('reg_lambda', 1e-8, 10.0, log=True),
+                    'gamma': trial.suggest_float('gamma', 0.0, 5.0),  # Reduced max
+                    'reg_alpha': trial.suggest_float('reg_alpha', 1e-8, 1.0, log=True),  # Reduced max
+                    'reg_lambda': trial.suggest_float('reg_lambda', 1e-8, 1.0, log=True),  # Reduced max
                     'tree_method': 'hist',
                     'random_state': seed,
-                    'n_jobs': -1,
+                    'n_jobs': 1,  # Single thread per model to avoid memory explosion
                 }
                 model = xgb.XGBRegressor(**params)
 
             elif model_name == 'lightgbm':
                 params = {
-                    'n_estimators': trial.suggest_int('n_estimators', 300, 5000, step=100),
-                    'learning_rate': trial.suggest_float('learning_rate', 0.005, 0.3, log=True),
-                    'num_leaves': trial.suggest_int('num_leaves', 16, 512, log=True),
+                    'n_estimators': trial.suggest_int('n_estimators', 300, 2000, step=100),  # Reduced max
+                    'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3, log=True),
+                    'num_leaves': trial.suggest_int('num_leaves', 16, 256, log=True),  # Reduced max
                     'min_child_samples': trial.suggest_int('min_child_samples', 5, 100),
-                    'subsample': trial.suggest_float('subsample', 0.6, 1.0),            # bagging_fraction
-                    'colsample_bytree': trial.suggest_float('colsample_bytree', 0.5, 1.0),  # feature_fraction
-                    'reg_alpha': trial.suggest_float('reg_alpha', 1e-8, 10.0, log=True),
-                    'reg_lambda': trial.suggest_float('reg_lambda', 1e-8, 10.0, log=True),
+                    'subsample': trial.suggest_float('subsample', 0.6, 1.0),
+                    'colsample_bytree': trial.suggest_float('colsample_bytree', 0.5, 1.0),
+                    'reg_alpha': trial.suggest_float('reg_alpha', 1e-8, 1.0, log=True),  # Reduced max
+                    'reg_lambda': trial.suggest_float('reg_lambda', 1e-8, 1.0, log=True),  # Reduced max
                     'min_split_gain': trial.suggest_float('min_split_gain', 0.0, 1.0),
                     'random_state': seed,
-                    'n_jobs': -1,
+                    'n_jobs': 1,  # Single thread per model
                 }
                 model = lgb.LGBMRegressor(**params, verbose=-1)
 
             elif model_name == 'random_forest':
                 params = {
-                    'n_estimators': trial.suggest_int('n_estimators', 200, 2000, step=100),
-                    'max_depth': trial.suggest_int('max_depth', 5, 50),
+                    'n_estimators': trial.suggest_int('n_estimators', 100, 1000, step=50),  # Reduced max
+                    'max_depth': trial.suggest_int('max_depth', 5, 20),  # Reduced max depth
                     'min_samples_split': trial.suggest_int('min_samples_split', 2, 20),
                     'min_samples_leaf': trial.suggest_int('min_samples_leaf', 1, 10),
-                    'max_features': trial.suggest_categorical('max_features', ['auto', 'sqrt', 'log2', 0.3, 0.5, 0.8]),
+                    'max_features': trial.suggest_categorical('max_features', ['sqrt', 'log2', 0.3, 0.5]),  # Removed 'auto'
                     'bootstrap': trial.suggest_categorical('bootstrap', [True, False]),
                     'random_state': seed,
-                    'n_jobs': -1,
+                    'n_jobs': 1,  # Single thread per model
                 }
                 model = RandomForestRegressor(**params)
 
             elif model_name == 'extra_trees':
                 params = {
-                    'n_estimators': trial.suggest_int('n_estimators', 200, 2000, step=100),
-                    'max_depth': trial.suggest_int('max_depth', 5, 50),
+                    'n_estimators': trial.suggest_int('n_estimators', 100, 1000, step=50),  # Reduced max
+                    'max_depth': trial.suggest_int('max_depth', 5, 20),  # Reduced max depth
                     'min_samples_split': trial.suggest_int('min_samples_split', 2, 20),
                     'min_samples_leaf': trial.suggest_int('min_samples_leaf', 1, 10),
-                    'max_features': trial.suggest_categorical('max_features', ['auto', 'sqrt', 'log2', 0.3, 0.5, 0.8]),
+                    'max_features': trial.suggest_categorical('max_features', ['sqrt', 'log2', 0.3, 0.5]),  # Removed 'auto'
                     'random_state': seed,
-                    'n_jobs': -1,
+                    'n_jobs': 1,  # Single thread per model
                 }
                 model = ExtraTreesRegressor(**params)
 
@@ -740,11 +740,12 @@ class TabularBrainAgePredictor:
             else:
                 raise ValueError(f"Unknown model for optimization: {model_name}")
 
+            # Use fewer CV folds and sequential processing to reduce memory usage
             cv_scores = cross_val_score(
                 model, X, y,
-                cv=KFold(n_splits=cv_folds, shuffle=True, random_state=seed),
+                cv=KFold(n_splits=min(cv_folds, 5), shuffle=True, random_state=seed),  # Cap at 5 folds
                 scoring='neg_mean_absolute_error',
-                n_jobs=-1
+                n_jobs=1  # Sequential processing to avoid memory explosion
             )
             return -cv_scores.mean()
 
@@ -762,7 +763,7 @@ class TabularBrainAgePredictor:
             except Exception:
                 pass
 
-        self.logger.info(f"{model_name}: tuning with {n_trials} trials, {cv_folds}-fold CV")
+        self.logger.info(f"{model_name}: tuning with {n_trials} trials, {min(cv_folds, 5)}-fold CV")
         study.optimize(objective, n_trials=n_trials, callbacks=[_trial_callback])
 
         self.logger.info(f"Best parameters for {model_name}: {study.best_params}")

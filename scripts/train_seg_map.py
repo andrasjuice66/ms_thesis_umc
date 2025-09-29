@@ -122,7 +122,8 @@ def main() -> None:
     logger.info("Initializing datasets...")
 
     # --- NEW: Define the one-hot encoding transform with spatial augmentation ---
-    n_classes = int(GENERATION_CLASSES.max() + 1)     # = 15 with the default label set
+    #n_classes = int(GENERATION_CLASSES.max() + 1)     # = 15 with the default label set
+    n_classes = int(len(GENERATION_LABELS))
 
 
     # Create augmentation config from YAML settings
@@ -244,7 +245,6 @@ def main() -> None:
     mtype = cfg.get("model.type", "sfcn").lower()
 
     # --- IMPORTANT: Update in_channels for the one-hot encoding experiment ---
-    n_classes = GENERATION_CLASSES.max() + 1
     model_in_channels = n_classes
     # -----------------------------------------------------------------------
 

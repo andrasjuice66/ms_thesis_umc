@@ -30,7 +30,7 @@ data:
 # ───────────────────────────  MODEL  ──────────────────────────── #
 model:
   type: "brainagenext"                             # sfcn | resnet3d | efficientnet3d
-  in_channels: 15
+  in_channels: 33
   dropout_rate: 0.2
   use_attention: false                   
   checkpoint: # "/home/ajoos1/run_output/brainagenext_seg_map_augmented_finetune/checkpoints/brainagenext_seg_map_augmented_finetune/brainagenext_seg_map_augmented_finetune_best_mae.pt"
@@ -44,10 +44,10 @@ model:
 segmentation_augmentation:
   # Control the transform probabilities
   transform_probs:
-    flip: 0.5
-    affine: 0.5
-    zoom: 0.3
-    rotate: 0.3
+    flip: 0.0
+    affine: 0.0
+    zoom: 0.0
+    rotate: 0.0
   
   # Spatial transformation parameters
   scaling_range: [0.95, 1.05]  

@@ -7,8 +7,7 @@ GENERATION_LABELS = np.array([
      15,        # 4th ventricle
      16,        # brain-stem
      24,        # CSF / sub-arachnoid space
-
-    # Left-hemisphere labels -------------------
+     # Left-hemisphere labels -------------------
       2,   # cerebral white matter - L
       3,   # cerebral cortex       - L
       4,   # lateral ventricle     - L
@@ -22,9 +21,8 @@ GENERATION_LABELS = np.array([
      17,   # hippocampus           - L
      18,   # amygdala              - L
      26,   # accumbens             - L
-     28,   # ventral DC            - L
-
-    # Right-hemisphere labels ------------------
+     28,   # ventral DC            - L 
+     # Right-hemisphere labels ------------------
      41,   # cerebral white matter - R
      42,   # cerebral cortex       - R
      43,   # lateral ventricle     - R

@@ -1,23 +1,23 @@
 # ────────────────────────────  DATA  ──────────────────────────── #
 data:
-  train_csv: "/home/ajoos1/brain_age_pred/data/labels/train.csv"
-  val_csv:   "/home/ajoos1/brain_age_pred/data/labels/val.csv"
-  test_csv:  "/home/ajoos1/brain_age_pred/data/labels/test_balanced.csv"
+  train_csv: "/home/ajoos1/brain_age_pred/data/labels/train_labels.csv"
+  val_csv:   "/home/ajoos1/brain_age_pred/data/labels/val_labels.csv"
+  test_csv:  "/home/ajoos1/brain_age_pred/data/labels/test_labels.csv"
 
-  segmented_data_dir: "/scratch-shared/ajoos1/brain_age_segmented_converted/"   
-  real_data_dir: "/scratch-shared/ajoos1/brain_age_preprocessed_converted/"   
+  segmented_data_dir: "/scratch-shared/ajoos1/brain_age_segmented/"   
+  real_data_dir: "/scratch-shared/ajoos1/brain_age_preprocessed_no_csf/"   
   
   num_workers: 12
   pin_memory: true
 
 
 model:
-  checkpoint: output/multitask/checkpoints/multitask_synth_v1/multitask_synth_v1_best_mae.pt # Optional path to a checkpoint to resume training
+  checkpoint: #output/multitask/checkpoints/multitask_synth_v1/multitask_synth_v1_best_mae.pt # Optional path to a checkpoint to resume training
 
 # ────────────────────── BRAIN GENERATOR ───────────────────────── #
 # These settings control the on-the-fly generation of synthetic MRIs
 brain_generator:
-  # Prior   istribution for GMM sampling (intensities)
+  # Prior distribution for GMM sampling (intensities)
   distribution: "uniform"  # "normal" or "uniform"
   mean_loc: 125.0          # Mid-point of distribution for means
   mean_scale: 125.0        # Half-range of distribution for means
@@ -27,7 +27,7 @@ brain_generator:
   # Probabilities for applying each augmentation
   prob:
     flip: 0.5
-    affine: 0.9
+    affine: 0.5
     tumor: 0.0
     contrast: 0.5
     gamma: 0.4
@@ -37,12 +37,16 @@ brain_generator:
     noise: 0.4
     rician: 0.4
     gibbs: 0.5
-    blur: 0.4
+    blur: 0.3
     bias: 0.4
-    resolution: 0.4
+    resolution: 0.3
+    motion: 0.5        # For RandomMotion
+    ghost: 0.5           # For RandomGhosting  
+    torchio_noise: 0.5   # For RandomNoise
+    swap: 0.1            # For RandomSwap
   
   # Spatial augmentation parameters
-  rotation_range: 15
+  rotation_range: 1
   scaling_range: 0.15
   shear_bounds: 0.01
   translation_bounds: false # Set to a value like 5.0 to enable
@@ -63,24 +67,45 @@ brain_generator:
   
   # Resolution parameters (simulates different scanner resolutions)
   min_res: 0.8
-  max_res_iso: 2.5
-  max_res_aniso: 2.5
+  max_res_iso: 1.5
+  max_res_aniso: 5.0       # NEW: Maximum anisotropic resolution
   atlas_res: 1.0
+  thickness: null          # NEW: Slice thickness factor (null uses atlas_res)
+  
+  # Motion artifacts parameters (TorchIO RandomMotion)
+  motion_degrees: 3.0      # NEW: Maximum rotation in degrees
+  motion_translation: 5.0  # NEW: Maximum translation in mm
+  motion_num_transforms: 4 # NEW: Number of motion transforms to apply
+  
+  # Ghosting artifacts parameters (TorchIO RandomGhosting)
+  ghost_num: [1, 4]        # NEW: Range for number of ghosts [min, max]
+  ghost_intensity: [0.1, 0.6] # NEW: Range for ghost intensity [min, max]
+  
+  # TorchIO noise parameters
+  torchio_noise_std: [0, 0.5] # NEW: Standard deviation range for TorchIO noise
+  
+  # Generator configuration parameters
+  n_channels: 1            # NEW: Number of input channels
+  use_specific_stats_for_channel: false # NEW: Use channel-specific statistics
+  return_gradients: false  # NEW: Whether to return gradients
+  return_segmentation: true # NEW: Whether to return segmentation masks
   
   # Shape and cropping parameters for the generator
-  output_shape: [160, 192, 160]
-  use_random_cropping: true
+  output_shape: [180, 218, 180]
+  use_random_cropping: false
   use_sample: true
   use_hemisphere_aware_flip: true
   use_dynamic_resolution: true
   use_intensity_clip_normalize: true
+  
+  # Tumor generation parameters
   tumor_prior_means: [0.4, 0.15]
   tumor_prior_stds: [0.12, 0.04]
   tumor_perlin_res: [4, 4, 4]   
   tumor_percentile_range: [90.0, 99.6]
   tumor_size_factor_range: [0.5, 2.0]
-  tumor_use_fluid_dynamics: True,        
-# ──────────────────────────  TRAINING  ────────────────────────── #
+  tumor_use_fluid_dynamics: true 
+  # ──────────────────────────  TRAINING  ────────────────────────── #
 training:
   batch_size: 4
   epochs: 150
@@ -88,17 +113,17 @@ training:
   # Optimiser & LR Scheduler
   optimizer:
     optimizer_type: "adamw"
-    learning_rate: 0.001
+    learning_rate: 0.0001
     weight_decay:  0.001
   scheduler:
-    scheduler_type: "cosine" # "cosine" or "step" or "plateau"
+    scheduler_type: "step" # "cosine" or "step" or "plateau"
     T_max: 150               # For cosine scheduler
-    step_size: 10            # For step scheduler
-    gamma: 0.5               # For step scheduler
+    step_size: 20            # For step scheduler
+    gamma: 0.8            # For step scheduler
 
   # Loss function parameters for Multi-Task learning
   loss:
-    age_loss_fn: "mae"        # Loss for the age prediction task (mae, mse, huber)
+    age_loss_fn: "huber"        # Loss for the age prediction task (mae, mse, huber)
 
 
   # Misc training settings
@@ -109,12 +134,12 @@ training:
 # ────────────────────────────  OUTPUT  ────────────────────────── #
 output:
   output_dir: "./output/multitask"
-  experiment_name: "multitask_synth_v1"
+  experiment_name: "multitask_synth"
 
 # ─────────────────────────────  W&B  ──────────────────────────── #
 wandb:
   use_wandb: true
-  project: "brain-age-multitask"
+  project: "rerun_experiments"
   entity: null # Your W&B entity/username, or set as environment variable
 
 # ───────────────────────── MISCELLANEOUS ───────────────────────── #

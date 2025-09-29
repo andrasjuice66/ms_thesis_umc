@@ -35,6 +35,10 @@ def save_image_as_nifti(image_tensor, save_path, affine=None):
     else:  # (D, H, W)
         image_np = image_tensor.cpu().numpy()
     
+    # Convert to float32 if the data is integer type (fix for int64 issue)
+    if image_np.dtype in [np.int64, np.int32, np.int16, np.int8]:
+        image_np = image_np.astype(np.float32)
+    
     # Use identity matrix if no affine provided
     if affine is None:
         affine = np.eye(4)
@@ -249,6 +253,9 @@ def main():
     # Set background class (label 0) to zero
     prior_means[:, 0] = 0.0    
     prior_stds[:, 0] = 0.0
+    
+    prior_means[:, 1] = 0.0    
+    prior_stds[:, 1] = 0.0
 
     # Initialize brain generator for synthetic data
     brain_generator = BABrainGenerator(

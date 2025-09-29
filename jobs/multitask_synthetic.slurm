@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=brainagenext_synthetic
+#SBATCH --job-name=multitask_synthetic
 #SBATCH --partition=gpu_a100            
 #SBATCH --gres=gpu:a100:1
 #SBATCH --cpus-per-task=18
@@ -23,7 +23,7 @@ conda activate brain_age_310
 
 cd $HOME/
 
-python -m brain_age_pred.scripts.train_two_step brain_age_pred/configs/multitask_local/two_step_local.yaml
+python -m brain_age_pred.scripts.train_multitask brain_age_pred/configs/multitask/multitask.yaml
 
 
 

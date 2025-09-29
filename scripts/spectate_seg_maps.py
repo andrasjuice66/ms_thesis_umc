@@ -42,22 +42,15 @@ def create_spatial_augmentation_only_transform(config=None):
     
     spatial_transforms = [
         # Ensure channel first - data already has channel dimension at position 0
-        EnsureChannelFirstd(keys=["image"], channel_dim=0),
+        # EnsureChannelFirstd(keys=["image"], channel_dim=0),
         
         # Add spatial augmentations - use "nearest" mode to preserve integer labels
         RandFlipd(
             keys=["image"],
             prob=config.probs["flip"],
-            spatial_axis=0,
+            spatial_axis=2,
         ),
-        
-        RandZoomd(
-            keys=["image"], 
-            min_zoom=config.params["zoom_min"], 
-            max_zoom=config.params["zoom_max"], 
-            prob=config.probs["zoom"],
-            mode="nearest"  # Preserve integer labels
-        ),
+
         
         RandRotated(
             keys=["image"], 
@@ -75,16 +68,16 @@ def create_spatial_augmentation_only_transform(config=None):
             scale_range=config.params["scaling_range"],  
             shear_range=(config.params["shearing_bounds"],) * 3,
             mode="nearest",  # Preserve integer labels
-            padding_mode="zeros"
+            # padding_mode="zeros"
         ),
         
         # Convert labels from original FreeSurfer labels to generation classes
         ConvertLabelsD(
             keys=["image"],
             generation_labels=GENERATION_LABELS,
-            output_labels=GENERATION_CLASSES
+            output_labels=GENERATION_LABELS
         ),
-        CastToTyped(keys=["image"], dtype=np.float32),
+        # CastToTyped(keys=["image"], dtype=np.float32),
         
         # NO AsDiscreted - keep mapped labels as integers for visualization
     ]
@@ -99,9 +92,9 @@ def create_original_transform():
         ConvertLabelsD(
             keys=["image"],
             generation_labels=GENERATION_LABELS,
-            output_labels=GENERATION_CLASSES
+            output_labels=GENERATION_LABELS
         ),
-        CastToTyped(keys=["image"], dtype=np.float32),
+        # CastToTyped(keys=["image"], dtype=np.float32),
     ])
 
 
@@ -112,6 +105,9 @@ def save_segmentation_as_nifti(seg_tensor: torch.Tensor, save_path: Path, affine
         seg_np = seg_tensor.squeeze(0).cpu().numpy()
     else:  # (D, H, W)
         seg_np = seg_tensor.cpu().numpy()
+    
+    # Cast to int32 to avoid nibabel int64 compatibility issues
+    seg_np = seg_np.astype(np.int32)
     
     # Use identity matrix if no affine provided
     if affine is None:
@@ -246,14 +242,12 @@ def main() -> None:
     if not experiment_name:
         experiment_name = f'spectate_seg_inputs_{timestamp}'
     
-    out_root = Path(cfg.get("output.output_dir", "output"))
-    spectate_dir = out_root / "spectated_seg_inputs" / experiment_name
-    log_dir = out_root / "logs" / experiment_name
+    out_root = Path("debug_output")
+    spectate_dir = out_root / experiment_name
     
     spectate_dir.mkdir(parents=True, exist_ok=True)
-    log_dir.mkdir(parents=True, exist_ok=True)
     
-    logger = setup_logger("brain-age-spectate-seg", log_file=log_dir / "spectate_seg.log")
+    logger = setup_logger("brain-age-spectate-seg", log_file=spectate_dir / "spectate_seg.log")
     
     logger.info("Initializing segmentation input spectating (resource-efficient mode)...")
     set_seed(cfg.get("seed", 42))

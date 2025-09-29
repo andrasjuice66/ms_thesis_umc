@@ -139,7 +139,10 @@ def main() -> None:
 
     # Set background class (label 0) to zero
     prior_means[:, 0] = 0.0    
-    prior_stds[:, 0] = 0.0     
+    prior_stds[:, 0] = 0.0
+
+    prior_means[:, 1] = 0.0    
+    prior_stds[:, 1] = 0.0
     
     brain_generator = BABrainGenerator(
         # Critical for multi-task

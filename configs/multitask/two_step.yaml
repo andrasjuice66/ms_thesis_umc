@@ -71,8 +71,27 @@ brain_generator:
   # Resolution parameters (simulates different scanner resolutions)
   min_res: 0.8
   max_res_iso: 2.5
-  max_res_aniso: 2.5
+  max_res_aniso: 8.0       # NEW: Maximum anisotropic resolution
   atlas_res: 1.0
+  thickness: null          # NEW: Slice thickness factor (null uses atlas_res)
+  
+  # Motion artifacts parameters (TorchIO RandomMotion)
+  motion_degrees: 3.0      # NEW: Maximum rotation in degrees
+  motion_translation: 5.0  # NEW: Maximum translation in mm
+  motion_num_transforms: 4 # NEW: Number of motion transforms to apply
+  
+  # Ghosting artifacts parameters (TorchIO RandomGhosting)
+  ghost_num: [1, 4]        # NEW: Range for number of ghosts [min, max]
+  ghost_intensity: [0.1, 0.6] # NEW: Range for ghost intensity [min, max]
+  
+  # TorchIO noise parameters
+  torchio_noise_std: [0, 0.5] # NEW: Standard deviation range for TorchIO noise
+  
+  # Generator configuration parameters
+  n_channels: 1            # NEW: Number of input channels
+  use_specific_stats_for_channel: false # NEW: Use channel-specific statistics
+  return_gradients: false  # NEW: Whether to return gradients
+  return_segmentation: false # NEW: Whether to return segmentation masks
   
   # Shape and cropping parameters for the generator
   output_shape: [160, 192, 160]
@@ -81,12 +100,14 @@ brain_generator:
   use_hemisphere_aware_flip: true
   use_dynamic_resolution: true
   use_intensity_clip_normalize: true
+  
+  # Tumor generation parameters
   tumor_prior_means: [0.4, 0.15]
   tumor_prior_stds: [0.12, 0.04]
   tumor_perlin_res: [4, 4, 4]   
   tumor_percentile_range: [90.0, 99.6]
   tumor_size_factor_range: [0.5, 2.0]
-  tumor_use_fluid_dynamics: True,        
+  tumor_use_fluid_dynamics: true      
   
   
 # ──────────────────────────  TRAINING  ────────────────────────── #

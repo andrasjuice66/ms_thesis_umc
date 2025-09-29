@@ -45,7 +45,7 @@ segmentation_augmentation:
   # Control the transform probabilities
   transform_probs:
     flip: 0.5
-    affine: 0.5
+    affine: 1
     zoom: 0.0
     rotate: 0.0
   
