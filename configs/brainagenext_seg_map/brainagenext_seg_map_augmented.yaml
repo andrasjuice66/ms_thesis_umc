@@ -102,7 +102,7 @@ output:
 # ─────────────────────────────  W&B  ──────────────────────────── #
 wandb:
   use_wandb: true                         # still requires $WANDB_API env-var
-  project: "paper_check"
+  project: "rerun_experiments"
 
   entity: null
 

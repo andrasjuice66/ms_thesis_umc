@@ -7,7 +7,7 @@ data:
   segmented_data_dir: "/scratch-shared/ajoos1/brain_age_segmented/"   
   real_data_dir: "/scratch-shared/ajoos1/brain_age_preprocessed_no_csf/"   
   
-  num_workers: 12
+  num_workers: 6
   pin_memory: true
 
 
