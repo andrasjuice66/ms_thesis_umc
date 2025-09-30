@@ -15,7 +15,7 @@ data:
   cache_size: 0            
   shared_cache: 0
   preload: true
-  num_workers: 8
+  num_workers: 4
   pin_memory: false
   pin_memory_device: ""
   persistent_workers: true
@@ -150,11 +150,11 @@ augmentation:
 
 # ──────────────────────────  TRAINING  ────────────────────────── #
 training:
-  batch_size: 4
+  batch_size: 2
   epochs: 150
 
   # optimiser & LR
-  learning_rate: 0.000005 #0.002193
+  learning_rate: 0.00001 #0.002193
   weight_decay:  0.001
   optimizer: "adamw"                       # adam | adamw | sgd | rmsprop | radam | novograd
   scheduler: "step"                      # cosine | plateau | onecycle | step | none

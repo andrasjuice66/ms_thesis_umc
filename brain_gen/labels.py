@@ -64,5 +64,13 @@ GENERATION_CLASSES = np.array([
      13, 14                # accumbens / ventral DC
 ], dtype=np.int16)
 
+SEQUENTIAL_LABELS = np.arange(33, dtype=np.int16)  # 0 to 32
+
+
+
+
+
+
+
 
 # print("Size: ", len(GENERATION_CLASSES), len(GENERATION_LABELS))

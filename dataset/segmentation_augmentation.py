@@ -13,7 +13,7 @@ from monai.transforms import (
     CastToTyped
 )
 from brain_age_pred.dataset.custom_transformations import ConvertLabelsD
-from brain_age_pred.brain_gen.labels import GENERATION_LABELS, GENERATION_CLASSES
+from brain_age_pred.brain_gen.labels import GENERATION_LABELS, GENERATION_CLASSES, SEQUENTIAL_LABELS
 
 class SegmentationAugmentationConfig:
     """Configuration for segmentation augmentation transforms."""
@@ -127,7 +127,7 @@ def create_augmented_one_hot_transform(n_classes, config=None):
         ConvertLabelsD(
             keys=["image"],
             generation_labels=GENERATION_LABELS,
-            output_labels=GENERATION_LABELS
+            output_labels=SEQUENTIAL_LABELS
         ),
         # Remove SqueezeDimd - AsDiscreted needs the channel dimension
         AsDiscreted(keys=["image"], to_onehot=n_classes),
@@ -145,7 +145,7 @@ def get_one_hot_transform(n_classes):
         ConvertLabelsD(
             keys=["image"],
             generation_labels=GENERATION_LABELS,
-            output_labels=GENERATION_LABELS
+            output_labels=SEQUENTIAL_LABELS
         ),
         # Remove SqueezeDimd - AsDiscreted needs the channel dimension
         AsDiscreted(keys=["image"], to_onehot=n_classes),

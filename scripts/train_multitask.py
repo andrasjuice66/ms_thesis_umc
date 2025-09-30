@@ -130,15 +130,12 @@ def main() -> None:
     prior_means[:, 0] = 0.0    
     prior_stds[:, 0] = 0.0     
     
-    brain_generator = BABrainGenerator(
-        # Critical for multi-task
-        return_segmentation=True,
-
-        # Pass other params from config
+   brain_generator = BABrainGenerator(
+        # Required parameters
         prior_means=prior_means,
         prior_stds=prior_stds,
         distribution=bg_cfg.get("distribution", "normal"),
-        prob=bg_cfg.get("prob", {}),
+        prob=prob,
 
         # Spatial augmentation parameters
         rotation_range=bg_cfg.get("rotation_range", 10),
@@ -152,40 +149,46 @@ def main() -> None:
         shift_offset=bg_cfg.get("shift_offset", 0.1),
         hist_control_points=bg_cfg.get("hist_control_points", 5),
 
-        # Artifact parameters
-        noise_mean=bg_cfg.get("noise_mean", 0.5),
-        noise_std=bg_cfg.get("noise_std", 0.08),
-        rician_std=bg_cfg.get("rician_std", 0.08),
-        gibbs_alpha=bg_cfg.get("gibbs_alpha", 0.5),
-        blur_sigma=bg_cfg.get("blur_sigma", 1.0),
-        bias_field_rng=tuple(bg_cfg.get("bias_field_rng", [0.0, 0.8])),
-
-        # Resolution parameters
-        min_res=bg_cfg.get("min_res", 1.0),
-        max_res_iso=bg_cfg.get("max_res_iso", 1.8),
-
-        # BrainAgeNeXt parameters (using same names as config)
-        zoom_min=bg_cfg.get("zoom_min", 0.95),
-        zoom_max=bg_cfg.get("zoom_max", 1.00),
-        rotate_range_x=bg_cfg.get("rotate_range_x", 0.1),
-        rotate_range_y=bg_cfg.get("rotate_range_y", 0.1),
-        rotate_range_z=bg_cfg.get("rotate_range_z", 0.1),
-        scaling_range_tio=tuple(bg_cfg.get("scaling_range_tio", [0.05, 0.05, 0.05])),
-        rotation_range_tio=tuple(bg_cfg.get("rotation_range_tio", [5, 5, 5])),
-        translation_range=bg_cfg.get("translation_range", 10.0),
-        bias_field_range=tuple(bg_cfg.get("bias_field_range", [-0.5, 0.1])),
-        bias_field_degree=bg_cfg.get("bias_field_degree", 5),
+        # Artefacts parameters
+        noise_mean=bg_cfg.get("noise_mean", 0.02),
+        noise_std=bg_cfg.get("noise_std", 0.015),
+        rician_std=bg_cfg.get("rician_std", 0.01),
+        gibbs_alpha=bg_cfg.get("gibbs_alpha", 0.4),
+        blur_sigma=bg_cfg.get("blur_sigma", 0.25),
+        bias_field_rng=tuple(bg_cfg.get("bias_field_rng", [0.0, 0.5])),
+        
+        # Motion artifacts
         motion_degrees=bg_cfg.get("motion_degrees", 3),
         motion_translation=bg_cfg.get("motion_translation", 5),
         motion_num_transforms=bg_cfg.get("motion_num_transforms", 4),
         ghost_num=tuple(bg_cfg.get("ghost_num", [1, 4])),
         ghost_intensity=tuple(bg_cfg.get("ghost_intensity", [0.1, 0.6])),
+        torchio_noise_std=bg_cfg.get("torchio_noise_std", [0, 0.5]),
+
+        # Resolution parameters
+        min_res=bg_cfg.get("min_res", 0.8),
+        max_res_iso=bg_cfg.get("max_res_iso", 2.0),
+        max_res_aniso=bg_cfg.get("max_res_aniso", 2.0),
+        atlas_res=bg_cfg.get("atlas_res", 1.0),
+        thickness=bg_cfg.get("thickness", None),
+
+        # Label config parameters
+        generation_labels=GENERATION_LABELS,
+        n_neutral_labels=N_NEUTRAL_LABELS,
+        output_labels=None,
 
         # Toggle parameters
-        use_torchio_transforms=bg_cfg.get("use_torchio_transforms", True),
-        use_znormalization=bg_cfg.get("use_znormalization", True),
-
+        use_sample=bg_cfg.get("use_sample", True),
+        use_hemisphere_aware_flip=bg_cfg.get("use_hemisphere_aware_flip", True),
+        use_dynamic_resolution=bg_cfg.get("use_dynamic_resolution", True),
+        use_intensity_clip_normalize=bg_cfg.get("use_intensity_clip_normalize", True),
+        n_channels=bg_cfg.get("n_channels", 1),
+        use_specific_stats_for_channel=bg_cfg.get("use_specific_stats_for_channel", False),
         output_shape=tuple(bg_cfg.get("output_shape", [160, 192, 160])),
+        use_random_cropping=bg_cfg.get("use_random_cropping", True),
+        return_gradients=bg_cfg.get("return_gradients", False),
+        return_segmentation=True,  # Return segmentation for visualization
+        device=device,
     )
     print(f"Brain Generator config: {bg_cfg}")
     
