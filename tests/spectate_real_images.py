@@ -25,6 +25,7 @@ from brain_age_pred.dataset.dataset import BADataset
 from brain_age_pred.dataset.augmentation import AugmentationPipeline
 from brain_age_pred.utils.logger import setup_logger
 from brain_age_pred.utils.utils import set_seed, read_csv
+from brain_age_pred.dataset.brainagenext_transforms import get_train_transforms, get_val_transforms
 
 
 def save_image_as_nifti(image_tensor: torch.Tensor, save_path: Path, affine: np.ndarray = None):
@@ -175,6 +176,20 @@ def main() -> None:
 
     # 5. ─── create datasets ───────────────────────────────── #
     logger.info("Creating datasets...")
+
+    train_transform = get_train_transforms(
+    image_key="image",                 # MUST match BADataset's key
+    pixdim=(1, 1, 1),
+    spatial_pad=(160, 192, 160),       # optional
+    center_crop=(160, 192, 160),       # optional
+    crop_foreground=True,)
+
+    val_transform = get_val_transforms(
+    image_key="image",
+    pixdim=(1, 1, 1),
+    spatial_pad=(160, 192, 160),
+    center_crop=(160, 192, 160),
+    crop_foreground=True,)
     
     # Training dataset WITH augmentation
     train_ds = BADataset(
@@ -183,7 +198,7 @@ def main() -> None:
         sample_wts=train_w,
         sexes=train_s,
         modalities=train_m,
-        transform=transform,  # Apply augmentation
+        transform=train_transform,  # Apply augmentation
         mode="train",
         cache_size=0,  # No cache for spectating
     )
@@ -194,7 +209,7 @@ def main() -> None:
         age_labels=val_a,
         sexes=val_s,
         modalities=val_m,
-        transform=None,  # No augmentation for validation
+        transform=val_transform,  # No augmentation for validation
         mode="val",
         cache_size=0,
     )

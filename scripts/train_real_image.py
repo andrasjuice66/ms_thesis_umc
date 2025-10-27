@@ -31,6 +31,7 @@ from brain_age_pred.training.trainer import BrainAgeTrainer
 from brain_age_pred.utils.logger import setup_logger
 from brain_age_pred.utils.utils import set_seed, read_csv, load_checkpoint
 from torch.utils.data import WeightedRandomSampler, DataLoader
+from brain_age_pred.dataset.brainagenext_transforms import get_train_transforms, get_val_transforms
 
 
 
@@ -90,6 +91,22 @@ def main() -> None:
     
     logger.info(f"Augmentation pipeline initialized: {aug_cfg.get('use_augmentation', False)}")
 
+
+    train_transforms = get_train_transforms(
+        image_key="image",                 # MUST match BADataset's key
+        pixdim=(1, 1, 1),
+        spatial_pad=(160, 192, 160),       # optional
+        center_crop=(160, 192, 160),       # optional
+        crop_foreground=True,)
+
+    val_transforms = get_val_transforms(
+        image_key="image",
+        pixdim=(1, 1, 1),
+        spatial_pad=(160, 192, 160),
+        center_crop=(160, 192, 160),
+        crop_foreground=True,)
+    
+
     # 6. ─── CSV → dataset / sampler ─────────────────────────── #
     logger.info("Reading CSV files...")
     train_csv = Path(cfg.get("data.train_csv"))
@@ -137,7 +154,7 @@ def main() -> None:
         sample_wts   = train_w,
         sexes        = train_s,
         modalities   = train_m,
-        transform    = transform,
+        transform    = train_transforms,
         mode         = "train",
         cache_size   = cfg.get("data.cache_size", 0),
     )
@@ -148,7 +165,7 @@ def main() -> None:
         age_labels   = val_a,
         sexes        = val_s,
         modalities   = val_m,
-        transform    = None,
+        transform    = val_transforms,
         mode         = "val",
         cache_size   = cfg.get("data.cache_size", 0),
     )
@@ -159,7 +176,7 @@ def main() -> None:
         age_labels   = test_a,
         sexes        = test_s,
         modalities   = test_m,
-        transform    = None,
+        transform    = val_transforms,
         mode         = "test",
         cache_size   = cfg.get("data.cache_size", 0),
     )

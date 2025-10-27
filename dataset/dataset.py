@@ -22,6 +22,7 @@ from monai.transforms import CenterSpatialCropd
 from brain_age_pred.dataset.custom_transformations import IntensityClipNormalizeD
 import nibabel as nib
 import torchio as tio
+from monai.transforms import ScaleIntensityRangePercentilesd, Compose
 
 __all__ = ["BADataset"]
 
@@ -38,6 +39,9 @@ def _min_max_normalize(img):
     if img_max - img_min == 0:
         return torch.zeros_like(img)
     return (img - img_min) / (img_max - img_min)
+
+
+
 
 class BADataset(Dataset):
     """
@@ -93,17 +97,20 @@ class BADataset(Dataset):
         always_transforms = []
         
 
-        if clamp:
-            always_transforms.append(
-                tio.transforms.Clamp(out_min=0, keys=["image"], include=['image'])
-            )
+
         
         if normalize:
-             always_transforms.append(
-            tio.transforms.Lambda(_min_max_normalize, keys=["image"], include=['image'])
+            always_transforms.append(
+            ScaleIntensityRangePercentilesd(
+                keys=["image"],
+                lower=0.5, upper=99.5,  # adjust if needed
+                b_min=0.0, b_max=1.0,
+                clip=True,
+            )
         )
+  
         
-        self.always_transforms = tio.transforms.Compose(always_transforms) if always_transforms else None
+        self.always_transforms = Compose(always_transforms)
 
         # --- local per-process cache (OrderedDict) ---------------------- #
         self.cache_size    = max(0, cache_size)
