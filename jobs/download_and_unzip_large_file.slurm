@@ -2,10 +2,11 @@
 #SBATCH --job-name=brain_age_download
 #SBATCH --output=brain_age_%j.out
 #SBATCH --error=brain_age_%j.err
-#SBATCH --time=04:00:00
-#SBATCH --partition=genoa
+#SBATCH --time=01:00:00
+#SBATCH --partition=gpu_a100            
+#SBATCH --gres=gpu:a100:1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=4
+#SBATCH --cpus-per-task=18
 #SBATCH --mem=16G
 
 
