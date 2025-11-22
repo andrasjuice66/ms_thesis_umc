@@ -3,9 +3,11 @@
 #SBATCH --output=brain_age_%j.out
 #SBATCH --error=brain_age_%j.err
 #SBATCH --time=04:00:00
+#SBATCH --partition=genoa
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=16G
+
 
 # Set up directories
 SCRATCH_DIR="/scratchshared/ajoos"
