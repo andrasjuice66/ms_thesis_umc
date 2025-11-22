@@ -1,11 +1,11 @@
 # ────────────────────────────  DATA  ──────────────────────────── #
 data:
-  train_csv: "/home/ajoos1/brain_age_pred/data/labels/train.csv"
-  val_csv:   "/home/ajoos1/brain_age_pred/data/labels/val.csv"
-  test_csv:  "/home/ajoos1/brain_age_pred/data/labels/test_balanced.csv"
+  train_csv: "/home/ajoos/brain_age_pred/data/labels/train.csv"
+  val_csv:   "/home/ajoos/brain_age_pred/data/labels/val.csv"
+  test_csv:  "/home/ajoos/brain_age_pred/data/labels/test_balanced.csv"
 
-  segmented_data_dir: "/scratch-shared/ajoos1/brain_age_segmented_converted/"   
-  real_data_dir: "/scratch-shared/ajoos1/brain_age_preprocessed_converted/"   
+  segmented_data_dir: "/scratch-shared/ajoos/brain_age_segmented_converted/"   
+  real_data_dir: "/scratch-shared/ajoos/brain_age_preprocessed_converted/"   
 
 
   num_workers: 8
@@ -30,7 +30,7 @@ brain_generator:
   # Probabilities for applying each augmentation
   prob:
     flip: 0.5
-    affine: 0.9
+    affine: 0.5
     tumor: 0.0
     contrast: 0.5
     gamma: 0.4
@@ -40,13 +40,13 @@ brain_generator:
     noise: 0.4
     rician: 0.4
     gibbs: 0.5
-    blur: 0.4
+    blur: 0.3
     bias: 0.4
-    resolution: 0.4
-    motion: 0.5          # For RandomMotion
+    resolution: 0.3
+    motion: 0.5        # For RandomMotion
     ghost: 0.5           # For RandomGhosting  
     torchio_noise: 0.5   # For RandomNoise
-    swap: 0.5            # For RandomSwap
+    swap: 0.1            # For RandomSwap
   
   # Spatial augmentation parameters
   rotation_range: 1
@@ -70,8 +70,8 @@ brain_generator:
   
   # Resolution parameters (simulates different scanner resolutions)
   min_res: 0.8
-  max_res_iso: 2.5
-  max_res_aniso: 8.0       # NEW: Maximum anisotropic resolution
+  max_res_iso: 1.5
+  max_res_aniso: 5.0       # NEW: Maximum anisotropic resolution
   atlas_res: 1.0
   thickness: null          # NEW: Slice thickness factor (null uses atlas_res)
   
@@ -91,11 +91,11 @@ brain_generator:
   n_channels: 1            # NEW: Number of input channels
   use_specific_stats_for_channel: false # NEW: Use channel-specific statistics
   return_gradients: false  # NEW: Whether to return gradients
-  return_segmentation: false # NEW: Whether to return segmentation masks
+  return_segmentation: true # NEW: Whether to return segmentation masks
   
   # Shape and cropping parameters for the generator
-  output_shape: [160, 192, 160]
-  use_random_cropping: true
+  output_shape: [180, 218, 180]
+  use_random_cropping: false
   use_sample: true
   use_hemisphere_aware_flip: true
   use_dynamic_resolution: true
@@ -107,7 +107,7 @@ brain_generator:
   tumor_perlin_res: [4, 4, 4]   
   tumor_percentile_range: [90.0, 99.6]
   tumor_size_factor_range: [0.5, 2.0]
-  tumor_use_fluid_dynamics: true      
+  tumor_use_fluid_dynamics: true   
   
   
 # ──────────────────────────  TRAINING  ────────────────────────── #

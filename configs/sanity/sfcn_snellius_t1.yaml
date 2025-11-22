@@ -1,9 +1,9 @@
 # ────────────────────────────  DATA  ──────────────────────────── #
 data:
-  data_dir: "/scratch-shared/ajoos1/"               # root that contains all images
-  train_csv: "/home/ajoos1/brain_age_pred/data/labels/train_t1.csv"
-  val_csv:   "/home/ajoos1/brain_age_pred/data/labels/val_t1.csv"
-  test_csv:  "/home/ajoos1/brain_age_pred/data/labels/test_t1.csv"
+  data_dir: "/scratch-shared/ajoos/"               # root that contains all images
+  train_csv: "/home/ajoos/brain_age_pred/data/labels/train_t1.csv"
+  val_csv:   "/home/ajoos/brain_age_pred/data/labels/val_t1.csv"
+  test_csv:  "/home/ajoos/brain_age_pred/data/labels/test_t1.csv"
 
   image_key:  "image_path"
   age_key:    "age"
@@ -28,7 +28,7 @@ model:
   in_channels: 1
   dropout_rate: 0.5532
   use_attention: false                   
-  checkpoint: null #"/home/ajoos1/brain_age_pred/output/checkpoints/sfcn_20250522_104159/sfcn_20250522_104159_epoch057.pt"
+  checkpoint: null #"/home/ajoos/brain_age_pred/output/checkpoints/sfcn_20250522_104159/sfcn_20250522_104159_epoch057.pt"
 
 # ────────────────  DOMAIN-RANDOMISATION / AUGS  ───────────────── #
 # -------------------------------------------------------------------------

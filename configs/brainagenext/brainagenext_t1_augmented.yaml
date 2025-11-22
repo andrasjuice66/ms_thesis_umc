@@ -1,9 +1,9 @@
 # ────────────────────────────  DATA  ──────────────────────────── #
 data:
-  real_data_dir: "/scratch-shared/ajoos1/brain_age_preprocessed_no_csf/"   
-  train_csv: "/home/ajoos1/brain_age_pred/data/labels/train_labels.csv"
-  val_csv:   "/home/ajoos1/brain_age_pred/data/labels/val_labels.csv"
-  test_csv:  "/home/ajoos1/brain_age_pred/data/labels/test_labels.csv"
+  real_data_dir: "/scratch-shared/ajoos/brain_age_preprocessed_no_csf/"   
+  train_csv: "/home/ajoos/brain_age_pred/data/labels/train_labels.csv"
+  val_csv:   "/home/ajoos/brain_age_pred/data/labels/val_labels.csv"
+  test_csv:  "/home/ajoos/brain_age_pred/data/labels/test_labels.csv"
 
   image_key:  "image_path"
   age_key:    "age"
@@ -30,7 +30,7 @@ model:
   in_channels: 1
   dropout_rate: 0.2
   use_attention: false                   
-  checkpoint: #"/home/ajoos1/model_files/BrainAge_1.pth"
+  checkpoint: #"/home/ajoos/model_files/BrainAge_1.pth"
 
 # ─────────────────────────  AUGMENTATION  ─────────────────────── #
 # -------------------------------------------------------------------------
@@ -180,7 +180,7 @@ training:
 
 # ────────────────────────────  OUTPUT  ────────────────────────── #
 output:
-  output_dir: "/home/ajoos1/run_output/brainagenext_t1_augmented"
+  output_dir: "/home/ajoos/run_output/brainagenext_t1_augmented"
   checkpoint_dir: "checkpoints"
   log_dir: "logs"
   experiment_name: brainagenext_t1_augmented #"brain_age_with_tumors"                   # auto-generate if left null

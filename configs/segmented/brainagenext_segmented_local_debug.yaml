@@ -31,7 +31,7 @@ model:
   in_channels: 1
   dropout_rate: 0.0
   use_attention: false                   
-  checkpoint: null #"/home/ajoos1/brain_age_pred/output/checkpoints/sfcn_20250522_104159/sfcn_20250522_104159_epoch057.pt"
+  checkpoint: null #"/home/ajoos/brain_age_pred/output/checkpoints/sfcn_20250522_104159/sfcn_20250522_104159_epoch057.pt"
 
 # ────────────────────── BRAIN GENERATOR ───────────────────────── #
 brain_generator:

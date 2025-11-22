@@ -6,15 +6,15 @@ output_dir: output/evaluations
 batch_size: 1  # Use batch_size=1 as in original script
 save_predictions: true
 
-data_dir: "/scratch-shared/ajoos1/"
+data_dir: "/scratch-shared/ajoos/"
 
 datasets: 
   - val
   - test
 
 dataset_paths:
-  val: /home/ajoos1/brain_age_pred/data/labels/val.csv
-  test: /home/ajoos1/brain_age_pred/data/labels/test_balanced.csv
+  val: /home/ajoos/brain_age_pred/data/labels/val.csv
+  test: /home/ajoos/brain_age_pred/data/labels/test_balanced.csv
 
 
 

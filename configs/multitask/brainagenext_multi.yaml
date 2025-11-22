@@ -1,10 +1,10 @@
 # ────────────────────────────  DATA  ──────────────────────────── #
 data:
-  real_data_dir: "/scratch-shared/ajoos1/brain_age_preprocessed_no_csf/"
-  segmented_data_dir: "/scratch-shared/ajoos1/brain_age_segmented/"
-  train_csv: "/home/ajoos1/brain_age_pred/data/labels/train_labels.csv"
-  val_csv:   "/home/ajoos1/brain_age_pred/data/labels/val_labels.csv"
-  test_csv:  "/home/ajoos1/brain_age_pred/data/labels/test_labels.csv"
+  real_data_dir: "/scratch-shared/ajoos/brain_age_preprocessed_no_csf/"
+  segmented_data_dir: "/scratch-shared/ajoos/brain_age_segmented/"
+  train_csv: "/home/ajoos/brain_age_pred/data/labels/train_labels.csv"
+  val_csv:   "/home/ajoos/brain_age_pred/data/labels/val_labels.csv"
+  test_csv:  "/home/ajoos/brain_age_pred/data/labels/test_labels.csv"
 
   image_key:  "image_path"
   age_key:    "age"
@@ -37,7 +37,7 @@ model:
   hidden_size: 64
 
   # Load your good brain-age weights into the encoder+age head
-  brain_age_checkpoint: "/home/ajoos1/model_files/BrainAge_1.pth"
+  brain_age_checkpoint: "/home/ajoos/model_files/BrainAge_1.pth"
 
   # Optional: resume full multi-task (encoder+age+decoder) checkpoint
   # multitask_checkpoint: "/path/to/multitask_checkpoint.pt"
@@ -163,7 +163,7 @@ training:
 
 # ────────────────────────────  OUTPUT  ────────────────────────── #
 output:
-  output_dir: "/home/ajoos1/run_output/brainagenext_multitask_finetune"
+  output_dir: "/home/ajoos/run_output/brainagenext_multitask_finetune"
   checkpoint_dir: "checkpoints"
   log_dir: "logs"
   experiment_name: "brainagenext_multitask_finetune"

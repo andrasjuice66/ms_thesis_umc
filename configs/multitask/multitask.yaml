@@ -1,11 +1,11 @@
 # ────────────────────────────  DATA  ──────────────────────────── #
 data:
-  train_csv: "/home/ajoos1/brain_age_pred/data/labels/train_labels.csv"
-  val_csv:   "/home/ajoos1/brain_age_pred/data/labels/val_labels.csv"
-  test_csv:  "/home/ajoos1/brain_age_pred/data/labels/test_labels.csv"
+  train_csv: "/home/ajoos/brain_age_pred/data/labels/train_labels.csv"
+  val_csv:   "/home/ajoos/brain_age_pred/data/labels/val_labels.csv"
+  test_csv:  "/home/ajoos/brain_age_pred/data/labels/test_labels.csv"
 
-  segmented_data_dir: "/scratch-shared/ajoos1/brain_age_segmented/"   
-  real_data_dir: "/scratch-shared/ajoos1/brain_age_preprocessed_no_csf/"   
+  segmented_data_dir: "/scratch-shared/ajoos/brain_age_segmented/"   
+  real_data_dir: "/scratch-shared/ajoos/brain_age_preprocessed_no_csf/"   
   
   num_workers: 6
   pin_memory: true
