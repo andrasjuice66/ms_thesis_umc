@@ -127,7 +127,7 @@ def create_augmented_one_hot_transform(n_classes, config=None):
         ConvertLabelsD(
             keys=["image"],
             generation_labels=GENERATION_LABELS,
-            output_labels=SEQUENTIAL_LABELS
+            output_labels=GENERATION_CLASSES
         ),
         # Remove SqueezeDimd - AsDiscreted needs the channel dimension
         AsDiscreted(keys=["image"], to_onehot=n_classes),
@@ -145,7 +145,7 @@ def get_one_hot_transform(n_classes):
         ConvertLabelsD(
             keys=["image"],
             generation_labels=GENERATION_LABELS,
-            output_labels=SEQUENTIAL_LABELS
+            output_labels=GENERATION_CLASSES
         ),
         # Remove SqueezeDimd - AsDiscreted needs the channel dimension
         AsDiscreted(keys=["image"], to_onehot=n_classes),

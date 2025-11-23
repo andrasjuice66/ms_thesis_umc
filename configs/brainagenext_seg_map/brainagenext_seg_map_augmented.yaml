@@ -30,7 +30,7 @@ data:
 # ───────────────────────────  MODEL  ──────────────────────────── #
 model:
   type: "brainagenext"                             # sfcn | resnet3d | efficientnet3d
-  in_channels: 33
+  in_channels: 15
   dropout_rate: 0.2
   use_attention: false                   
   checkpoint: # "/home/ajoos/run_output/brainagenext_seg_map_augmented_finetune/checkpoints/brainagenext_seg_map_augmented_finetune/brainagenext_seg_map_augmented_finetune_best_mae.pt"
