@@ -31,6 +31,7 @@ from brain_age_pred.brain_gen.validation_generator import ValidationGenerator
 from brain_age_pred.brain_gen.labels import GENERATION_CLASSES, GENERATION_LABELS, N_NEUTRAL_LABELS
 
 
+
 def main() -> None:
 
     # 1. ─── configuration & reproducibility ─────────────────── #
@@ -130,12 +131,12 @@ def main() -> None:
     prior_means[:, 0] = 0.0    
     prior_stds[:, 0] = 0.0     
     
-   brain_generator = BABrainGenerator(
+    brain_generator = BABrainGenerator(
         # Required parameters
         prior_means=prior_means,
         prior_stds=prior_stds,
         distribution=bg_cfg.get("distribution", "normal"),
-        prob=prob,
+        prob=bg_cfg.get("prob", {}),
 
         # Spatial augmentation parameters
         rotation_range=bg_cfg.get("rotation_range", 10),
