@@ -26,10 +26,9 @@ data:
 
 # ───────────────────────────  MODEL  ──────────────────────────── #
 model:
-  type: "brainagenext"                             # sfcn | resnet3d | efficientnet3d
+  type: "sfcn"                             # sfcn | resnet3d | efficientnet3d
   in_channels: 1
-  dropout_rate: 0.2
-  use_attention: false                   
+  dropout_rate: 0.5
   checkpoint: #"/home/ajoos/model_files/BrainAge_1.pth"
 
 # ─────────────────────────  AUGMENTATION  ─────────────────────── #
@@ -150,13 +149,13 @@ augmentation:
 
 # ──────────────────────────  TRAINING  ────────────────────────── #
 training:
-  batch_size: 2
+  batch_size: 8
   epochs: 150
 
   # optimiser & LR
-  learning_rate: 0.0001 #0.002193
-  weight_decay:  0.001
-  optimizer: "adamw"                       # adam | adamw | sgd | rmsprop | radam | novograd
+  learning_rate: 0.001 #0.002193
+  weight_decay:  0.0001
+  optimizer: "sgd"                       # adam | adamw | sgd | rmsprop | radam | novograd
   scheduler: "step"                      # cosine | plateau | onecycle | step | none
   scheduler_params:
     T_max: 100
@@ -164,8 +163,8 @@ training:
     epochs: 200
     steps_per_epoch: 534
 
-    step_size: 10
-    gamma: 0.8
+    step_size: 30
+    gamma: 0.3
 
   # losses
   loss: "huber"                      

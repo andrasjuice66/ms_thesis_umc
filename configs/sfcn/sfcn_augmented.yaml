@@ -180,10 +180,10 @@ training:
 
 # ────────────────────────────  OUTPUT  ────────────────────────── #
 output:
-  output_dir: "/home/ajoos/run_output/brainagenext_t1_augmented"
+  output_dir: "/home/ajoos/run_output/brainagenext_augmented"
   checkpoint_dir: "checkpoints"
   log_dir: "logs"
-  experiment_name: brainagenext_t1_augmented #"brain_age_with_tumors"                   # auto-generate if left null
+  experiment_name: brainagenext_augmented #"brain_age_with_tumors"                   # auto-generate if left null
 
 # ─────────────────────────────  W&B  ──────────────────────────── #
 wandb:
