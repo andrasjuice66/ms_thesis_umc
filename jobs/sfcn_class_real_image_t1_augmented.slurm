@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=sfcn_real_image_t1_augmented
+#SBATCH --job-name=sfcn_class_real_image_t1_augmented
 #SBATCH --partition=gpu_a100            
 #SBATCH --gres=gpu:a100:1
 #SBATCH --cpus-per-task=18
