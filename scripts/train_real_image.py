@@ -243,8 +243,8 @@ def main() -> None:
         model = SFCN(
             in_channels=cfg.get("model.in_channels"),
             dropout_rate=cfg.get("model.dropout_rate"),
-            age_min=cfg.get("age_min"),
-            age_max=cfg.get("age_max"),
+            age_min=cfg.get("data.age_min"),
+            age_max=cfg.get("data.age_max"),
         ).to(device)
     elif mtype == "sfcn_class":
         logger.info("Creating SFCN Class model")
