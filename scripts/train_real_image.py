@@ -120,6 +120,8 @@ def main() -> None:
     train_p, train_a, train_w, train_s, train_m = read_csv(
         train_csv,
         real_data_dir,
+        weight_key = "age_modality_frequency",
+
     )
     logger.info(f"Reading val CSV from {val_csv}")
 

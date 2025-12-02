@@ -167,7 +167,7 @@ training:
     gamma: 0.3
 
   # losses
-  loss: "huber"                      
+  loss: "mse"                      
   loss_params:
     delta: 5.0
     mae_weight: 0.5
@@ -179,10 +179,10 @@ training:
 
 # ────────────────────────────  OUTPUT  ────────────────────────── #
 output:
-  output_dir: "/home/ajoos/run_output/brainagenext_t1_augmented"
+  output_dir: "/home/ajoos/run_output/sfcn_t1_augmented"
   checkpoint_dir: "checkpoints"
   log_dir: "logs"
-  experiment_name: brainagenext_t1_augmented #"brain_age_with_tumors"                   # auto-generate if left null
+  experiment_name: sfcn_t1_augmented #"brain_age_with_tumors"                   # auto-generate if left null
 
 # ─────────────────────────────  W&B  ──────────────────────────── #
 wandb:
