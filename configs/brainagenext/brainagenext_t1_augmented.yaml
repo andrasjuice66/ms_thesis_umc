@@ -30,7 +30,7 @@ model:
   in_channels: 1
   dropout_rate: 0.2
   use_attention: false                   
-  checkpoint: #"/home/ajoos/model_files/BrainAge_1.pth"
+  checkpoint: "/home/ajoos/run_output/brainagenext_t1_augmented/checkpoints/brainagenext_t1_augmented/brainagenext_t1_augmented_best_mae.pt"
 
 # ─────────────────────────  AUGMENTATION  ─────────────────────── #
 # -------------------------------------------------------------------------
@@ -183,7 +183,7 @@ output:
   output_dir: "/home/ajoos/run_output/brainagenext_t1_augmented"
   checkpoint_dir: "checkpoints"
   log_dir: "logs"
-  experiment_name: brainagenext_t1_augmented #"brain_age_with_tumors"                   # auto-generate if left null
+  experiment_name: brainagenext_t1_augmented_finetune #"brain_age_with_tumors"                   # auto-generate if left null
 
 # ─────────────────────────────  W&B  ──────────────────────────── #
 wandb:
