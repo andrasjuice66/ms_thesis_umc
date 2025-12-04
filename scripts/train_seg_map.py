@@ -282,14 +282,12 @@ def main() -> None:
     checkpoint_path = cfg.get("model.checkpoint")
     if checkpoint_path:
         try:
-            # Use channel-aware loading for segmentation maps with 15 channels
-            checkpoint_info = load_checkpoint_with_different_channels(
+            # Use normal checkpoint loading
+            checkpoint_info = load_checkpoint(
                 model, 
                 checkpoint_path, 
                 device, 
-                logger,
-                original_in_channels=1,  # Original model had 1 channel
-                new_in_channels=n_classes  # New model has n_classes channels
+                logger
             )
             if checkpoint_info:
                 logger.info(f"Loaded checkpoint from epoch {checkpoint_info.get('epoch', 'unknown')}")
