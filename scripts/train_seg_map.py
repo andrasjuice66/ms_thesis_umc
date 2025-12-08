@@ -94,8 +94,8 @@ def main() -> None:
         train_csv,
         segmented_data_dir,
         weight_key = "age_modality_frequency",
-
     )
+
     logger.info(f"Reading val CSV from {val_csv}")
 
     val_p, val_a, val_w, val_s, val_m = read_csv(

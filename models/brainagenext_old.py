@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
+# -- coding: utf-8 --
 """
 @author: Francesco La Rosa
 """
@@ -14,7 +14,7 @@ import os
 import torchio
 import torch.nn as nn
 import matplotlib.pyplot as plt
-from nnunet_mednext import create_mednext_encoder_v1
+from brain_age_pred.models.create_mednext_encoder_v1 import create_mednext_encoder_v1
 
 
 class BrainAgeNeXt(nn.Module):
@@ -22,7 +22,7 @@ class BrainAgeNeXt(nn.Module):
     MedNeXt-based model for brain age prediction.
     """
     
-    def __init__(
+    def _init_(
         self,
         in_channels: int = 1,
         dropout_rate: float = 0.0,
@@ -44,7 +44,7 @@ class BrainAgeNeXt(nn.Module):
             feature_size: Size of the feature vector from encoder
             hidden_size: Size of the hidden layer in regression head
         """
-        super(BrainAgeNeXt, self).__init__()
+        super(BrainAgeNeXt, self)._init_()
         
         # Store parameters
         self.in_channels = in_channels
@@ -83,6 +83,4 @@ class BrainAgeNeXt(nn.Module):
         features = self.feature_extractor(x)
         x = self.global_avg_pool(features)
         age_estimate = self.regression_head(x)
-        return age_estimate.squeeze()
-
-
+        return age_estimate.squeeze(-1)
