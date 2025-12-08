@@ -29,7 +29,7 @@ from brain_age_pred.models.sfcn_class import SFCNClass
 from brain_age_pred.models.brainagenext_old import BrainAgeNeXt
 from brain_age_pred.training.trainer import BrainAgeTrainer
 from brain_age_pred.utils.logger import setup_logger
-from brain_age_pred.utils.utils import set_seed, read_csv, load_checkpoint, load_checkpoint_with_different_channels
+from brain_age_pred.utils.utils import set_seed, read_csv, load_checkpoint
 from torch.utils.data import WeightedRandomSampler, DataLoader
 from brain_age_pred.brain_gen.labels import GENERATION_CLASSES, GENERATION_LABELS, N_NEUTRAL_LABELS
 from brain_age_pred.dataset.segmentation_augmentation import create_augmented_one_hot_transform, get_one_hot_transform
