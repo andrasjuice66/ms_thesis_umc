@@ -26,7 +26,7 @@ from brain_age_pred.dataset.dataset import BADataset
 from brain_age_pred.dataset.augmentation import AugmentationPipeline
 from brain_age_pred.models.sfcn import SFCN
 from brain_age_pred.models.sfcn_class import SFCNClass
-from brain_age_pred.models.brainagenext_old import BrainAgeNeXt
+from brain_age_pred.models.brainagenext import BrainAgeNeXt
 from brain_age_pred.training.trainer import BrainAgeTrainer
 from brain_age_pred.utils.logger import setup_logger
 from brain_age_pred.utils.utils import set_seed, read_csv, load_checkpoint
