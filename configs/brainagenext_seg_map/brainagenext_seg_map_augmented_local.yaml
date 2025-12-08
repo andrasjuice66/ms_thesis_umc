@@ -33,7 +33,7 @@ model:
   in_channels: 15
   dropout_rate: 0.2
   use_attention: false                   
-  checkpoint: # "/home/ajoos/model_files/BrainAge_1.pth"
+  checkpoint: "/mnt/c/Projects/thesis_project/checkpoints_best_mae/brainagenext_seg_map/brainagenext_seg_map_best_mae.pt"
 
 # ─────────────────────────  AUGMENTATION  ─────────────────────── #
 # -------------------------------------------------------------------------

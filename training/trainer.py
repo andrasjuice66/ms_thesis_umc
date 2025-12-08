@@ -535,6 +535,20 @@ class BrainAgeTrainer:
             history["val_mae"].append(vl_metrics["mae"])
             history["lr"].append(self.optimizer.param_groups[0]["lr"])
 
+            # Evaluate on test set every 5th epoch
+            if (epoch + 1) % 5 == 0 and self.test_loader is not None:
+                self.logger.info(f"Running test set evaluation at epoch {epoch+1}")
+                test_metrics = self.evaluate(self.test_loader, checkpoint_path=None)
+                self.logger.info(
+                    f"Epoch {epoch+1:03d}  test  | "
+                    f"loss={test_metrics['loss']:.4f}  mae={test_metrics['mae']:.3f}  "
+                    f"mse={test_metrics['mse']:.3f}  r2={test_metrics['r2']:.3f}"
+                )
+                # Log test metrics to wandb if enabled
+                if self.use_wandb:
+                    test_log_dict = {f"test/{k}": v for k, v in test_metrics.items()}
+                    self.wandb.log(test_log_dict, step=epoch+1)
+
             # Log everything at once to wandb
             if self.use_wandb:
                 log_dict = {f"train/{k}": v for k, v in tr_metrics.items()}
