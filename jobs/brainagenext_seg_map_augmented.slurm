@@ -1,10 +1,10 @@
 #!/bin/bash
 #SBATCH --job-name=brainagenext_seg_map
-#SBATCH --partition=gpu_h100            
-#SBATCH --gres=gpu:h100:1
+#SBATCH --partition=gpu_a100            
+#SBATCH --gres=gpu:a100:1
 #SBATCH --cpus-per-task=18
 #SBATCH --mem=120G
-#SBATCH --time=60:00:00
+#SBATCH --time=40:00:00
 #SBATCH --output=/home/%u/run_logs/%x_%j.out   
 #SBATCH --error=/home/%u/run_logs/%x_%j.err
 #SBATCH --mail-type=FAIL,END    
