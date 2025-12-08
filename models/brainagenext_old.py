@@ -22,7 +22,7 @@ class BrainAgeNeXt(nn.Module):
     MedNeXt-based model for brain age prediction.
     """
     
-    def _init_(
+    def __init__(
         self,
         in_channels: int = 1,
         dropout_rate: float = 0.0,
@@ -32,19 +32,7 @@ class BrainAgeNeXt(nn.Module):
         feature_size: int = 512,
         hidden_size: int = 64
     ):
-        """
-        Initialize the BrainAgeNeXt model.
-        
-        Args:
-            in_channels: Number of input channels
-            dropout_rate: Dropout rate
-            model_id: MedNeXt model variant (S, B, L, etc.)
-            kernel_size: Kernel size for convolutions
-            deep_supervision: Whether to use deep supervision
-            feature_size: Size of the feature vector from encoder
-            hidden_size: Size of the hidden layer in regression head
-        """
-        super(BrainAgeNeXt, self)._init_()
+        super(BrainAgeNeXt, self).__init__()
         
         # Store parameters
         self.in_channels = in_channels
