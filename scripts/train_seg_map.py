@@ -124,8 +124,8 @@ def main() -> None:
     logger.info("Initializing datasets...")
 
     # --- NEW: Define the one-hot encoding transform with spatial augmentation ---
-    #n_classes = int(GENERATION_CLASSES.max() + 1)     # = 15 with the default label set
-    n_classes = int(len(GENERATION_LABELS))
+    n_classes = int(GENERATION_CLASSES.max() + 1)     # = 15 with the default label set
+    #n_classes = int(len(GENERATION_LABELS))
 
 
     # Create augmentation config from YAML settings
