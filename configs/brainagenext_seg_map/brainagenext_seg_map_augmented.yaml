@@ -33,7 +33,7 @@ model:
   in_channels: 15
   dropout_rate: 0.2
   use_attention: false                   
-  checkpoint: "/home/ajoos/pretrained/brainagenext_seg_map/brainagenext_seg_map_best_mae.pt"
+  checkpoint: #"/home/ajoos/pretrained/brainagenext_seg_map/brainagenext_seg_map_best_mae.pt"
 # ─────────────────────────  AUGMENTATION  ─────────────────────── #
 # -------------------------------------------------------------------------
 # Augmentation settings
