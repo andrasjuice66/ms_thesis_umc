@@ -119,13 +119,20 @@ def calculate_metrics(
         unique_modalities = np.unique(modalities)
         for modality in unique_modalities:
             mask = np.array(modalities) == modality
-            if np.sum(mask) > 0:
+            n_samples = np.sum(mask)
+            if n_samples > 0:
                 mod_mae = mean_absolute_error(targets[mask], predictions[mask])
                 mod_mse = mean_squared_error(targets[mask], predictions[mask])
                 mod_rmse = np.sqrt(mod_mse)
-                mod_r2 = r2_score(targets[mask], predictions[mask])
                 mod_delta = np.mean(predictions[mask] - targets[mask])
-                mod_corr = np.corrcoef(predictions[mask], targets[mask])[0, 1]
+                
+                # R2 and correlation require at least 2 samples
+                if n_samples >= 2:
+                    mod_r2 = r2_score(targets[mask], predictions[mask])
+                    mod_corr = np.corrcoef(predictions[mask], targets[mask])[0, 1]
+                else:
+                    mod_r2 = float('nan')
+                    mod_corr = float('nan')
                 
                 metrics.update({
                     f"{modality}_mae": mod_mae,
@@ -141,13 +148,20 @@ def calculate_metrics(
         unique_sexes = np.unique(sexes)
         for sex in unique_sexes:
             mask = np.array(sexes) == sex
-            if np.sum(mask) > 0:
+            n_samples = np.sum(mask)
+            if n_samples > 0:
                 sex_mae = mean_absolute_error(targets[mask], predictions[mask])
                 sex_mse = mean_squared_error(targets[mask], predictions[mask])
                 sex_rmse = np.sqrt(sex_mse)
-                sex_r2 = r2_score(targets[mask], predictions[mask])
                 sex_delta = np.mean(predictions[mask] - targets[mask])
-                sex_corr = np.corrcoef(predictions[mask], targets[mask])[0, 1]
+                
+                # R2 and correlation require at least 2 samples
+                if n_samples >= 2:
+                    sex_r2 = r2_score(targets[mask], predictions[mask])
+                    sex_corr = np.corrcoef(predictions[mask], targets[mask])[0, 1]
+                else:
+                    sex_r2 = float('nan')
+                    sex_corr = float('nan')
                 
                 metrics.update({
                     f"{sex}_mae": sex_mae,
