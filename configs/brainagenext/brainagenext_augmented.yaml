@@ -1,6 +1,6 @@
 # ────────────────────────────  DATA  ──────────────────────────── #
 data:
-  real_data_dir: "/scratch-shared/ajoos/brain_age_preprocessed_no_csf/"   
+  real_data_dir: "/scratch-shared/ajoos/brain_age_preprocessed/"   
   train_csv: "/home/ajoos/brain_age_pred/data/labels/train_labels.csv"
   val_csv:   "/home/ajoos/brain_age_pred/data/labels/val_labels.csv"
   test_csv:  "/home/ajoos/brain_age_pred/data/labels/test_labels.csv"
