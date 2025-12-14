@@ -8,7 +8,7 @@ data:
   real_data_dir: "/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed_no_csf/"
 
 
-  num_workers: 4
+  num_workers: 2
   pin_memory: false
 
 # ───────────────────────────  MODEL  ──────────────────────────── #
@@ -32,21 +32,21 @@ brain_generator:
     flip: 0.5
     affine: 0.5
     tumor: 0.0
-    contrast: 0.5
-    gamma: 0.4
-    scale_int: 0.4
-    shift_int: 0.4
-    hist_shift: 0.4
-    noise: 0.4
-    rician: 0.4
-    gibbs: 0.5
-    blur: 0.3
-    bias: 0.4
-    resolution: 0.3
+    contrast: 0.1
+    gamma: 0.1
+    scale_int: 0.1
+    shift_int: 0.1
+    hist_shift: 0.1
+    noise: 0.5
+    rician: 0.2
+    gibbs: 0.2
+    blur: 0.2
+    bias: 0.5
+    resolution: 0.2
     motion: 0.5        # For RandomMotion
     ghost: 0.5           # For RandomGhosting  
     torchio_noise: 0.5   # For RandomNoise
-    swap: 0.1            # For RandomSwap
+    swap: 0.2            # For RandomSwap
   
   # Spatial augmentation parameters
   rotation_range: 1
@@ -94,7 +94,7 @@ brain_generator:
   return_segmentation: true # NEW: Whether to return segmentation masks
   
   # Shape and cropping parameters for the generator
-  output_shape: [180, 218, 180]
+  output_shape: [160, 192, 160]
   use_random_cropping: false
   use_sample: true
   use_hemisphere_aware_flip: true
@@ -126,7 +126,7 @@ training:
   # If not specified, will use the same settings as 'optimizer' above
   finetune_optimizer:
     optimizer_type: "adamw"
-    learning_rate: 0.0005   # Often use a lower LR for fine-tuning
+    learning_rate: 0.0001   # Often use a lower LR for fine-tuning
     weight_decay:  0.001
     
   scheduler:
@@ -149,12 +149,12 @@ training:
 # ────────────────────────────  OUTPUT  ────────────────────────── #
 output:
   output_dir: "./output/two_step"
-  experiment_name: "two_step_synth"
+  experiment_name: "two_step_synth_local"
 
 # ─────────────────────────────  W&B  ──────────────────────────── #
 wandb:
   use_wandb: true
-  project: "brain-age-two-step"
+  project: "rerun_experiments"
   entity: null # Your W&B entity/username, or set as environment variable
 
 # ───────────────────────── MISCELLANEOUS ───────────────────────── #

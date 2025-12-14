@@ -1,11 +1,11 @@
 # ────────────────────────────  DATA  ──────────────────────────── #
 data:
-  train_csv: "/home/ajoos/brain_age_pred/data/labels/train.csv"
-  val_csv:   "/home/ajoos/brain_age_pred/data/labels/val.csv"
-  test_csv:  "/home/ajoos/brain_age_pred/data/labels/test_balanced.csv"
+  train_csv: "/home/ajoos/brain_age_pred/data/labels/train_labels.csv"
+  val_csv:   "/home/ajoos/brain_age_pred/data/labels/val_labels.csv"
+  test_csv:  "/home/ajoos/brain_age_pred/data/labels/test_labels.csv"
 
-  segmented_data_dir: "/scratch-shared/ajoos/brain_age_segmented_converted/"   
-  real_data_dir: "/scratch-shared/ajoos/brain_age_preprocessed_converted/"   
+  segmented_data_dir: "/scratch-shared/ajoos/brain_age_segmented/"   
+  real_data_dir: "/scratch-shared/ajoos/brain_age_preprocessed/"   
 
 
   num_workers: 8
@@ -32,21 +32,21 @@ brain_generator:
     flip: 0.5
     affine: 0.5
     tumor: 0.0
-    contrast: 0.5
-    gamma: 0.4
-    scale_int: 0.4
-    shift_int: 0.4
-    hist_shift: 0.4
-    noise: 0.4
-    rician: 0.4
-    gibbs: 0.5
-    blur: 0.3
-    bias: 0.4
-    resolution: 0.3
+    contrast: 0.1
+    gamma: 0.1
+    scale_int: 0.1
+    shift_int: 0.1
+    hist_shift: 0.1
+    noise: 0.5
+    rician: 0.2
+    gibbs: 0.2
+    blur: 0.2
+    bias: 0.5
+    resolution: 0.2
     motion: 0.5        # For RandomMotion
     ghost: 0.5           # For RandomGhosting  
     torchio_noise: 0.5   # For RandomNoise
-    swap: 0.1            # For RandomSwap
+    swap: 0.2            # For RandomSwap
   
   # Spatial augmentation parameters
   rotation_range: 1
@@ -121,14 +121,14 @@ training:
   # Optimiser & LR Scheduler for Stage 1 (Segmentation pretraining)
   optimizer:
     optimizer_type: "adamw"
-    learning_rate: 0.001
+    learning_rate: 0.0005
     weight_decay:  0.001
     
   # Optional: Different optimizer settings for Stage 2 (Multi-task fine-tuning)
   # If not specified, will use the same settings as 'optimizer' above
   finetune_optimizer:
     optimizer_type: "adamw"
-    learning_rate: 0.0005   # Often use a lower LR for fine-tuning
+    learning_rate: 0.0001   # Often use a lower LR for fine-tuning
     weight_decay:  0.001
     
   scheduler:
@@ -151,12 +151,12 @@ training:
 # ────────────────────────────  OUTPUT  ────────────────────────── #
 output:
   output_dir: "./output/two_step"
-  experiment_name: "two_step_synth"
+  experiment_name: "two_step_multitask"
 
 # ─────────────────────────────  W&B  ──────────────────────────── #
 wandb:
   use_wandb: true
-  project: "brain-age-multitask"
+  project: "rerun_experiments"
   entity: null # Your W&B entity/username, or set as environment variable
 
 # ───────────────────────── MISCELLANEOUS ───────────────────────── #

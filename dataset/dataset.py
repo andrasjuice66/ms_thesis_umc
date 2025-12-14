@@ -73,6 +73,7 @@ class BADataset(Dataset):
         crop_size : tuple[int, int, int] = (160, 192, 160),
         clamp: bool = True,
         normalize: bool = True,
+        crop: bool = True,
     ):
         assert len(file_paths) == len(age_labels), "len(paths) ≠ len(labels)"
         if modalities is not None:
@@ -88,6 +89,7 @@ class BADataset(Dataset):
         self.mode          = mode.lower()
         self.clamp         = clamp
         self.normalize     = normalize
+        self.crop          = crop
 
         
 
@@ -153,7 +155,8 @@ class BADataset(Dataset):
             sample = self.transform(sample)     
 
         # ---- apply center crop SECOND --------------------------------
-        # sample = self.center_crop(sample)
+        if self.crop:
+            sample = self.center_crop(sample)
         
         # ---- apply normalization LAST (after all augmentations) --------------------------------
         if self.always_transforms is not None:
