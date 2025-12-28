@@ -157,7 +157,7 @@ def main() -> None:
         sample_wts   = train_w,
         sexes        = train_s,
         modalities   = train_m,
-        transform    = one_hot_transform,  
+        transform    = get_one_hot_transform(n_classes),  
         mode         = "train",
         cache_size   = cfg.get("data.cache_size", 0),
         clamp        = False,
