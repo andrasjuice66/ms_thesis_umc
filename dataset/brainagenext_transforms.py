@@ -54,7 +54,7 @@ def get_torchio_train_aug(
     """
     return tio.Compose(
         [
-            tio.RandomGamma(log_gamma=0.8, include=[image_key], p=p_gamma),
+            tio.RandomGamma(log_gamma=0.8, keys=[image_key], include=[image_key], p=p_gamma),
  
             tio.RandomAffine(
                 scales=(0.95, 1.05),
@@ -67,21 +67,24 @@ def get_torchio_train_aug(
                 degrees=3,
                 translation=5,
                 num_transforms=4,
+                keys=[image_key],
                 include=[image_key],
                 p=p_motion,
             ),
             tio.RandomGhosting(
                 num_ghosts=(1, 4),
                 intensity=(0.1, 0.6),
+                keys=[image_key],
                 include=[image_key],
                 p=p_ghost,
             ),
             tio.RandomNoise(
                 std=(0.0, 0.5),
+                keys=[image_key],
                 include=[image_key],
                 p=p_noise,
             ),
-            tio.RandomSwap(include=[image_key], p=p_swap),
+            tio.RandomSwap(keys=[image_key], include=[image_key], p=p_swap),
         ]
     )
 

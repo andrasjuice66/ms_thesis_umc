@@ -30,7 +30,7 @@ model:
   in_channels: 1
   dropout_rate: 0.2
   use_attention: false                   
-  checkpoint: #"/home/ajoos/run_output/brainagenext_augmented/checkpoints/brainagenext_augmented/brainagenext_augmented_best_mae.pt"
+  checkpoint: "/home/ajoos/run_output/brainagenext_augmented/checkpoints/brainagenext_augmented_finetune/brainagenext_augmented_finetune_best_mae.pt"
 
 # ─────────────────────────  AUGMENTATION  ─────────────────────── #
 # -------------------------------------------------------------------------
@@ -57,16 +57,16 @@ augmentation:
     # Intensity transforms
     contrast: 0.5
     gamma: 0.5
-    scale_int: 0  # Scale intensity
-    shift_int: 0  # Shift intensity
-    hist_shift: 0  # Histogram shift
+    scale_int: 0.2  # Scale intensity
+    shift_int: 0.2  # Shift intensity
+    hist_shift: 0.2  # Histogram shift
     
     # Noise/artifact transforms
-    blur: 0           # Up from 0.2
+    blur: 0.2           # Up from 0.2
     bias: 0.5
     noise: 0.5
-    rician: 0
-    gibbs: 0
+    rician: 0.2
+    gibbs: 0.2
     
     # Resolution/dropout transforms
     resolution: 0     # Up from 0.2
@@ -183,7 +183,7 @@ output:
   output_dir: "/home/ajoos/run_output/brainagenext_augmented"
   checkpoint_dir: "checkpoints"
   log_dir: "logs"
-  experiment_name: brainagenext_augmented_finetune #"brain_age_with_tumors"                   # auto-generate if left null
+  experiment_name: brainagenext_augmented_finetune2 #"brain_age_with_tumors"                   # auto-generate if left null
 
 # ─────────────────────────────  W&B  ──────────────────────────── #
 wandb:
