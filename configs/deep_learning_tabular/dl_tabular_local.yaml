@@ -1,0 +1,52 @@
+# Deep Learning Tabular Configuration for Brain Age Prediction
+# Uses the same segmentation features as the traditional ML pipeline
+# but trains a deep neural network instead
+
+experiment_name: "dl_tabular_resnet"
+seed: 42
+use_wandb: true
+wandb_project: "rerun_experiments"
+
+# Data configuration (same as ML pipeline)
+data:
+  segmented_data_dir: "/scratch-shared/ajoos/brain_age_segmented/"   
+  train_csv: "/home/ajoos/brain_age_pred/data/labels/train_labels.csv"
+  val_csv:   "/home/ajoos/brain_age_pred/data/labels/val_labels.csv"
+  test_csv:  "/home/ajoos/brain_age_pred/data/labels/test_labels.csv"
+
+# Preprocessing configuration (same as ML pipeline)
+preprocessing:
+  scaler: "standard"  # standard, robust, minmax
+  handle_missing: "median"
+
+# Model architecture configuration
+model:
+  architecture: "resnet"  # resnet or mlp
+  
+  # For ResNet architecture
+  hidden_dims: [512, 256, 128, 64]  # Hidden layer dimensions
+  dropout: 0.3  # Dropout rate
+  use_attention: true  # Use attention mechanism for feature importance
+  
+  # Alternative: For MLP architecture (if architecture: "mlp")
+  # hidden_dims: [1024, 512, 256, 128]
+  # dropout: 0.3
+
+# Training configuration
+training:
+  batch_size: 128
+  epochs: 200
+  learning_rate: 0.001
+  optimizer: "adamw"  # adam or adamw
+  weight_decay: 0.0001  # L2 regularization
+  scheduler: "plateau"  # plateau, cosine, or none
+  grad_clip: 1.0  # Gradient clipping
+  early_stopping_patience: 30
+
+# Output configuration
+output:
+  output_dir: "output/dl_tabular"
+  save_models: true
+  save_predictions: true
+  generate_plots: true
+
