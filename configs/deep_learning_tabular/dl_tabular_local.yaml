@@ -1,47 +1,40 @@
-# Deep Learning Tabular Configuration for Brain Age Prediction
-# Uses the same segmentation features as the traditional ML pipeline
-# but trains a deep neural network instead
+# Deep Learning Tabular Configuration - Local Testing
+# Uses local paths for Windows/WSL
 
-experiment_name: "dl_tabular_resnet"
+experiment_name: "dl_tabular_resnet_local"
 seed: 42
-use_wandb: true
+use_wandb: false  # Set to false for local testing
 wandb_project: "rerun_experiments"
 
-# Data configuration (same as ML pipeline)
+# Data configuration (local paths)
 data:
-  segmented_data_dir: "/scratch-shared/ajoos/brain_age_segmented/"   
-  train_csv: "/home/ajoos/brain_age_pred/data/labels/train_labels.csv"
-  val_csv:   "/home/ajoos/brain_age_pred/data/labels/val_labels.csv"
-  test_csv:  "/home/ajoos/brain_age_pred/data/labels/test_labels.csv"
+  train_csv: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels_for_ml/train_labels.csv"
+  val_csv: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels_for_ml/val_labels.csv"
+  test_csv: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels_for_ml/test_labels.csv"
+  segmented_data_dir: "/mnt/c/Projects/thesis_project/Data/brain_age_segmented"
 
-# Preprocessing configuration (same as ML pipeline)
+# Preprocessing configuration
 preprocessing:
-  scaler: "standard"  # standard, robust, minmax
+  scaler: "standard"
   handle_missing: "median"
 
 # Model architecture configuration
 model:
-  architecture: "resnet"  # resnet or mlp
-  
-  # For ResNet architecture
-  hidden_dims: [512, 256, 128, 64]  # Hidden layer dimensions
-  dropout: 0.3  # Dropout rate
-  use_attention: true  # Use attention mechanism for feature importance
-  
-  # Alternative: For MLP architecture (if architecture: "mlp")
-  # hidden_dims: [1024, 512, 256, 128]
-  # dropout: 0.3
+  architecture: "resnet"
+  hidden_dims: [512, 256, 128, 64]
+  dropout: 0.3
+  use_attention: true
 
-# Training configuration
+# Training configuration (reduced for local testing)
 training:
-  batch_size: 128
-  epochs: 200
+  batch_size: 64  # Smaller batch size for local
+  epochs: 50  # Fewer epochs for testing
   learning_rate: 0.001
-  optimizer: "adamw"  # adam or adamw
-  weight_decay: 0.0001  # L2 regularization
-  scheduler: "plateau"  # plateau, cosine, or none
-  grad_clip: 1.0  # Gradient clipping
-  early_stopping_patience: 30
+  optimizer: "adamw"
+  weight_decay: 0.0001
+  scheduler: "plateau"
+  grad_clip: 1.0
+  early_stopping_patience: 15
 
 # Output configuration
 output:
@@ -49,4 +42,3 @@ output:
   save_models: true
   save_predictions: true
   generate_plots: true
-

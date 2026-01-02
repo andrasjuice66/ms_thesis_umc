@@ -61,9 +61,9 @@ class ResidualBlock(nn.Module):
     def __init__(self, in_features: int, out_features: int, dropout: float = 0.2):
         super().__init__()
         self.fc1 = nn.Linear(in_features, out_features)
-        self.bn1 = nn.BatchNorm1d(out_features)
+        self.bn1 = nn.BatchNorm1d(out_features, eps=1e-5, momentum=0.1)
         self.fc2 = nn.Linear(out_features, out_features)
-        self.bn2 = nn.BatchNorm1d(out_features)
+        self.bn2 = nn.BatchNorm1d(out_features, eps=1e-5, momentum=0.1)
         self.dropout = nn.Dropout(dropout)
         
         # Skip connection
@@ -71,6 +71,17 @@ class ResidualBlock(nn.Module):
             self.skip = nn.Linear(in_features, out_features)
         else:
             self.skip = nn.Identity()
+        
+        # Initialize weights
+        self._initialize_weights()
+    
+    def _initialize_weights(self):
+        """Initialize weights using Xavier/Glorot initialization."""
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.xavier_uniform_(m.weight)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
     
     def forward(self, x):
         identity = self.skip(x)
@@ -126,7 +137,7 @@ class TabularResNet(nn.Module):
         self.use_attention = use_attention
         
         # Input projection
-        self.input_bn = nn.BatchNorm1d(input_dim)
+        self.input_bn = nn.BatchNorm1d(input_dim, eps=1e-5, momentum=0.1)
         self.input_projection = nn.Linear(input_dim, hidden_dims[0])
         
         # Residual blocks
@@ -143,11 +154,22 @@ class TabularResNet(nn.Module):
         # Output head
         self.output_head = nn.Sequential(
             nn.Linear(hidden_dims[-1], hidden_dims[-1] // 2),
-            nn.BatchNorm1d(hidden_dims[-1] // 2),
+            nn.BatchNorm1d(hidden_dims[-1] // 2, eps=1e-5, momentum=0.1),
             nn.ReLU(),
             nn.Dropout(dropout),
             nn.Linear(hidden_dims[-1] // 2, 1)
         )
+        
+        # Initialize weights
+        self._initialize_weights()
+    
+    def _initialize_weights(self):
+        """Initialize weights using Xavier/Glorot initialization."""
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.xavier_uniform_(m.weight)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
     
     def forward(self, x):
         # Input processing
@@ -187,13 +209,13 @@ class TabularMLP(nn.Module):
         prev_dim = input_dim
         
         # Input batch norm
-        layers.append(nn.BatchNorm1d(input_dim))
+        layers.append(nn.BatchNorm1d(input_dim, eps=1e-5, momentum=0.1))
         
         # Hidden layers
         for hidden_dim in hidden_dims:
             layers.extend([
                 nn.Linear(prev_dim, hidden_dim),
-                nn.BatchNorm1d(hidden_dim),
+                nn.BatchNorm1d(hidden_dim, eps=1e-5, momentum=0.1),
                 nn.LeakyReLU(0.1),
                 nn.Dropout(dropout)
             ])
@@ -203,6 +225,17 @@ class TabularMLP(nn.Module):
         layers.append(nn.Linear(prev_dim, 1))
         
         self.network = nn.Sequential(*layers)
+        
+        # Initialize weights
+        self._initialize_weights()
+    
+    def _initialize_weights(self):
+        """Initialize weights using Xavier/Glorot initialization."""
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.xavier_uniform_(m.weight)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
     
     def forward(self, x):
         return self.network(x).squeeze(-1)
@@ -503,6 +536,16 @@ class DeepTabularBrainAgePredictor:
         with self._log_section("Feature engineering"):
             X = self._engineer_features(X, volumetric_features, split_name=split_name)
         
+        # Clean up any NaN/Inf values created during feature engineering
+        X = X.replace([np.inf, -np.inf], np.nan)
+        X = X.fillna(0)
+        
+        # Log if we had to clean up values
+        if split_name == 'train':
+            nan_cols = X.isna().sum()
+            if nan_cols.sum() > 0:
+                self.logger.warning(f"Cleaned NaN values in columns: {nan_cols[nan_cols > 0].to_dict()}")
+        
         if not self.feature_names:
             self.feature_names = X.columns.tolist()
             self.logger.info(f"Feature count: {len(self.feature_names)}")
@@ -542,13 +585,30 @@ class DeepTabularBrainAgePredictor:
         model.train()
         total_loss = 0
         
-        for features, targets in train_loader:
+        for batch_idx, (features, targets) in enumerate(train_loader):
             features = features.to(self.device)
             targets = targets.to(self.device)
             
+            # Check for NaN in input
+            if torch.isnan(features).any():
+                self.logger.error(f"NaN detected in input features at batch {batch_idx}")
+                raise ValueError("NaN in input features")
+            
             optimizer.zero_grad()
             outputs = model(features)
+            
+            # Check for NaN in outputs
+            if torch.isnan(outputs).any():
+                self.logger.error(f"NaN detected in model outputs at batch {batch_idx}")
+                raise ValueError("NaN in model outputs")
+            
             loss = criterion(outputs, targets)
+            
+            # Check for NaN in loss
+            if torch.isnan(loss):
+                self.logger.error(f"NaN detected in loss at batch {batch_idx}")
+                raise ValueError("NaN in loss")
+            
             loss.backward()
             
             # Gradient clipping
@@ -587,6 +647,14 @@ class DeepTabularBrainAgePredictor:
         """Train the deep learning model."""
         self.logger.info("Training deep learning model...")
         
+        # Check for NaN/Inf in input data before scaling
+        if X_train.isna().any().any():
+            self.logger.error(f"NaN values in X_train: {X_train.isna().sum().sum()}")
+            raise ValueError("NaN values in training data")
+        if np.isinf(X_train.values).any():
+            self.logger.error(f"Inf values in X_train")
+            raise ValueError("Inf values in training data")
+        
         # Scale features
         scaler_type = self.config.get('preprocessing', {}).get('scaler', 'standard')
         if scaler_type == 'standard':
@@ -598,6 +666,14 @@ class DeepTabularBrainAgePredictor:
         
         X_train_scaled = self.scaler.fit_transform(X_train)
         X_val_scaled = self.scaler.transform(X_val)
+        
+        # Check for NaN/Inf after scaling
+        if np.isnan(X_train_scaled).any():
+            self.logger.error("NaN values after scaling training data")
+            raise ValueError("NaN values after scaling")
+        if np.isinf(X_train_scaled).any():
+            self.logger.error("Inf values after scaling training data")
+            raise ValueError("Inf values after scaling")
         
         # Create datasets
         train_dataset = BrainAgeDataset(X_train_scaled, y_train.values)
