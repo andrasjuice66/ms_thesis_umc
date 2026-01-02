@@ -1,14 +1,14 @@
 # Tabular ML Configuration for Brain Age Prediction
-experiment_name: "tabular_brain_age_prediction"
+experiment_name: "ml_pipeline"
 seed: 42
 use_wandb: true
-wandb_project: "brain-age-tabular"
+wandb_project: "rerun_experiments"
 
 # Data configuration
 data:
-  train_csv: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels_tabular/train_labels.csv"
-  val_csv: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels_tabular/val_labels.csv"
-  test_csv: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels_tabular/test_labels.csv"
+  train_csv: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels_for_ml/train_labels.csv"
+  val_csv: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels_for_ml/val_labels.csv"
+  test_csv: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels_for_ml/test_labels.csv"
   segmented_data_dir: "/mnt/c/Projects/thesis_project/Data/brain_age_segmented"
 
 # Preprocessing configuration
@@ -36,18 +36,18 @@ models:
     subsample: 0.8
     colsample_bytree: 0.8
     
-  random_forest:
-    enabled: true
-    n_estimators: 300  # Reduced from 500
-    max_depth: 10
+  # random_forest:
+  #   enabled: true
+  #   n_estimators: 300  # Reduced from 500
+  #   max_depth: 10
     
-  ridge:
-    enabled: true
-    alpha: 1.0
+  # ridge:
+  #   enabled: true
+  #   alpha: 1.0
     
-  lasso:
-    enabled: true
-    alpha: 1.0
+  # lasso:
+  #   enabled: true
+  #   alpha: 1.0
 
 # Training configuration
 training:

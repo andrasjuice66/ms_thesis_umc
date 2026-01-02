@@ -637,15 +637,19 @@ class TabularBrainAgePredictor:
 
         return models
     
-    def optimize_hyperparameters(self, X: pd.DataFrame, y: pd.Series, model_name: str) -> Dict:
+    def optimize_hyperparameters(self, X: pd.DataFrame, y: pd.Series, model_name: str, 
+                                   X_val: pd.DataFrame = None, y_val: pd.Series = None) -> Dict:
         """
         Optimize hyperparameters using Optuna.
+        If X_val and y_val are provided, uses validation set for tuning.
+        Otherwise falls back to cross-validation on training set.
         """
         self.logger.info(f"Optimizing hyperparameters for {model_name}...")
 
         cv_folds = self.config.get('training', {}).get('cv_folds', 5)
         n_trials = self.config.get('training', {}).get('n_trials', 100)
         seed = self.config.get('seed', 42)
+        use_validation = X_val is not None and y_val is not None
 
         def objective(trial):
             if model_name == 'xgboost':
@@ -740,14 +744,21 @@ class TabularBrainAgePredictor:
             else:
                 raise ValueError(f"Unknown model for optimization: {model_name}")
 
-            # Use fewer CV folds and sequential processing to reduce memory usage
-            cv_scores = cross_val_score(
-                model, X, y,
-                cv=KFold(n_splits=min(cv_folds, 5), shuffle=True, random_state=seed),  # Cap at 5 folds
-                scoring='neg_mean_absolute_error',
-                n_jobs=1  # Sequential processing to avoid memory explosion
-            )
-            return -cv_scores.mean()
+            # Evaluate model: use validation set if provided, otherwise cross-validation
+            if use_validation:
+                model.fit(X, y)
+                y_pred = model.predict(X_val)
+                mae = mean_absolute_error(y_val, y_pred)
+                return mae
+            else:
+                # Fallback to cross-validation on training set
+                cv_scores = cross_val_score(
+                    model, X, y,
+                    cv=KFold(n_splits=min(cv_folds, 5), shuffle=True, random_state=seed),
+                    scoring='neg_mean_absolute_error',
+                    n_jobs=1
+                )
+                return -cv_scores.mean()
 
         study = optuna.create_study(
             direction='minimize',
@@ -763,7 +774,10 @@ class TabularBrainAgePredictor:
             except Exception:
                 pass
 
-        self.logger.info(f"{model_name}: tuning with {n_trials} trials, {min(cv_folds, 5)}-fold CV")
+        if use_validation:
+            self.logger.info(f"{model_name}: tuning with {n_trials} trials on validation set")
+        else:
+            self.logger.info(f"{model_name}: tuning with {n_trials} trials, {min(cv_folds, 5)}-fold CV")
         study.optimize(objective, n_trials=n_trials, callbacks=[_trial_callback])
 
         self.logger.info(f"Best parameters for {model_name}: {study.best_params}")
@@ -822,7 +836,8 @@ class TabularBrainAgePredictor:
             
             # Hyperparameter optimization for selected models
             if do_opt and model_name in ['xgboost', 'lightgbm', 'random_forest', 'extra_trees', 'svr', 'ridge', 'lasso', 'elastic_net']:
-                best_params = self.optimize_hyperparameters(X_train_scaled, y_train, model_name)
+                best_params = self.optimize_hyperparameters(X_train_scaled, y_train, model_name, 
+                                                           X_val_scaled, y_val)
                 model.set_params(**best_params)
             
             # Train model with proper API for each model type
