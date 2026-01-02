@@ -269,7 +269,8 @@ class DeepTabularBrainAgePredictor:
             wandb.init(
                 project=config.get('wandb_project', 'brain-age-dl-tabular'),
                 name=config.get('experiment_name'),
-                config=config
+                config=config,
+                reinit=True
             )
         
         self.logger.info(f"Using device: {self.device}")
