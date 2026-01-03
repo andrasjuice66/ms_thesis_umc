@@ -28,13 +28,13 @@ model:
 # Training configuration (reduced for local testing)
 training:
   batch_size: 64  # Smaller batch size for local
-  epochs: 50  # Fewer epochs for testing
+  epochs: 1500  # Fewer epochs for testing
   learning_rate: 0.001
   optimizer: "adamw"
   weight_decay: 0.0001
   scheduler: "plateau"
   grad_clip: 1.0
-  early_stopping_patience: 15
+  early_stopping_patience: 500
 
 # Output configuration
 output:
