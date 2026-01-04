@@ -15,7 +15,7 @@ set -o pipefail
 
 # 1) activate your env
 source ~/.bashrc
-conda activate brain_age_310
+conda activate thesis
 
 # 2) (optional) copy large data to fast local SSD on the node
 # SCRATCH=/scratch/$USER/$SLURM_JOB_ID

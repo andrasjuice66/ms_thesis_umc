@@ -130,8 +130,8 @@ training:
 
 # ────────────────────────────  OUTPUT  ────────────────────────── #
 output:
-  output_dir: "./output/two_step"
-  experiment_name: "two_step_reproduce"
+  output_dir: "/mnt/c/Projects/thesis_project/output/two_step"
+  experiment_name: "two_step_reproduce_new_data"
 
 # ─────────────────────────────  W&B  ──────────────────────────── #
 wandb:
