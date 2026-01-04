@@ -1,8 +1,8 @@
 # ────────────────────────────  DATA  ──────────────────────────── #
 data:
-  train_csv: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels/train_local.csv"
-  val_csv:   "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels/val_local.csv"
-  test_csv:  "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels/test_local.csv"
+  train_csv: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels_new/train_labels.csv"
+  val_csv:   "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels_new/val_labels.csv"
+  test_csv:  "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels_new/test_labels.csv"
 
   segmented_data_dir: "/mnt/c/Projects/thesis_project/Data/brain_age_segmented/"   
   real_data_dir: "/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed/" 
