@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=sfcn_synth_seg_map
+#SBATCH --job-name=sfcn_seg_map
 #SBATCH --partition=gpu_h100            
-#SBATCH --gres=gpu:h100:1
+#SBATCH --gres=gpu:a100:1
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=128G
 #SBATCH --time=15:00:00
@@ -15,7 +15,7 @@ set -o pipefail
 
 # 1) activate your env
 source ~/.bashrc
-conda activate thesis
+conda activate brain_age_310
 
 # 2) (optional) copy large data to fast local SSD on the node
 # SCRATCH=/scratch/$USER/$SLURM_JOB_ID
