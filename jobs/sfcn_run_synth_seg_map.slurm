@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=sfcn_seg_map
-#SBATCH --partition=gpu_h100            
+#SBATCH --partition=gpu_a100            
 #SBATCH --gres=gpu:a100:1
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=128G
