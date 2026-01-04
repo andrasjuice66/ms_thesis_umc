@@ -1,18 +1,18 @@
 # ────────────────────────────  DATA  ──────────────────────────── #
 data:
-  # train_csv: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels/train_local.csv"
-  # val_csv:   "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels/val_local.csv"
-  # test_csv:  "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels/test_local.csv"
+  train_csv: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels/train_local.csv"
+  val_csv:   "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels/val_local.csv"
+  test_csv:  "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels/test_local.csv"
 
-  # segmented_data_dir: "/mnt/c/Projects/thesis_project/Data/brain_age_segmented/"   
-  # real_data_dir: "/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed/" 
+  segmented_data_dir: "/mnt/c/Projects/thesis_project/Data/brain_age_segmented/"   
+  real_data_dir: "/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed/" 
 
-  train_csv: "C:\\Projects\\thesis_project\\brain_age_pred\\data\\labels\\train_local.csv"
-  val_csv:   "C:\\Projects\\thesis_project\\brain_age_pred\\data\\labels\\val_local.csv"
-  test_csv:  "C:\\Projects\\thesis_project\\brain_age_pred\\data\\labels\\test_local.csv"
+  # train_csv: "C:\\Projects\\thesis_project\\brain_age_pred\\data\\labels\\train_local.csv"
+  # val_csv:   "C:\\Projects\\thesis_project\\brain_age_pred\\data\\labels\\val_local.csv"
+  # test_csv:  "C:\\Projects\\thesis_project\\brain_age_pred\\data\\labels\\test_local.csv"
 
-  segmented_data_dir: "C:\\Projects\\thesis_project\\Data\\brain_age_segmented\\"   
-  real_data_dir: "C:\\Projects\\thesis_project\\Data\\brain_age_preprocessed\\"
+  # segmented_data_dir: "C:\\Projects\\thesis_project\\Data\\brain_age_segmented\\"   
+  # real_data_dir: "C:\\Projects\\thesis_project\\Data\\brain_age_preprocessed\\"
 
 
   num_workers: 4
@@ -130,13 +130,13 @@ training:
 
 # ────────────────────────────  OUTPUT  ────────────────────────── #
 output:
-  output_dir: ".\\output\\two_step"
-  experiment_name: "two_step_synth"
+  output_dir: "./output/two_step"
+  experiment_name: "two_step_reproduce"
 
 # ─────────────────────────────  W&B  ──────────────────────────── #
 wandb:
   use_wandb: true
-  project: "brain-age-two-step"
+  project: "rerun_experiments"
   entity: null # Your W&B entity/username, or set as environment variable
 
 # ───────────────────────── MISCELLANEOUS ───────────────────────── #

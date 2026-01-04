@@ -1,0 +1,45 @@
+{
+  "os": "Linux-5.15.167.4-microsoft-standard-WSL2-x86_64-with-glibc2.35",
+  "python": "CPython 3.10.12",
+  "startedAt": "2025-09-23T12:28:40.055541Z",
+  "args": [
+    "--config",
+    "config.yaml"
+  ],
+  "program": "/mnt/c/Projects/thesis_project/brain_age_pred/pipeline/main.py",
+  "codePath": "pipeline/main.py",
+  "git": {
+    "remote": "https://github.com/andrasjuice66/ms_thesis_umc",
+    "commit": "5639a2abf466be8cee57ec10af1f6d86329939ea"
+  },
+  "email": "joos.andras@gmail.com",
+  "root": "/mnt/c/Projects/thesis_project/brain_age_pred/pipeline",
+  "host": "CZC5017H2D",
+  "executable": "/usr/bin/python3",
+  "codePathLocal": "main.py",
+  "cpu_count": 6,
+  "cpu_count_logical": 12,
+  "gpu": "NVIDIA GeForce RTX 4080 SUPER",
+  "gpu_count": 1,
+  "disk": {
+    "/": {
+      "total": "1081101176832",
+      "used": "51395928064"
+    }
+  },
+  "memory": {
+    "total": "16585506816"
+  },
+  "cpu": {
+    "count": 6,
+    "countLogical": 12
+  },
+  "gpu_nvidia": [
+    {
+      "name": "NVIDIA GeForce RTX 4080 SUPER",
+      "memoryTotal": "17171480576",
+      "architecture": "Ada"
+    }
+  ],
+  "cudaVersion": "12.8"
+}
