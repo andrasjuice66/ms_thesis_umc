@@ -30,7 +30,7 @@ def read_csv(
     data_root: str,
     image_key: str = "image_path",
     age_key: str = "age",
-    weight_key: str = "sample_weight",
+    weight_key: str = "age_modality_frequency",
     sex_key: str = "sex",
     modalities_key: str = "modality",
 ) -> Tuple[List[str], List[float], List[float]]:
