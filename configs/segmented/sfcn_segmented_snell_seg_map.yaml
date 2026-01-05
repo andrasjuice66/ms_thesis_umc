@@ -39,7 +39,7 @@ training:
   epochs: 150
 
   # optimiser & LR
-  learning_rate: 0.002 #0.002193
+  learning_rate: 0.0002 #0.002193
   weight_decay:  0.0
   optimizer: "adamw"                       # adam | adamw | sgd | rmsprop | radam | novograd
   scheduler: "step"                      # cosine | plateau | onecycle | step | none
@@ -49,8 +49,8 @@ training:
     epochs: 60
     steps_per_epoch: 534
 
-    step_size: 30
-    gamma: 0.3
+    step_size: 10
+    gamma: 0.5
 
   # losses
   loss: "kl_div"                        # mse | mae | huber | huber_mae | weighted_mse
