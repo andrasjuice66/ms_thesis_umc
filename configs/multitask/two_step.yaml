@@ -44,10 +44,10 @@ brain_generator:
     blur: 0.4
     bias: 0.4
     resolution: 0.4
-    motion: 0.2
-    ghost: 0.2
-    noise_tio: 0.2
-    swap: 0.15
+    motion: 0.05  # Very low - memory intensive
+    ghost: 0.05   # Very low - memory intensive  
+    noise_tio: 0.1  # Low - less memory intensive than others
+    swap: 0.05   # Very low - memory intensive
   
   # Spatial augmentation parameters
   rotation_range: 10

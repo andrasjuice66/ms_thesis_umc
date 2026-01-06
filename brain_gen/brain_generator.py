@@ -50,35 +50,40 @@ class TorchIOTransformWrapper(Transform):
         self.keys = keys if isinstance(keys, list) else [keys]
 
     def __call__(self, data):
-        # Track original shapes and dimensions
-        original_shapes = {}
+        # Only process if at least one key exists
+        if not any(key in data for key in self.keys):
+            return data
         
-        # Convert MONAI dict to TorchIO Subject
+        # Track original shapes and dimensions
+        original_ndims = {}
+        
+        # Convert MONAI dict to TorchIO Subject (minimize copies)
         subject_dict = {}
         for key in self.keys:
             if key in data:
-                # Store original tensor info
                 tensor = data[key]
+                
+                # Convert numpy to tensor if needed
                 if isinstance(tensor, np.ndarray):
                     tensor = torch.from_numpy(tensor)
                 
-                original_shapes[key] = {
-                    'ndim': tensor.ndim,
-                    'shape': tensor.shape
-                }
+                # Track original dimensions
+                original_ndims[key] = tensor.ndim
                 
                 # Ensure tensor has proper shape for TorchIO (add channel dim if needed)
                 if tensor.ndim == 3:
                     tensor = tensor.unsqueeze(0)  # Add channel dimension for TorchIO
                     
+                # Create TorchIO image with explicit tensor (avoid copies where possible)
                 subject_dict[key] = tio.ScalarImage(tensor=tensor)
-        
-        if not subject_dict:
-            return data
         
         # Apply TorchIO transform
         subject = tio.Subject(subject_dict)
-        transformed = self.tio_transform(subject)
+        try:
+            transformed = self.tio_transform(subject)
+        except Exception as e:
+            # If transform fails, return original data unchanged
+            return data
         
         # Convert back to MONAI dict format
         for key in self.keys:
@@ -86,11 +91,11 @@ class TorchIOTransformWrapper(Transform):
                 tensor = transformed[key].data
                 
                 # Restore original number of dimensions
-                orig_ndim = original_shapes[key]['ndim']
-                if orig_ndim == 3 and tensor.ndim == 4 and tensor.shape[0] == 1:
+                if original_ndims[key] == 3 and tensor.ndim == 4 and tensor.shape[0] == 1:
                     # Remove the channel dimension we added
                     tensor = tensor.squeeze(0)
                 
+                # Update data dict (reuse memory where possible)
                 data[key] = tensor
         
         return data

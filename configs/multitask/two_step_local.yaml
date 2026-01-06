@@ -15,7 +15,7 @@ data:
   # real_data_dir: "C:\\Projects\\thesis_project\\Data\\brain_age_preprocessed\\"
 
 
-  num_workers: 4
+  num_workers: 2  # Reduced due to memory constraints with TorchIO augmentations
   pin_memory: false
 
 # ───────────────────────────  MODEL  ──────────────────────────── #
@@ -52,8 +52,8 @@ brain_generator:
     blur: 0.4
     bias: 0.4
     resolution: 0.4
-    motion: 0.2
-    ghost: 0.2
+    motion: 0.5
+    ghost: 0.5
     noise_tio: 0.2
     swap: 0.15
   
