@@ -68,7 +68,7 @@ output:
   output_dir: "/home/ajoos/run_output/sfcn_class_seg_map"
   checkpoint_dir: "checkpoints"
   log_dir: "logs"
-  experiment_name: sfcn_class_seg_map_reproduce_new_data #"brain_age_with_tumors"                   # auto-generate if left null
+  experiment_name: sfcn_class_seg_map_reproduce_new_data_augmented #"brain_age_with_tumors"                   # auto-generate if left null
 
 # ─────────────────────────────  W&B  ──────────────────────────── #
 wandb:
