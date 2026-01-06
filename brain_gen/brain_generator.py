@@ -3,6 +3,7 @@ import numpy as np
 from typing import Sequence
 
 import torch
+import torchio as tio
 from monai.transforms import (
     Compose, RandFlipd, RandAffined, RandAdjustContrastd, RandBiasFieldd,
     RandGaussianSmoothd, RandGaussianNoised, RandRicianNoised, RandGibbsNoised,
@@ -36,6 +37,47 @@ class ZeroBackgroundd(Transform):
 
     def __call__(self, data):
         data[self.img_key].mul_(data[self.seg_key].ne(0))
+        return data
+
+
+# ------------------------------------------------------------------ #
+# TorchIO transform wrapper for MONAI-style dictionaries
+# ------------------------------------------------------------------ #
+class TorchIOTransformWrapper(Transform):
+    """Wrapper to use TorchIO transforms with MONAI-style dictionaries."""
+    def __init__(self, tio_transform, keys=["image"]):
+        self.tio_transform = tio_transform
+        self.keys = keys if isinstance(keys, list) else [keys]
+
+    def __call__(self, data):
+        # Convert MONAI dict to TorchIO Subject
+        subject_dict = {}
+        for key in self.keys:
+            if key in data:
+                # Ensure tensor has proper shape for TorchIO (add channel dim if needed)
+                tensor = data[key]
+                if isinstance(tensor, np.ndarray):
+                    tensor = torch.from_numpy(tensor)
+                if tensor.ndim == 3:
+                    tensor = tensor.unsqueeze(0)  # Add channel dimension
+                subject_dict[key] = tio.ScalarImage(tensor=tensor)
+        
+        if not subject_dict:
+            return data
+        
+        # Apply TorchIO transform
+        subject = tio.Subject(subject_dict)
+        transformed = self.tio_transform(subject)
+        
+        # Convert back to MONAI dict format
+        for key in self.keys:
+            if key in transformed:
+                tensor = transformed[key].data
+                # Remove channel dimension if it was added
+                if tensor.shape[0] == 1:
+                    tensor = tensor.squeeze(0)
+                data[key] = tensor
+        
         return data
 
 
@@ -82,6 +124,14 @@ class BABrainGenerator:
         tumor_percentile_range: tuple[float, float] = (90.0, 99.6),
         tumor_size_factor_range: tuple[float, float] = (0.5, 2.0),
         tumor_use_fluid_dynamics: bool = True,
+        # torchio artefacts
+        motion_degrees: float = 3,
+        motion_translation: float = 5,
+        motion_num_transforms: int = 4,
+        ghost_num_ghosts: tuple[int, int] = (1, 4),
+        ghost_intensity: tuple[float, float] = (0.1, 0.6),
+        noise_tio_std: tuple[float, float] = (0.0, 0.5),
+        swap_patch_size: int = 15,
         # toggles
         use_sample: bool = True,
         use_hemisphere_aware_flip: bool = True,
@@ -118,6 +168,15 @@ class BABrainGenerator:
         self.rician_std, self.gibbs_alpha = rician_std, gibbs_alpha
         self.blur_sigma   = blur_sigma
         self.bias_field_rng = bias_field_rng
+        
+        # torchio artefacts
+        self.motion_degrees = motion_degrees
+        self.motion_translation = motion_translation
+        self.motion_num_transforms = motion_num_transforms
+        self.ghost_num_ghosts = ghost_num_ghosts
+        self.ghost_intensity = ghost_intensity
+        self.noise_tio_std = noise_tio_std
+        self.swap_patch_size = swap_patch_size
 
         # resolution
         self.min_res, self.max_res_iso, self.max_res_aniso = min_res, max_res_iso, max_res_aniso
@@ -259,6 +318,41 @@ class BABrainGenerator:
                                 sigma_z=(0.0, self.blur_sigma)),
             RandBiasFieldd(keys=[self.image_key], prob=self.prob["bias"],
                            coeff_range=self.bias_field_rng),
+        ]
+
+        # 3b) TorchIO artefact augmentations
+        tx += [
+            TorchIOTransformWrapper(
+                tio.RandomMotion(
+                    degrees=self.motion_degrees,
+                    translation=self.motion_translation,
+                    num_transforms=self.motion_num_transforms,
+                    p=self.prob.get("motion", 0.0),
+                ),
+                keys=[self.image_key]
+            ),
+            TorchIOTransformWrapper(
+                tio.RandomGhosting(
+                    num_ghosts=self.ghost_num_ghosts,
+                    intensity=self.ghost_intensity,
+                    p=self.prob.get("ghost", 0.0),
+                ),
+                keys=[self.image_key]
+            ),
+            TorchIOTransformWrapper(
+                tio.RandomNoise(
+                    std=self.noise_tio_std,
+                    p=self.prob.get("noise_tio", 0.0),
+                ),
+                keys=[self.image_key]
+            ),
+            TorchIOTransformWrapper(
+                tio.RandomSwap(
+                    patch_size=self.swap_patch_size,
+                    p=self.prob.get("swap", 0.0),
+                ),
+                keys=[self.image_key]
+            ),
         ]
 
         # 4) resolution simulation

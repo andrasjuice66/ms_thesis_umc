@@ -23,6 +23,8 @@ data:
 # The architecture is based on SynthSeg's U-Net.
 model:
   checkpoint: null # Optional path to a checkpoint to resume training
+  seg_checkpoint: null # Optional path to a segmentation-only checkpoint to skip stage 1
+
 
 # ────────────────────── BRAIN GENERATOR ───────────────────────── #
 # These settings control the on-the-fly generation of synthetic MRIs
@@ -50,6 +52,10 @@ brain_generator:
     blur: 0.4
     bias: 0.4
     resolution: 0.4
+    motion: 0.2
+    ghost: 0.2
+    noise_tio: 0.2
+    swap: 0.15
   
   # Spatial augmentation parameters
   rotation_range: 10
@@ -70,6 +76,15 @@ brain_generator:
   gibbs_alpha: 0.5
   blur_sigma: 0.5
   bias_field_rng: [0.0, 0.6]
+  
+  # TorchIO artefacts parameters
+  motion_degrees: 3
+  motion_translation: 5
+  motion_num_transforms: 4
+  ghost_num_ghosts: [1, 4]
+  ghost_intensity: [0.1, 0.6]
+  noise_tio_std: [0.0, 0.5]
+  swap_patch_size: 15
   
   # Resolution parameters (simulates different scanner resolutions)
   min_res: 0.8
@@ -96,7 +111,7 @@ training:
   epochs: 150
   
   # Two-step training configuration
-  seg_pretrain_epochs: 60  # Number of epochs for segmentation-only pretraining
+  seg_pretrain_epochs: 12  # Number of epochs for segmentation-only pretraining
 
   # Optimiser & LR Scheduler for Stage 1 (Segmentation pretraining)
   optimizer:

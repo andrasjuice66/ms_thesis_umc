@@ -160,6 +160,15 @@ def main() -> None:
         gibbs_alpha=bg_cfg.get("gibbs_alpha", 0.5),
         blur_sigma=bg_cfg.get("blur_sigma", 1.0),
         bias_field_rng=tuple(bg_cfg.get("bias_field_rng", [0.0, 0.8])),
+        
+        # TorchIO artifact parameters
+        motion_degrees=bg_cfg.get("motion_degrees", 3),
+        motion_translation=bg_cfg.get("motion_translation", 5),
+        motion_num_transforms=bg_cfg.get("motion_num_transforms", 4),
+        ghost_num_ghosts=tuple(bg_cfg.get("ghost_num_ghosts", [1, 4])),
+        ghost_intensity=tuple(bg_cfg.get("ghost_intensity", [0.1, 0.6])),
+        noise_tio_std=tuple(bg_cfg.get("noise_tio_std", [0.0, 0.5])),
+        swap_patch_size=bg_cfg.get("swap_patch_size", 15),
     
         # Resolution parameters
         min_res=bg_cfg.get("min_res", 1.0),
@@ -250,19 +259,29 @@ def main() -> None:
     logger.info("Starting two-step training...")
     try:
         t0 = time.time()
-        results = trainer.train()
+        
+        # Check if a segmentation checkpoint is provided
+        seg_checkpoint = cfg.get("model.seg_checkpoint", None)
+        if seg_checkpoint:
+            logger.info(f"Segmentation checkpoint provided: {seg_checkpoint}")
+        
+        results = trainer.train(seg_checkpoint_path=seg_checkpoint)
         history = results["history"]
         best_mae_info = results["best_mae_info"]
+        best_dice_info = results["best_dice_info"]
         
         logger.info(f"Training finished in {time.time()-t0:.1f}s")
         json.dump(history, (ckpt_dir / "history.json").open("w"), indent=2)
         json.dump(best_mae_info, (ckpt_dir / "best_mae_info.json").open("w"), indent=2)
+        json.dump(best_dice_info, (ckpt_dir / "best_dice_info.json").open("w"), indent=2)
         
         if use_wandb:
             wandb.log({"train/duration_s": time.time() - t0})
             wandb.log({
                 "best_val_mae": best_mae_info["value"],
-                "best_val_mae_epoch": best_mae_info["epoch"] + 1
+                "best_val_mae_epoch": best_mae_info["epoch"] + 1,
+                "best_val_dice": best_dice_info["value"],
+                "best_val_dice_epoch": best_dice_info["epoch"] + 1
             })
 
         if np.isinf(best_mae_info["value"]):

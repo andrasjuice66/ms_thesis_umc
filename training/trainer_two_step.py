@@ -76,10 +76,20 @@ class TwoStepTrainer:
         self.best_val_mae = float("inf")
         self.best_mae_epoch = -1
         self.best_mae_checkpoint_path = None
+        self.best_val_dice = float("-inf")
+        self.best_dice_epoch = -1
+        self.best_dice_checkpoint_path = None
         self.early_stop_counter = 0
 
         self.model.to(self.device)
         self.logger.info(f"TwoStepTrainer initialized for experiment: {self.exp_name}")
+
+    def load_segmentation_checkpoint(self, checkpoint_path: str):
+        """Load a segmentation-only checkpoint to start training from stage 2 directly."""
+        self.logger.info(f"Loading segmentation checkpoint from {checkpoint_path}")
+        checkpoint = torch.load(checkpoint_path, map_location=self.device)
+        self.model.load_state_dict(checkpoint["model_state_dict"])
+        self.logger.info("Successfully loaded segmentation checkpoint")
 
     def _step(self, batch: Dict[str, torch.Tensor], train: bool = True):
         imgs = batch["image"].to(self.device)
@@ -164,33 +174,60 @@ class TwoStepTrainer:
         metrics = {**epoch_losses, "mae": mae, "dice": dice_score}
         return metrics
     
-    def _save_checkpoint(self, epoch: int, is_best: bool = False):
-        ckpt = {"epoch": epoch, "model_state_dict": self.model.state_dict(), "optimizer_state_dict": self.optimizer.state_dict()}
+    def _save_checkpoint(self, epoch: int, is_best_mae: bool = False, is_best_dice: bool = False):
+        ckpt = {
+            "epoch": epoch, 
+            "model_state_dict": self.model.state_dict(), 
+            "optimizer_state_dict": self.optimizer.state_dict(),
+            "training_stage": self.current_training_stage
+        }
         if self.scheduler: ckpt["scheduler_state_dict"] = self.scheduler.state_dict()
-        if is_best:
+        
+        if is_best_mae:
             fname = self.ckpt_dir / f"{self.exp_name}_best_mae.pt"
             torch.save(ckpt, fname)
             self.best_mae_checkpoint_path = str(fname)
             self.logger.info(f"Saved best MAE checkpoint: {fname}")
+        
+        if is_best_dice:
+            fname = self.ckpt_dir / f"{self.exp_name}_best_dice.pt"
+            torch.save(ckpt, fname)
+            self.best_dice_checkpoint_path = str(fname)
+            self.logger.info(f"Saved best Dice checkpoint: {fname}")
 
-    def train(self) -> Dict[str, Any]:
+    def train(self, seg_checkpoint_path: Optional[str] = None) -> Dict[str, Any]:
         history = {k: [] for k in ("train_loss", "val_loss", "train_mae", "val_mae", "train_dice", "val_dice", "lr")}
         
-        # --- STAGE 1: Segmentation Pre-training ---
-        self.current_training_stage = "seg_only"
         seg_pretrain_epochs = self.cfg.get("seg_pretrain_epochs", 50)
-        self.logger.info(f"--- Starting Stage 1: Segmentation Pre-training for {seg_pretrain_epochs} epochs ---")
+        
+        # Check if we should skip stage 1 by loading a segmentation checkpoint
+        if seg_checkpoint_path:
+            self.logger.info(f"Segmentation checkpoint provided: {seg_checkpoint_path}")
+            self.load_segmentation_checkpoint(seg_checkpoint_path)
+            self.logger.info("Skipping Stage 1 (Segmentation Pre-training) as checkpoint was loaded")
+        else:
+            # --- STAGE 1: Segmentation Pre-training ---
+            self.current_training_stage = "seg_only"
+            self.logger.info(f"--- Starting Stage 1: Segmentation Pre-training for {seg_pretrain_epochs} epochs ---")
 
-        # Setup optimizer for segmentation only
-        self.optimizer = get_optimizer(self.model.parameters(), **self.cfg.get("optimizer", {}))
-        self.scheduler = get_scheduler(self.optimizer, **self.cfg.get("scheduler", {}))
+            # Setup optimizer for segmentation only
+            self.optimizer = get_optimizer(self.model.parameters(), **self.cfg.get("optimizer", {}))
+            self.scheduler = get_scheduler(self.optimizer, **self.cfg.get("scheduler", {}))
 
-        for epoch in range(seg_pretrain_epochs):
-            train_metrics = self._run_epoch(epoch, self.train_loader, train=True, stage_name="Seg-Only")
-            val_metrics = self._run_epoch(epoch, self.val_loader, train=False, stage_name="Seg-Only")
-            self.logger.info(f"Epoch {epoch+1}/{seg_pretrain_epochs} [Seg-Only]: Train MAE={train_metrics['mae']:.3f}, Dice={train_metrics['dice']:.3f} | Val MAE={val_metrics['mae']:.3f}, Dice={val_metrics['dice']:.3f}")
+            for epoch in range(seg_pretrain_epochs):
+                train_metrics = self._run_epoch(epoch, self.train_loader, train=True, stage_name="Seg-Only")
+                val_metrics = self._run_epoch(epoch, self.val_loader, train=False, stage_name="Seg-Only")
+                
+                # Track best dice during pretraining
+                is_best_dice = val_metrics["dice"] > self.best_val_dice
+                if is_best_dice:
+                    self.best_val_dice = val_metrics["dice"]
+                    self.best_dice_epoch = epoch
+                    self._save_checkpoint(epoch, is_best_dice=True)
+                
+                self.logger.info(f"Epoch {epoch+1}/{seg_pretrain_epochs} [Seg-Only]: Train MAE={train_metrics['mae']:.3f}, Dice={train_metrics['dice']:.3f} | Val MAE={val_metrics['mae']:.3f}, Dice={val_metrics['dice']:.3f}")
 
-        self.logger.info(f"--- Finished Segmentation Pre-training ---")
+            self.logger.info(f"--- Finished Segmentation Pre-training (Best Dice: {self.best_val_dice:.4f} at epoch {self.best_dice_epoch+1}) ---")
 
         # --- STAGE 2: Multi-task Fine-tuning ---
         self.current_training_stage = "multi_task"
@@ -221,21 +258,34 @@ class TwoStepTrainer:
             
             self.logger.info(f"Epoch {epoch+1}: Train MAE={train_metrics['mae']:.3f}, Dice={train_metrics['dice']:.3f} | Val MAE={val_metrics['mae']:.3f}, Dice={val_metrics['dice']:.3f}")
 
-            is_best = val_metrics["mae"] < self.best_val_mae
-            if is_best:
+            is_best_mae = val_metrics["mae"] < self.best_val_mae
+            if is_best_mae:
                 self.best_val_mae = val_metrics["mae"]
                 self.best_mae_epoch = epoch
                 self.early_stop_counter = 0
             else:
                 self.early_stop_counter += 1
             
-            self._save_checkpoint(epoch, is_best=is_best)
+            # Save checkpoint only if it's the best MAE
+            self._save_checkpoint(epoch, is_best_mae=is_best_mae)
 
             if self.early_stop_counter >= self.early_stopping_patience:
                 self.logger.info(f"Early stopping at epoch {epoch+1}")
                 break
         
-        return {"history": history, "best_mae_info": {"value": self.best_val_mae, "epoch": self.best_mae_epoch, "checkpoint_path": self.best_mae_checkpoint_path}}
+        return {
+            "history": history, 
+            "best_mae_info": {
+                "value": self.best_val_mae, 
+                "epoch": self.best_mae_epoch, 
+                "checkpoint_path": self.best_mae_checkpoint_path
+            },
+            "best_dice_info": {
+                "value": self.best_val_dice, 
+                "epoch": self.best_dice_epoch, 
+                "checkpoint_path": self.best_dice_checkpoint_path
+            }
+        }
 
     def evaluate(self, test_loader: DataLoader, checkpoint_path: Optional[str] = None) -> Dict[str, float]:
         if checkpoint_path:
