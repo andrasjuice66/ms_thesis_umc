@@ -50,16 +50,27 @@ class TorchIOTransformWrapper(Transform):
         self.keys = keys if isinstance(keys, list) else [keys]
 
     def __call__(self, data):
+        # Track original shapes and dimensions
+        original_shapes = {}
+        
         # Convert MONAI dict to TorchIO Subject
         subject_dict = {}
         for key in self.keys:
             if key in data:
-                # Ensure tensor has proper shape for TorchIO (add channel dim if needed)
+                # Store original tensor info
                 tensor = data[key]
                 if isinstance(tensor, np.ndarray):
                     tensor = torch.from_numpy(tensor)
+                
+                original_shapes[key] = {
+                    'ndim': tensor.ndim,
+                    'shape': tensor.shape
+                }
+                
+                # Ensure tensor has proper shape for TorchIO (add channel dim if needed)
                 if tensor.ndim == 3:
-                    tensor = tensor.unsqueeze(0)  # Add channel dimension
+                    tensor = tensor.unsqueeze(0)  # Add channel dimension for TorchIO
+                    
                 subject_dict[key] = tio.ScalarImage(tensor=tensor)
         
         if not subject_dict:
@@ -73,9 +84,13 @@ class TorchIOTransformWrapper(Transform):
         for key in self.keys:
             if key in transformed:
                 tensor = transformed[key].data
-                # Remove channel dimension if it was added
-                if tensor.shape[0] == 1:
+                
+                # Restore original number of dimensions
+                orig_ndim = original_shapes[key]['ndim']
+                if orig_ndim == 3 and tensor.ndim == 4 and tensor.shape[0] == 1:
+                    # Remove the channel dimension we added
                     tensor = tensor.squeeze(0)
+                
                 data[key] = tensor
         
         return data
