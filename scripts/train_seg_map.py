@@ -35,6 +35,7 @@ from torch.utils.data import WeightedRandomSampler, DataLoader
 from brain_age_pred.brain_gen.brain_generator import BABrainGenerator
 from brain_age_pred.brain_gen.labels import GENERATION_CLASSES, GENERATION_LABELS, N_NEUTRAL_LABELS
 from brain_age_pred.dataset.custom_transformations import ConvertLabelsD
+from brain_age_pred.dataset.segmentation_augmentation import SegmentationAugmentationConfig, create_augmented_one_hot_transform, get_one_hot_transform
 
 
 def main() -> None:
@@ -136,6 +137,8 @@ def main() -> None:
         SqueezeDimd(keys=["image"], dim=0),
         AsDiscreted(keys=["image"], to_onehot=n_classes),
     ])
+
+    
     # ---------------------------------------------------------------------
 
     logger.info("Creating training dataset")
@@ -146,7 +149,7 @@ def main() -> None:
         sample_wts   = train_w,
         sexes        = train_s,
         modalities   = train_m,
-        transform    = one_hot_transform,  # <-- USE THE NEW TRANSFORM
+        transform    = create_augmented_one_hot_transform(n_classes),  # <-- USE THE NEW TRANSFORM
         mode         = "train",
         cache_size   = cfg.get("data.cache_size", 0),
     )
@@ -157,7 +160,7 @@ def main() -> None:
         age_labels   = val_a,
         sexes        = val_s,
         modalities   = val_m,
-        transform    = one_hot_transform, # <-- USE THE NEW TRANSFORM HERE TOO
+        transform    = get_one_hot_transform(n_classes), # <-- USE THE NEW TRANSFORM HERE TOO
         mode         = "val",
         cache_size   = cfg.get("data.cache_size", 0),
     )
@@ -168,7 +171,7 @@ def main() -> None:
         age_labels   = test_a,
         sexes        = test_s,
         modalities   = test_m,
-        transform    = one_hot_transform, # <-- AND HERE
+        transform    = get_one_hot_transform(n_classes), # <-- AND HERE
         mode         = "test",
         cache_size   = cfg.get("data.cache_size", 0),
     )
