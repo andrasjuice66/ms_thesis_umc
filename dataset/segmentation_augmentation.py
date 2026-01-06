@@ -4,7 +4,6 @@ import numpy as np
 from monai.transforms import (
     Compose, 
     EnsureChannelFirstd, 
-    SqueezeDimd, 
     AsDiscreted,
     RandAffined,
     RandFlipd,
@@ -129,9 +128,7 @@ def create_augmented_one_hot_transform(n_classes, config=None):
             generation_labels=GENERATION_LABELS,
             output_labels=GENERATION_CLASSES
         ),
-        SqueezeDimd(keys=["image"], dim=0),
-
-        # Remove SqueezeDimd - AsDiscreted needs the channel dimension
+        # AsDiscreted needs the channel dimension, so don't squeeze
         AsDiscreted(keys=["image"], to_onehot=n_classes),        
     ]
     
@@ -147,6 +144,6 @@ def get_one_hot_transform(n_classes):
             generation_labels=GENERATION_LABELS,
             output_labels=GENERATION_CLASSES    
         ),
-        SqueezeDimd(keys=["image"], dim=0),
+        # AsDiscreted needs the channel dimension, so don't squeeze
         AsDiscreted(keys=["image"], to_onehot=n_classes),
     ])
