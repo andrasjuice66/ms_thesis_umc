@@ -31,7 +31,7 @@ model:
   in_channels: 15
   dropout_rate: 0.5
   use_attention: false                   
-  checkpoint: null #"/home/ajoos/brain_age_pred/output/checkpoints/sfcn_20250522_104159/sfcn_20250522_104159_epoch057.pt"
+  checkpoint: "/home/ajoos/run_output/sfcn_class_seg_map/checkpoints/sfcn_class_seg_map_reproduce_new_data_augmented/sfcn_class_seg_map_reproduce_new_data_augmented_best_mae.pt"
 
 # ──────────────────────────  TRAINING  ────────────────────────── #
 training:
@@ -39,7 +39,7 @@ training:
   epochs: 150
 
   # optimiser & LR
-  learning_rate: 0.0002 #0.002193
+  learning_rate: 0.000015 #0.002193
   weight_decay:  0.0
   optimizer: "adamw"                       # adam | adamw | sgd | rmsprop | radam | novograd
   scheduler: "step"                      # cosine | plateau | onecycle | step | none
@@ -68,7 +68,7 @@ output:
   output_dir: "/home/ajoos/run_output/sfcn_class_seg_map"
   checkpoint_dir: "checkpoints"
   log_dir: "logs"
-  experiment_name: sfcn_class_seg_map_reproduce_new_data_augmented #"brain_age_with_tumors"                   # auto-generate if left null
+  experiment_name: sfcn_class_seg_map_reproduce_new_data_augmented_finetune #"brain_age_with_tumors"                   # auto-generate if left null
 
 # ─────────────────────────────  W&B  ──────────────────────────── #
 wandb:
