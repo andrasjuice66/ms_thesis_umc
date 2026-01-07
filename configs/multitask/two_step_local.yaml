@@ -54,7 +54,7 @@ brain_generator:
     resolution: 0.4
     motion: 0.5
     ghost: 0.5
-    noise_tio: 0.2
+    noise_tio: 0.1
     swap: 0.15
   
   # Spatial augmentation parameters
@@ -77,14 +77,17 @@ brain_generator:
   blur_sigma: 0.5
   bias_field_rng: [0.0, 0.6]
   
-  # TorchIO artefacts parameters
-  motion_degrees: 3
-  motion_translation: 5
-  motion_num_transforms: 4
-  ghost_num_ghosts: [1, 4]
-  ghost_intensity: [0.1, 0.6]
-  noise_tio_std: [0.0, 0.5]
-  swap_patch_size: 15
+# Motion artifacts parameters (TorchIO RandomMotion)
+  motion_degrees: 3.0      # NEW: Maximum rotation in degrees
+  motion_translation: 5.0  # NEW: Maximum translation in mm
+  motion_num_transforms: 4 # NEW: Number of motion transforms to apply
+  
+  # Ghosting artifacts parameters (TorchIO RandomGhosting)
+  ghost_num: [1, 4]        # NEW: Range for number of ghosts [min, max]
+  ghost_intensity: [0.1, 0.6] # NEW: Range for ghost intensity [min, max]
+  
+  # TorchIO noise parameters
+  torchio_noise_std: [0, 0.5] # NEW: Standard deviation range for TorchIO noise
   
   # Resolution parameters (simulates different scanner resolutions)
   min_res: 0.8
