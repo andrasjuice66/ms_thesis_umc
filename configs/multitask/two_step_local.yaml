@@ -114,7 +114,7 @@ training:
   epochs: 150
   
   # Two-step training configuration
-  seg_pretrain_epochs: 6  # Number of epochs for segmentation-only pretraining
+  seg_pretrain_epochs: 10  # Number of epochs for segmentation-only pretraining
 
   # Optimiser & LR Scheduler for Stage 1 (Segmentation pretraining)
   optimizer:
