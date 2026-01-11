@@ -67,10 +67,10 @@ class TwoStepTrainer:
         self.epochs = self.cfg.get("epochs", 100)
         self.grad_accum_steps = self.cfg.get("gradient_accumulation_steps", 1)
         self.early_stopping_patience = self.cfg.get("early_stopping_patience", 20)
+        self.test_eval_frequency = self.cfg.get("test_eval_frequency", 5)  # Evaluate on test set every N epochs
         self.use_amp = self.cfg.get("use_amp", True) and torch.cuda.is_available()
         self.scaler = GradScaler() if self.use_amp else None
         self.current_training_stage = "seg_only" # Start with segmentation
-        self.is_segmentation_frozen = False # Track if segmentation branch is frozen
 
         # Metrics
         self.dice_metric = DiceMetric(include_background=True, reduction="mean", get_not_nans=False)
@@ -108,13 +108,10 @@ class TwoStepTrainer:
         for param in self.model.age_head.parameters():
             param.requires_grad = True
         
-        self.is_segmentation_frozen = True
-        
         # Count trainable parameters
         trainable_params = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
         total_params = sum(p.numel() for p in self.model.parameters())
         self.logger.info(f"Trainable parameters: {trainable_params:,} / {total_params:,} ({100*trainable_params/total_params:.2f}%)")
-        self.logger.info("Will optimize ONLY for MAE (age loss), segmentation loss will not be used for training")
 
     def _step(self, batch: Dict[str, torch.Tensor], train: bool = True):
         imgs = batch["image"].to(self.device)
@@ -132,14 +129,10 @@ class TwoStepTrainer:
             if self.current_training_stage == "seg_only":
                 total_loss = seg_loss
             elif self.current_training_stage == "multi_task":
-                if self.is_segmentation_frozen:
-                    # When segmentation is frozen, only optimize for age (MAE)
-                    total_loss = age_loss
-                else:
-                    # Uncertainty-weighted total loss for multi-task learning
-                    loss_age_weighted = torch.exp(-self.log_var_age) * age_loss + 0.5 * self.log_var_age
-                    loss_seg_weighted = torch.exp(-self.log_var_seg) * seg_loss + 0.5 * self.log_var_seg
-                    total_loss = loss_age_weighted.squeeze() + loss_seg_weighted.squeeze()
+                # Uncertainty-weighted total loss
+                loss_age_weighted = torch.exp(-self.log_var_age) * age_loss + 0.5 * self.log_var_age
+                loss_seg_weighted = torch.exp(-self.log_var_seg) * seg_loss + 0.5 * self.log_var_seg
+                total_loss = loss_age_weighted.squeeze() + loss_seg_weighted.squeeze()
             else:
                 raise ValueError(f"Unknown training stage: {self.current_training_stage}")
 
@@ -224,18 +217,25 @@ class TwoStepTrainer:
             self.best_dice_checkpoint_path = str(fname)
             self.logger.info(f"Saved best Dice checkpoint: {fname}")
 
-    def train(self, seg_checkpoint_path: Optional[str] = None) -> Dict[str, Any]:
+    def train(self, seg_checkpoint_path: Optional[str] = None, skip_stage1: bool = False) -> Dict[str, Any]:
         history = {k: [] for k in ("train_loss", "val_loss", "train_mae", "val_mae", "train_dice", "val_dice", "lr")}
         
         seg_pretrain_epochs = self.cfg.get("seg_pretrain_epochs", 50)
         
-        # Check if we should skip stage 1 by loading a segmentation checkpoint
+        # Check if we should skip stage 1
+        # This happens when:
+        # 1. A segmentation checkpoint is provided, OR
+        # 2. A model checkpoint was already loaded before trainer initialization (skip_stage1=True)
+        should_skip_stage1 = skip_stage1 or (seg_checkpoint_path is not None)
+        
         if seg_checkpoint_path:
-            self.logger.info(f"Checkpoint provided: {seg_checkpoint_path}")
+            self.logger.info(f"Segmentation checkpoint provided: {seg_checkpoint_path}")
             self.load_segmentation_checkpoint(seg_checkpoint_path)
             self.logger.info("Skipping Stage 1 (Segmentation Pre-training) as checkpoint was loaded")
-            self.logger.info("When starting from checkpoint, will freeze segmentation and optimize only for MAE")
-        else:
+        elif skip_stage1:
+            self.logger.info("Model checkpoint already loaded - Skipping Stage 1 (Segmentation Pre-training)")
+        
+        if not should_skip_stage1:
             # --- STAGE 1: Segmentation Pre-training ---
             self.current_training_stage = "seg_only"
             self.logger.info(f"--- Starting Stage 1: Segmentation Pre-training for {seg_pretrain_epochs} epochs ---")
@@ -261,13 +261,21 @@ class TwoStepTrainer:
 
         # --- STAGE 2: Multi-task Fine-tuning ---
         self.current_training_stage = "multi_task"
-        finetune_epochs = self.epochs - seg_pretrain_epochs
-        self.logger.info(f"--- Starting Stage 2: Multi-task Fine-tuning for {finetune_epochs} epochs ---")
         
-        # Freeze segmentation branch if:
-        # 1. freeze_segmentation config is True, OR
-        # 2. We loaded from a checkpoint (meaning we're continuing from a trained model)
-        freeze_seg = self.cfg.get("freeze_segmentation", False) or (seg_checkpoint_path is not None)
+        # Determine the starting epoch and number of epochs for stage 2
+        if should_skip_stage1:
+            # If we skipped stage 1, start from epoch 0 and train for full epochs
+            start_epoch = 0
+            finetune_epochs = self.epochs
+            self.logger.info(f"--- Starting Stage 2: Multi-task Fine-tuning for {finetune_epochs} epochs (Stage 1 was skipped) ---")
+        else:
+            # If we did stage 1, continue from where it left off
+            start_epoch = seg_pretrain_epochs
+            finetune_epochs = self.epochs - seg_pretrain_epochs
+            self.logger.info(f"--- Starting Stage 2: Multi-task Fine-tuning for {finetune_epochs} epochs ---")
+        
+        # Optionally freeze segmentation branch (encoder + seg_head)
+        freeze_seg = self.cfg.get("freeze_segmentation", False)
         if freeze_seg:
             self.freeze_segmentation_branch()
         
@@ -282,7 +290,7 @@ class TwoStepTrainer:
         self.early_stop_counter = 0 # Reset early stopping
         self.best_val_mae = float("inf") # Reset best MAE for the new stage
 
-        for epoch in range(seg_pretrain_epochs, self.epochs):
+        for epoch in range(start_epoch, start_epoch + finetune_epochs):
             train_metrics = self._run_epoch(epoch, self.train_loader, train=True, stage_name="Multi-Task")
             val_metrics = self._run_epoch(epoch, self.val_loader, train=False, stage_name="Multi-Task")
 
@@ -293,9 +301,17 @@ class TwoStepTrainer:
             log_dict = {f"train/{k}": v for k,v in train_metrics.items()}
             log_dict.update({f"val/{k}": v for k,v in val_metrics.items()})
             log_dict["lr"] = self.optimizer.param_groups[0]['lr']
-            if self.use_wandb: self.wandb.log(log_dict, step=epoch+1)
             
-            self.logger.info(f"Epoch {epoch+1}: Train MAE={train_metrics['mae']:.3f}, Dice={train_metrics['dice']:.3f} | Val MAE={val_metrics['mae']:.3f}, Dice={val_metrics['dice']:.3f}")
+            # Evaluate on test set every N epochs
+            if (epoch + 1) % self.test_eval_frequency == 0:
+                self.logger.info(f"Running test evaluation at epoch {epoch+1}...")
+                test_metrics = self._run_epoch(epoch, self.test_loader, train=False, stage_name="Test")
+                log_dict.update({f"test/{k}": v for k,v in test_metrics.items()})
+                self.logger.info(f"Epoch {epoch+1}: Train MAE={train_metrics['mae']:.3f}, Dice={train_metrics['dice']:.3f} | Val MAE={val_metrics['mae']:.3f}, Dice={val_metrics['dice']:.3f} | Test MAE={test_metrics['mae']:.3f}, Dice={test_metrics['dice']:.3f}")
+            else:
+                self.logger.info(f"Epoch {epoch+1}: Train MAE={train_metrics['mae']:.3f}, Dice={train_metrics['dice']:.3f} | Val MAE={val_metrics['mae']:.3f}, Dice={val_metrics['dice']:.3f}")
+            
+            if self.use_wandb: self.wandb.log(log_dict, step=epoch+1)
 
             is_best_mae = val_metrics["mae"] < self.best_val_mae
             if is_best_mae:

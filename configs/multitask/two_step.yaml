@@ -16,8 +16,8 @@ data:
 # The architecture is based on SynthSeg's U-Net.
 model:
   checkpoint: /home/ajoos/brain_age_pred/output/checkpoints/two_step/two_step_reproduce_new_data/two_step_reproduce_new_data_best_mae.pt
-  seg_checkpoint: null # Optional path to checkpoint to skip stage 1
-                       # When provided, automatically freezes segmentation and trains only age head for MAE
+  # If checkpoint is provided, Stage 1 (segmentation pretraining) will be skipped and training starts at Stage 2 (multi-task)
+  seg_checkpoint: null # Alternative: path to a segmentation-only checkpoint to skip stage 1
 
 # ────────────────────── BRAIN GENERATOR ───────────────────────── #
 # These settings control the on-the-fly generation of synthetic MRIs
@@ -108,8 +108,7 @@ training:
   
   # Two-step training configuration
   seg_pretrain_epochs: 10  # Number of epochs for segmentation-only pretraining
-  freeze_segmentation: true  # If true, freezes encoder and seg_head during stage 2, only trains age_head for MAE
-                              # Note: Automatically enabled when loading from checkpoint
+  freeze_segmentation: true  # If true, freezes encoder and seg_head during stage 2, only trains age_head
 
   # Optimiser & LR Scheduler for Stage 1 (Segmentation pretraining)
   optimizer:
@@ -139,6 +138,7 @@ training:
   # Misc training settings
   early_stopping_patience: 30
   gradient_accumulation_steps: 1
+  test_eval_frequency: 5  # Evaluate on test set every N epochs
   use_amp: true # Use Automatic Mixed Precision
 
 # ────────────────────────────  OUTPUT  ────────────────────────── #

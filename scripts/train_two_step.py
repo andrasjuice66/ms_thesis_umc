@@ -221,8 +221,11 @@ def main() -> None:
     print(f"Model hyperparameters: {cfg.get('model')}")
 
     checkpoint_path = cfg.get("model.checkpoint")
+    model_checkpoint_loaded = False
     if checkpoint_path:
         load_checkpoint(model, checkpoint_path, device, logger)
+        model_checkpoint_loaded = True
+        logger.info("Model checkpoint loaded - will skip Stage 1 and start directly at Stage 2")
     
     if use_wandb:
         wandb.watch(model, log="all", log_graph=False)
@@ -257,7 +260,10 @@ def main() -> None:
         if seg_checkpoint:
             logger.info(f"Segmentation checkpoint provided: {seg_checkpoint}")
         
-        results = trainer.train(seg_checkpoint_path=seg_checkpoint)
+        results = trainer.train(
+            seg_checkpoint_path=seg_checkpoint,
+            skip_stage1=model_checkpoint_loaded
+        )
         history = results["history"]
         best_mae_info = results["best_mae_info"]
         best_dice_info = results["best_dice_info"]
