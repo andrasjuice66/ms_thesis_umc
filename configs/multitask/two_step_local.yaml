@@ -115,6 +115,7 @@ training:
   
   # Two-step training configuration
   seg_pretrain_epochs: 10  # Number of epochs for segmentation-only pretraining
+  freeze_segmentation: false  # If true, freezes encoder and seg_head during stage 2, only trains age_head
 
   # Optimiser & LR Scheduler for Stage 1 (Segmentation pretraining)
   optimizer:

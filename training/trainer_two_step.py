@@ -91,6 +91,27 @@ class TwoStepTrainer:
         self.model.load_state_dict(checkpoint["model_state_dict"])
         self.logger.info("Successfully loaded segmentation checkpoint")
 
+    def freeze_segmentation_branch(self):
+        """Freeze encoder and segmentation head, only allow age head to train."""
+        self.logger.info("Freezing segmentation branch (encoder + seg_head)")
+        
+        # Freeze encoder
+        for param in self.model.encoder.parameters():
+            param.requires_grad = False
+        
+        # Freeze segmentation head
+        for param in self.model.seg_head.parameters():
+            param.requires_grad = False
+        
+        # Ensure age head is trainable
+        for param in self.model.age_head.parameters():
+            param.requires_grad = True
+        
+        # Count trainable parameters
+        trainable_params = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
+        total_params = sum(p.numel() for p in self.model.parameters())
+        self.logger.info(f"Trainable parameters: {trainable_params:,} / {total_params:,} ({100*trainable_params/total_params:.2f}%)")
+
     def _step(self, batch: Dict[str, torch.Tensor], train: bool = True):
         imgs = batch["image"].to(self.device)
         age_gts = batch["age"].float().to(self.device)
@@ -234,10 +255,17 @@ class TwoStepTrainer:
         finetune_epochs = self.epochs - seg_pretrain_epochs
         self.logger.info(f"--- Starting Stage 2: Multi-task Fine-tuning for {finetune_epochs} epochs ---")
         
+        # Optionally freeze segmentation branch (encoder + seg_head)
+        freeze_seg = self.cfg.get("freeze_segmentation", False)
+        if freeze_seg:
+            self.freeze_segmentation_branch()
+        
         # Reset optimizer and scheduler for fine-tuning, often with a lower LR
         self.logger.info("Resetting optimizer for fine-tuning stage.")
         finetune_optimizer_cfg = self.cfg.get("finetune_optimizer", self.cfg.get("optimizer", {}))
-        params_to_optimize = list(self.model.parameters()) + [self.log_var_age, self.log_var_seg]
+        # Only get parameters that require gradients
+        trainable_params = [p for p in self.model.parameters() if p.requires_grad]
+        params_to_optimize = trainable_params + [self.log_var_age, self.log_var_seg]
         self.optimizer = get_optimizer(params_to_optimize, **finetune_optimizer_cfg)
         self.scheduler = get_scheduler(self.optimizer, **self.cfg.get("scheduler", {}))
         self.early_stop_counter = 0 # Reset early stopping

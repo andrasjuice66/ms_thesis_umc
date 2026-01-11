@@ -8,14 +8,14 @@ data:
   real_data_dir: "/scratch-shared/ajoos/brain_age_preprocessed_converted/"   
 
 
-  num_workers: 8
+  num_workers: 8  # Reduced due to memory constraints with TorchIO augmentations
   pin_memory: true
 
 # ───────────────────────────  MODEL  ──────────────────────────── #
 # Model is hard-coded to MultiTaskBrainAge in train_multitask.py
 # The architecture is based on SynthSeg's U-Net.
 model:
-  checkpoint: null # Optional path to a checkpoint to resume training
+  checkpoint: /home/ajoos/brain_age_pred/output/checkpoints/two_step/two_step_reproduce_new_data/two_step_reproduce_new_data_best_mae.pt
   seg_checkpoint: null # Optional path to a segmentation-only checkpoint to skip stage 1
 
 # ────────────────────── BRAIN GENERATOR ───────────────────────── #
@@ -44,10 +44,10 @@ brain_generator:
     blur: 0.4
     bias: 0.4
     resolution: 0.4
-    motion: 0.05  # Very low - memory intensive
-    ghost: 0.05   # Very low - memory intensive  
-    noise_tio: 0.1  # Low - less memory intensive than others
-    swap: 0.05   # Very low - memory intensive
+    motion: 0.5
+    ghost: 0.5
+    noise_tio: 0.1
+    swap: 0.15
   
   # Spatial augmentation parameters
   rotation_range: 10
@@ -69,14 +69,17 @@ brain_generator:
   blur_sigma: 0.5
   bias_field_rng: [0.0, 0.6]
   
-  # TorchIO artefacts parameters
-  motion_degrees: 3
-  motion_translation: 5
-  motion_num_transforms: 4
-  ghost_num_ghosts: [1, 4]
-  ghost_intensity: [0.1, 0.6]
-  noise_tio_std: [0.0, 0.5]
-  swap_patch_size: 15
+# Motion artifacts parameters (TorchIO RandomMotion)
+  motion_degrees: 3.0      # NEW: Maximum rotation in degrees
+  motion_translation: 5.0  # NEW: Maximum translation in mm
+  motion_num_transforms: 4 # NEW: Number of motion transforms to apply
+  
+  # Ghosting artifacts parameters (TorchIO RandomGhosting)
+  ghost_num: [1, 4]        # NEW: Range for number of ghosts [min, max]
+  ghost_intensity: [0.1, 0.6] # NEW: Range for ghost intensity [min, max]
+  
+  # TorchIO noise parameters
+  torchio_noise_std: [0, 0.5] # NEW: Standard deviation range for TorchIO noise
   
   # Resolution parameters (simulates different scanner resolutions)
   min_res: 0.8
@@ -103,7 +106,8 @@ training:
   epochs: 150
   
   # Two-step training configuration
-  seg_pretrain_epochs: 60  # Number of epochs for segmentation-only pretraining
+  seg_pretrain_epochs: 10  # Number of epochs for segmentation-only pretraining
+  freeze_segmentation: true  # If true, freezes encoder and seg_head during stage 2, only trains age_head
 
   # Optimiser & LR Scheduler for Stage 1 (Segmentation pretraining)
   optimizer:
@@ -137,13 +141,13 @@ training:
 
 # ────────────────────────────  OUTPUT  ────────────────────────── #
 output:
-  output_dir: "./output/two_step"
-  experiment_name: "two_step_synth"
+  output_dir: "/home/ajoos/brain_age_pred/output/two_step"
+  experiment_name: "two_step_snell_new_finetune"
 
 # ─────────────────────────────  W&B  ──────────────────────────── #
 wandb:
   use_wandb: true
-  project: "brain-age-multitask"
+  project: "rerun_experiments"
   entity: null # Your W&B entity/username, or set as environment variable
 
 # ───────────────────────── MISCELLANEOUS ───────────────────────── #
