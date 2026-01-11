@@ -23,7 +23,9 @@ data:
 # The architecture is based on SynthSeg's U-Net.
 model:
   checkpoint: null # Optional path to a checkpoint to resume training
-  seg_checkpoint: null #/mnt/c/Projects/thesis_project/output/two_step/checkpoints/two_step_reproduce_new_data/two_step_reproduce_new_data_best_dice.pt
+  seg_checkpoint: null # Optional path to checkpoint to skip stage 1
+                       # When provided, automatically freezes segmentation and trains only age head for MAE
+                       #/mnt/c/Projects/thesis_project/output/two_step/checkpoints/two_step_reproduce_new_data/two_step_reproduce_new_data_best_dice.pt
 
 
 # ────────────────────── BRAIN GENERATOR ───────────────────────── #
@@ -115,7 +117,8 @@ training:
   
   # Two-step training configuration
   seg_pretrain_epochs: 10  # Number of epochs for segmentation-only pretraining
-  freeze_segmentation: false  # If true, freezes encoder and seg_head during stage 2, only trains age_head
+  freeze_segmentation: false  # If true, freezes encoder and seg_head during stage 2, only trains age_head for MAE
+                               # Note: Automatically enabled when loading from checkpoint
 
   # Optimiser & LR Scheduler for Stage 1 (Segmentation pretraining)
   optimizer:

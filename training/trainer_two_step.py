@@ -70,6 +70,7 @@ class TwoStepTrainer:
         self.use_amp = self.cfg.get("use_amp", True) and torch.cuda.is_available()
         self.scaler = GradScaler() if self.use_amp else None
         self.current_training_stage = "seg_only" # Start with segmentation
+        self.is_segmentation_frozen = False # Track if segmentation branch is frozen
 
         # Metrics
         self.dice_metric = DiceMetric(include_background=True, reduction="mean", get_not_nans=False)
@@ -107,10 +108,13 @@ class TwoStepTrainer:
         for param in self.model.age_head.parameters():
             param.requires_grad = True
         
+        self.is_segmentation_frozen = True
+        
         # Count trainable parameters
         trainable_params = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
         total_params = sum(p.numel() for p in self.model.parameters())
         self.logger.info(f"Trainable parameters: {trainable_params:,} / {total_params:,} ({100*trainable_params/total_params:.2f}%)")
+        self.logger.info("Will optimize ONLY for MAE (age loss), segmentation loss will not be used for training")
 
     def _step(self, batch: Dict[str, torch.Tensor], train: bool = True):
         imgs = batch["image"].to(self.device)
@@ -128,10 +132,14 @@ class TwoStepTrainer:
             if self.current_training_stage == "seg_only":
                 total_loss = seg_loss
             elif self.current_training_stage == "multi_task":
-                # Uncertainty-weighted total loss
-                loss_age_weighted = torch.exp(-self.log_var_age) * age_loss + 0.5 * self.log_var_age
-                loss_seg_weighted = torch.exp(-self.log_var_seg) * seg_loss + 0.5 * self.log_var_seg
-                total_loss = loss_age_weighted.squeeze() + loss_seg_weighted.squeeze()
+                if self.is_segmentation_frozen:
+                    # When segmentation is frozen, only optimize for age (MAE)
+                    total_loss = age_loss
+                else:
+                    # Uncertainty-weighted total loss for multi-task learning
+                    loss_age_weighted = torch.exp(-self.log_var_age) * age_loss + 0.5 * self.log_var_age
+                    loss_seg_weighted = torch.exp(-self.log_var_seg) * seg_loss + 0.5 * self.log_var_seg
+                    total_loss = loss_age_weighted.squeeze() + loss_seg_weighted.squeeze()
             else:
                 raise ValueError(f"Unknown training stage: {self.current_training_stage}")
 
@@ -223,9 +231,10 @@ class TwoStepTrainer:
         
         # Check if we should skip stage 1 by loading a segmentation checkpoint
         if seg_checkpoint_path:
-            self.logger.info(f"Segmentation checkpoint provided: {seg_checkpoint_path}")
+            self.logger.info(f"Checkpoint provided: {seg_checkpoint_path}")
             self.load_segmentation_checkpoint(seg_checkpoint_path)
             self.logger.info("Skipping Stage 1 (Segmentation Pre-training) as checkpoint was loaded")
+            self.logger.info("When starting from checkpoint, will freeze segmentation and optimize only for MAE")
         else:
             # --- STAGE 1: Segmentation Pre-training ---
             self.current_training_stage = "seg_only"
@@ -255,8 +264,10 @@ class TwoStepTrainer:
         finetune_epochs = self.epochs - seg_pretrain_epochs
         self.logger.info(f"--- Starting Stage 2: Multi-task Fine-tuning for {finetune_epochs} epochs ---")
         
-        # Optionally freeze segmentation branch (encoder + seg_head)
-        freeze_seg = self.cfg.get("freeze_segmentation", False)
+        # Freeze segmentation branch if:
+        # 1. freeze_segmentation config is True, OR
+        # 2. We loaded from a checkpoint (meaning we're continuing from a trained model)
+        freeze_seg = self.cfg.get("freeze_segmentation", False) or (seg_checkpoint_path is not None)
         if freeze_seg:
             self.freeze_segmentation_branch()
         
