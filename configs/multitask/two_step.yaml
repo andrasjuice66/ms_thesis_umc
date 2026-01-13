@@ -15,7 +15,7 @@ data:
 # Model is hard-coded to MultiTaskBrainAge in train_multitask.py
 # The architecture is based on SynthSeg's U-Net.
 model:
-  checkpoint: /home/ajoos/brain_age_pred/output/checkpoints/two_step/two_step_reproduce_new_data/two_step_reproduce_new_data_best_mae.pt
+  checkpoint: /home/ajoos/brain_age_pred/output/checkpoints/two_step/two_step_snell_new_finetune/two_step_snell_new_finetune_best_mae.pt
   # If checkpoint is provided, Stage 1 (segmentation pretraining) will be skipped and training starts at Stage 2 (multi-task)
   seg_checkpoint: null # Alternative: path to a segmentation-only checkpoint to skip stage 1
 
@@ -103,7 +103,7 @@ brain_generator:
   tumor_use_fluid_dynamics: True,        
 # ──────────────────────────  TRAINING  ────────────────────────── #
 training:
-  batch_size: 4
+  batch_size: 1
   epochs: 150
   
   # Two-step training configuration
@@ -120,7 +120,7 @@ training:
   # If not specified, will use the same settings as 'optimizer' above
   finetune_optimizer:
     optimizer_type: "adamw"
-    learning_rate: 0.0005   # Often use a lower LR for fine-tuning
+    learning_rate: 0.0001  # Often use a lower LR for fine-tuning
     weight_decay:  0.0001
     
   scheduler:
@@ -132,7 +132,7 @@ training:
   # Loss function parameters for Multi-Task learning
   loss:
     age_loss_fn: "mae"        # Loss for the age prediction task (mae, mse, huber)
-    age_loss_weight: 1.0      # Weight for the age prediction loss
+    age_loss_weight: 2.0      # Weight for the age prediction loss
     seg_loss_weight: 5.0    # Weight for the segmentation loss (DiceCE)
 
   # Misc training settings
@@ -143,8 +143,8 @@ training:
 
 # ────────────────────────────  OUTPUT  ────────────────────────── #
 output:
-  output_dir: "/home/ajoos/brain_age_pred/output/two_step"
-  experiment_name: "two_step_snell_new_finetune"
+  output_dir: "/home/ajoos/brain_age_pred/output/checkpoints/two_step"
+  experiment_name: "two_step_snell_new_finetune2"
 
 # ─────────────────────────────  W&B  ──────────────────────────── #
 wandb:
