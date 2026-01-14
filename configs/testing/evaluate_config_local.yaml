@@ -24,30 +24,7 @@ wandb:
 # List of models, each with a name, checkpoint path, and parameters.
 models:
 
-
-  - name: "sfcn_baseline_finetune"
-    checkpoint: "/mnt/c/Projects/thesis_project/checkpoints/sfcn_class_baseline_finetune/sfcn_class_baseline_finetune_best_mae.pt"
-    params:
-      type: "sfcn_class"
-      in_channels: 1
-      dropout_rate: 0.5
-      age_min: 20
-      age_max: 80
-      normalize: true
-
-
-
-  - name: "sfcn_dom_rand_finetune"
-    checkpoint: "/mnt/c/Projects/thesis_project/checkpoints/sfcn_class_dom_rand_finetune/sfcn_class_dom_rand_finetune_best_mae.pt"
-    params:
-      type: "sfcn_class"
-      in_channels: 1
-      dropout_rate: 0.5
-      age_min: 20
-      age_max: 80
-      normalize: true
-
-  - name: "brainagenext_baseline"
+  - name: "brainagenext_t1"
     checkpoint: "/mnt/c/Projects/thesis_project/checkpoints/brainagenext_baseline/brainagenext_baseline_best_mae.pt"
     params:
       type: "brainagenext"
@@ -58,7 +35,7 @@ models:
       hidden_size: 64
       normalize: true
 
-  - name: "brainagenext_dom_rand"
+  - name: "brainagenext"
     checkpoint: "/mnt/c/Projects/thesis_project/checkpoints/brainagenext_dom_rand/brainagenext_dom_rand_best_mae.pt"
     params:
       type: "brainagenext"
@@ -69,9 +46,7 @@ models:
       hidden_size: 64
       normalize: true
 
-
-
-  - name: "sfcn_seg_map_finetune"
+  - name: "sfcn_seg_map"
     checkpoint: "/mnt/c/Projects/thesis_project/checkpoints/sfcn_class_seg_map_finetune/sfcn_class_seg_map_finetune_best_mae.pt"
     data_dir: "/mnt/c/Projects/thesis_project/Data/brain_age_segmented/" # Override data directory for this model
     params:
@@ -82,24 +57,6 @@ models:
       age_max: 80
       track_running_stats: false
       normalize: false
-
-  - name: "brainagenext_seg_map"
-    checkpoint: "/mnt/c/Projects/thesis_project/checkpoints/brainagenext_seg_map/brainagenext_seg_map_best_mae.pt"
-    data_dir: "/mnt/c/Projects/thesis_project/Data/brain_age_segmented/" # Override data directory
-    params:
-      type: "brainagenext"
-      in_channels: 15 # Number of segmentation classes
-      dropout_rate: 0.0
-      model_id: "B"
-      feature_size: 512
-      hidden_size: 64
-      normalize: false
-
-  - name: "multitask"
-    checkpoint: "/mnt/c/Projects/thesis_project/output/multitask/checkpoints/multitask_synth_head_only/multitask_synth_head_only_best_mae.pt"
-    params:
-      type: "multitask"
-      normalize: true
 
   - name: "two_step"
     checkpoint: "/mnt/c/Projects/thesis_project/checkpoints/two_step/two_step_synth_best_mae.pt"
@@ -113,13 +70,10 @@ models:
 testing:
 
   - name: "OldValidationSet"
-    csv_path: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels_local/val_old.csv"
+    csv_path: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels_local/val_labels.csv"
 
   - name: "ExternalTestSetBalanced"
-    csv_path: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels_local/test_balanced.csv"
-  
-  - name: "OldExternalTestSet"
-    csv_path: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels_local/test_old.csv"
+    csv_path: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels_local/test_labels.csv"
 
   - name: "MovementNoise"
     csv_path: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels_local/test_movement_noise.csv"  

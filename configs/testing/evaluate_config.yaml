@@ -102,7 +102,7 @@ models:
 
   - name: "brainagenext_seg_map"
     checkpoint: "/home/ajoos/brain_age_pred/output/checkpoints/brainagenext_seg_map/brainagenext_seg_map_best_mae.pt"
-    data_dir: "/scratch-shared/ajoos/brain_age_segmented_converted/" # Override data directory
+    data_dir: "/scratch-shared/ajoos/brain_age_segmented_converted/"
     params:
       type: "brainagenext"
       in_channels: 15 # Number of segmentation classes
@@ -127,9 +127,6 @@ testing:
 
   - name: "ExternalTestSet"
     csv_path: "/home/ajoos/brain_age_pred/data/labels/test.csv"
-
-  - name: "ExternalTestSetBalanced"
-    csv_path: "/home/ajoos/brain_age_pred/data/labels/test_balanced.csv"
 
   - name: "MovementNoise"
     csv_path: "/home/ajoos/brain_age_pred/data/labels/test_movement_noise.csv"  
