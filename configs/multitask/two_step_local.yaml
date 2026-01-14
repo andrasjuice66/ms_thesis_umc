@@ -22,7 +22,7 @@ data:
 # Model is hard-coded to MultiTaskBrainAge in train_multitask.py
 # The architecture is based on SynthSeg's U-Net.
 model:
-  checkpoint: null # Optional path to a checkpoint to resume training
+  checkpoint: "/mnt/c/Projects/thesis_project/output/two_step/checkpoints/two_step_reproduce_new_data/two_step_reproduce_new_data_best_mae.pt"
   # If checkpoint is provided, Stage 1 (segmentation pretraining) will be skipped and training starts at Stage 2 (multi-task)
   seg_checkpoint: null # Alternative: path to a segmentation-only checkpoint to skip stage 1
   #/mnt/c/Projects/thesis_project/output/two_step/checkpoints/two_step_reproduce_new_data/two_step_reproduce_new_data_best_dice.pt
@@ -130,10 +130,10 @@ training:
   finetune_optimizer:
     optimizer_type: "adamw"
     learning_rate: 0.0005   # Often use a lower LR for fine-tuning
-    weight_decay:  0.0001
+    weight_decay:  0.00005
     
   scheduler:
-    scheduler_type: "cosine" # "cosine" or "step" or "plateau"
+    scheduler_type: "step" # "cosine" or "step" or "plateau"
     T_max: 150               # For cosine scheduler
     step_size: 30            # For step scheduler
     gamma: 0.5               # For step scheduler
