@@ -1,8 +1,8 @@
 # ────────────────────────────  DATA  ──────────────────────────── #
 data:
-  train_csv: "/home/ajoos/brain_age_pred/data/labels/train.csv"
-  val_csv:   "/home/ajoos/brain_age_pred/data/labels/val.csv"
-  test_csv:  "/home/ajoos/brain_age_pred/data/labels/test_balanced.csv"
+  train_csv: "/home/ajoos/brain_age_pred/data/labels_new/train_labels.csv"
+  val_csv:   "/home/ajoos/brain_age_pred/data/labels_new/val_labels.csv"
+  test_csv:  "/home/ajoos/brain_age_pred/data/labels_new/test_labels.csv"
 
   segmented_data_dir: "/scratch-shared/ajoos/brain_age_segmented_converted/"   
   real_data_dir: "/scratch-shared/ajoos/brain_age_preprocessed_converted/"   
@@ -15,7 +15,7 @@ data:
 # Model is hard-coded to MultiTaskBrainAge in train_multitask.py
 # The architecture is based on SynthSeg's U-Net.
 model:
-  checkpoint: /home/ajoos/brain_age_pred/output/checkpoints/two_step/two_step_snell_new_finetune/two_step_snell_new_finetune_best_mae.pt
+  checkpoint: /home/ajoos/brain_age_pred/output/checkpoints/two_step/two_step_reproduce_new_data/two_step_reproduce_new_data_best_mae.pt
   # If checkpoint is provided, Stage 1 (segmentation pretraining) will be skipped and training starts at Stage 2 (multi-task)
   seg_checkpoint: null # Alternative: path to a segmentation-only checkpoint to skip stage 1
 
@@ -120,11 +120,11 @@ training:
   # If not specified, will use the same settings as 'optimizer' above
   finetune_optimizer:
     optimizer_type: "adamw"
-    learning_rate: 0.0001  # Often use a lower LR for fine-tuning
+    learning_rate: 0.00001  # Often use a lower LR for fine-tuning
     weight_decay:  0.0001
     
   scheduler:
-    scheduler_type: "cosine" # "cosine" or "step" or "plateau"
+    scheduler_type: "step" # "cosine" or "step" or "plateau"
     T_max: 150               # For cosine scheduler
     step_size: 30            # For step scheduler
     gamma: 0.5               # For step scheduler
@@ -143,13 +143,13 @@ training:
 
 # ────────────────────────────  OUTPUT  ────────────────────────── #
 output:
-  output_dir: "/home/ajoos/brain_age_pred/output/checkpoints/two_step"
-  experiment_name: "two_step_snell_new_finetune2"
+  output_dir: "/home/ajoos/run_output/two_step/checkpoints"
+  experiment_name: "two_step_snell_new_final"
 
 # ─────────────────────────────  W&B  ──────────────────────────── #
 wandb:
   use_wandb: true
-  project: "rerun_experiments"
+  project: "finalize_experiments"
   entity: null # Your W&B entity/username, or set as environment variable
 
 # ───────────────────────── MISCELLANEOUS ───────────────────────── #
