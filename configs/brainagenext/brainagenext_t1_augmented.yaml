@@ -30,7 +30,7 @@ model:
   in_channels: 1
   dropout_rate: 0.2
   use_attention: false                   
-  checkpoint: "/home/ajoos/run_output/brainagenext_t1_augmented/checkpoints/brainagenext_t1_augmented/brainagenext_t1_augmented_best_mae.pt"
+  checkpoint: "/home/ajoos/run_output/brainagenext_t1_augmented/checkpoints/brainagenext_t1_augmented_finetune2/brainagenext_t1_augmented_finetune2_best_mae.pt"
 
 # ─────────────────────────  AUGMENTATION  ─────────────────────── #
 # -------------------------------------------------------------------------
@@ -150,11 +150,11 @@ augmentation:
 
 # ──────────────────────────  TRAINING  ────────────────────────── #
 training:
-  batch_size: 2
+  batch_size: 4
   epochs: 150
 
   # optimiser & LR
-  learning_rate: 0.00004 #0.0001 #0.002193
+  learning_rate: 0.00001 #0.0001 #0.002193
   weight_decay:  0.001
   optimizer: "adamw"                       # adam | adamw | sgd | rmsprop | radam | novograd
   scheduler: "step"                      # cosine | plateau | onecycle | step | none
@@ -183,12 +183,12 @@ output:
   output_dir: "/home/ajoos/run_output/brainagenext_t1_augmented"
   checkpoint_dir: "checkpoints"
   log_dir: "logs"
-  experiment_name: brainagenext_t1_augmented_finetune2 #"brain_age_with_tumors"                   # auto-generate if left null
+  experiment_name: brainagenext_t1_augmented_final #"brain_age_with_tumors"                   # auto-generate if left null
 
 # ─────────────────────────────  W&B  ──────────────────────────── #
 wandb:
   use_wandb: true                         # still requires $WANDB_API env-var
-  project: "rerun_experiments"
+  project: "finalize_experiments"
 
   entity: null
 
