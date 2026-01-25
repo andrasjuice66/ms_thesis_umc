@@ -1,6 +1,6 @@
 # ────────────────────────────  DATA  ──────────────────────────── #
 data:
-  real_data_dir: "/scratch-shared/ajoos/brain_age_preprocessed_no_csf/"   
+  real_data_dir: "/scratch-shared/ajoos/brain_age_preprocessed/"   
   train_csv: "/home/ajoos/brain_age_pred/data/labels/train_t1_labels.csv"
   val_csv:   "/home/ajoos/brain_age_pred/data/labels/val_t1_labels.csv"
   test_csv:  "/home/ajoos/brain_age_pred/data/labels/test_t1_labels.csv"
@@ -183,7 +183,7 @@ output:
   output_dir: "/home/ajoos/run_output/brainagenext_t1_augmented"
   checkpoint_dir: "checkpoints"
   log_dir: "logs"
-  experiment_name: brainagenext_t1_augmented_final #"brain_age_with_tumors"                   # auto-generate if left null
+  experiment_name: brainagenext_t1_augmented_final             # auto-generate if left null
 
 # ─────────────────────────────  W&B  ──────────────────────────── #
 wandb:
