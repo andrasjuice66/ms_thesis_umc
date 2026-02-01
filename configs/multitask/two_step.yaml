@@ -15,7 +15,7 @@ data:
 # Model is hard-coded to MultiTaskBrainAge in train_multitask.py
 # The architecture is based on SynthSeg's U-Net.
 model:
-  checkpoint: /home/ajoos/brain_age_pred/output/checkpoints/two_step/two_step_reproduce_new_data/two_step_reproduce_new_data_best_mae.pt
+  checkpoint: /home/ajoos/brain_age_pred/output/checkpoints/two_step/checkpoints/two_step_snell_new_finetune2/two_step_snell_new_finetune2_best_mae.pt
   # If checkpoint is provided, Stage 1 (segmentation pretraining) will be skipped and training starts at Stage 2 (multi-task)
   seg_checkpoint: null # Alternative: path to a segmentation-only checkpoint to skip stage 1
 
@@ -39,7 +39,7 @@ brain_generator:
     scale_int: 0.4
     shift_int: 0.4
     hist_shift: 0.4
-    noise: 0.4
+    noise: 0.5
     rician: 0.4
     gibbs: 0.5
     blur: 0.4
@@ -120,7 +120,7 @@ training:
   # If not specified, will use the same settings as 'optimizer' above
   finetune_optimizer:
     optimizer_type: "adamw"
-    learning_rate: 0.00001  # Often use a lower LR for fine-tuning
+    learning_rate: 0.0001  # Often use a lower LR for fine-tuning
     weight_decay:  0.0001
     
   scheduler:
@@ -144,7 +144,7 @@ training:
 # ────────────────────────────  OUTPUT  ────────────────────────── #
 output:
   output_dir: "/home/ajoos/run_output/two_step/checkpoints"
-  experiment_name: "two_step_snell_new_final"
+  experiment_name: "two_step_final"
 
 # ─────────────────────────────  W&B  ──────────────────────────── #
 wandb:
