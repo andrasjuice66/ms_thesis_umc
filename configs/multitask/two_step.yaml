@@ -4,8 +4,8 @@ data:
   val_csv:   "/home/ajoos/brain_age_pred/data/labels_new/val_labels.csv"
   test_csv:  "/home/ajoos/brain_age_pred/data/labels_new/test_labels.csv"
 
-  segmented_data_dir: "/scratch-shared/ajoos/brain_age_segmented_converted/"   
-  real_data_dir: "/scratch-shared/ajoos/brain_age_preprocessed_converted/"   
+  segmented_data_dir: "/scratch-shared/ajoos/brain_age_segmented/"   
+  real_data_dir: "/scratch-shared/ajoos/brain_age_preprocessed/"   
 
 
   num_workers: 8  # Reduced due to memory constraints with TorchIO augmentations
