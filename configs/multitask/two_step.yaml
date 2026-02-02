@@ -119,8 +119,8 @@ training:
   # Optional: Different optimizer settings for Stage 2 (Multi-task fine-tuning)
   # If not specified, will use the same settings as 'optimizer' above
   finetune_optimizer:
-    optimizer_type: "sgd"
-    learning_rate: 0.0001  # Often use a lower LR for fine-tuning
+    optimizer_type: "adamw"
+    learning_rate: 0.00001  # Often use a lower LR for fine-tuning
     weight_decay:  0.0001
     
   scheduler:
