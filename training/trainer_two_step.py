@@ -307,17 +307,6 @@ class TwoStepTrainer:
             log_dict.update({f"val/{k}": v for k,v in val_metrics.items()})
             log_dict["lr"] = self.optimizer.param_groups[0]['lr']
             
-            # Evaluate on test set every N epochs
-            if (epoch + 1) % self.test_eval_frequency == 0:
-                self.logger.info(f"Running test evaluation at epoch {epoch+1}...")
-                test_metrics = self._run_epoch(epoch, self.test_loader, train=False, stage_name="Test")
-                log_dict.update({f"test/{k}": v for k,v in test_metrics.items()})
-                self.logger.info(f"Epoch {epoch+1}: Train MAE={train_metrics['mae']:.3f}, Dice={train_metrics['dice']:.3f} | Val MAE={val_metrics['mae']:.3f}, Dice={val_metrics['dice']:.3f} | Test MAE={test_metrics['mae']:.3f}, Dice={test_metrics['dice']:.3f}")
-            else:
-                self.logger.info(f"Epoch {epoch+1}: Train MAE={train_metrics['mae']:.3f}, Dice={train_metrics['dice']:.3f} | Val MAE={val_metrics['mae']:.3f}, Dice={val_metrics['dice']:.3f}")
-            
-            if self.use_wandb: self.wandb.log(log_dict, step=epoch+1)
-
             is_best_mae = val_metrics["mae"] < self.best_val_mae
             if is_best_mae:
                 self.best_val_mae = val_metrics["mae"]
@@ -325,6 +314,19 @@ class TwoStepTrainer:
                 self.early_stop_counter = 0
             else:
                 self.early_stop_counter += 1
+
+            # Evaluate on test set every N epochs OR when there is a new best val MAE
+            run_test = (epoch + 1) % self.test_eval_frequency == 0 or is_best_mae
+            if run_test:
+                reason = "new best val MAE" if is_best_mae else "periodic"
+                self.logger.info(f"Running test evaluation at epoch {epoch+1} ({reason})...")
+                test_metrics = self._run_epoch(epoch, self.test_loader, train=False, stage_name="Test")
+                log_dict.update({f"test/{k}": v for k,v in test_metrics.items()})
+                self.logger.info(f"Epoch {epoch+1}: Train MAE={train_metrics['mae']:.3f}, Dice={train_metrics['dice']:.3f} | Val MAE={val_metrics['mae']:.3f}, Dice={val_metrics['dice']:.3f} | Test MAE={test_metrics['mae']:.3f}, Dice={test_metrics['dice']:.3f}")
+            else:
+                self.logger.info(f"Epoch {epoch+1}: Train MAE={train_metrics['mae']:.3f}, Dice={train_metrics['dice']:.3f} | Val MAE={val_metrics['mae']:.3f}, Dice={val_metrics['dice']:.3f}")
+            
+            if self.use_wandb: self.wandb.log(log_dict, step=epoch+1)
             
             # Save checkpoint only if it's the best MAE
             self._save_checkpoint(epoch, is_best_mae=is_best_mae)
