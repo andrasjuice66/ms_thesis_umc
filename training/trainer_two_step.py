@@ -205,6 +205,11 @@ class TwoStepTrainer:
         }
         if self.scheduler: ckpt["scheduler_state_dict"] = self.scheduler.state_dict()
         
+        # Always save epoch checkpoint
+        epoch_fname = self.ckpt_dir / f"{self.exp_name}_epoch_{epoch+1}.pt"
+        torch.save(ckpt, epoch_fname)
+        self.logger.info(f"Saved epoch {epoch+1} checkpoint: {epoch_fname}")
+        
         if is_best_mae:
             fname = self.ckpt_dir / f"{self.exp_name}_best_mae.pt"
             torch.save(ckpt, fname)
@@ -253,7 +258,7 @@ class TwoStepTrainer:
                 if is_best_dice:
                     self.best_val_dice = val_metrics["dice"]
                     self.best_dice_epoch = epoch
-                    self._save_checkpoint(epoch, is_best_dice=True)
+                self._save_checkpoint(epoch, is_best_dice=is_best_dice)
                 
                 self.logger.info(f"Epoch {epoch+1}/{seg_pretrain_epochs} [Seg-Only]: Train MAE={train_metrics['mae']:.3f}, Dice={train_metrics['dice']:.3f} | Val MAE={val_metrics['mae']:.3f}, Dice={val_metrics['dice']:.3f}")
 
