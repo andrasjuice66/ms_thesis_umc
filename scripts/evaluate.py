@@ -12,11 +12,15 @@ The results are printed in a summary table for easy comparison.
 import os, sys, json
 from pathlib import Path
 from collections import defaultdict
+from datetime import datetime
 
 import pandas as pd
 import numpy as np
 import torch
+import wandb
 from torch.utils.data import DataLoader
+from tqdm import tqdm
+from monai.transforms import Compose, EnsureChannelFirstd, SqueezeDimd, AsDiscreted
 
 # Add project root to Python path
 project_root = Path(__file__).resolve().parent.parent
@@ -30,6 +34,25 @@ from brain_age_pred.models.brainagenext import BrainAgeNeXt
 from brain_age_pred.models.multi_head import MultiTaskBrainAge
 from brain_age_pred.utils.logger import setup_logger
 from brain_age_pred.utils.utils import read_csv, load_checkpoint
+from brain_age_pred.dataset.custom_transformations import ConvertLabelsD
+from brain_age_pred.brain_gen.labels import GENERATION_LABELS, GENERATION_CLASSES
+
+class SegmentationTestGenerator:
+    """Test-time transform for models that require one-hot encoded segmentation input."""
+    def __init__(self, n_classes=15):
+        self.transform = Compose([
+            EnsureChannelFirstd(keys=["image"], channel_dim="no_channel"),
+            ConvertLabelsD(
+                keys=["image"],
+                generation_labels=GENERATION_LABELS,
+                output_labels=GENERATION_CLASSES
+            ),
+            SqueezeDimd(keys=["image"], dim=0),
+            AsDiscreted(keys=["image"], to_onehot=n_classes),
+        ])
+
+    def __call__(self, data):
+        return self.transform(data)
 
 def read_csv_with_headmotion(
     csv_path: str,
@@ -108,7 +131,7 @@ def evaluate_model(model, test_loader, device, model_type, headmotions=None):
     all_headmotions = []
 
     with torch.no_grad():
-        for i, batch in enumerate(test_loader):
+        for i, batch in enumerate(tqdm(test_loader, desc="  Evaluating", unit="batch", leave=True)):
             images = batch["image"].to(device)
             ages = batch["age"].numpy()
             modalities = batch["modality"]
@@ -123,6 +146,10 @@ def evaluate_model(model, test_loader, device, model_type, headmotions=None):
                 preds = model.expected_age(output).cpu().numpy()
             else:
                 preds = output.cpu().numpy()
+
+            # Ensure preds/ages are at least 1-d (squeeze can produce 0-d for batch_size=1)
+            preds = np.atleast_1d(preds)
+            ages = np.atleast_1d(ages)
 
             all_preds.extend(preds)
             all_ages.extend(ages)
@@ -229,7 +256,23 @@ def main():
     device = torch.device(cfg.get("device") or ("cuda" if torch.cuda.is_available() else "cpu"))
     logger.info(f"Using device: {device}")
 
-    # 3. --- Evaluation Loop ---
+    # 3. --- W&B Setup ---
+    use_wandb = cfg.get("wandb.use_wandb", False)
+    if use_wandb:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        experiment_name = cfg.get("wandb.experiment_name") or f"evaluation_{timestamp}"
+        WANDB_API = '2abdb867a9244072f2237704a3cacc77fa548dd8'
+        wandb.login(key=WANDB_API)
+        wandb.init(
+            project=cfg.get("wandb.project", "brain-age-evaluation"),
+            entity=cfg.get("wandb.entity"),
+            name=experiment_name,
+            config=cfg.config,
+            reinit=True,
+        )
+        logger.info(f"W&B initialized: project='{cfg.get('wandb.project')}', run='{experiment_name}'")
+
+    # 4. --- Evaluation Loop ---
     evaluation_results = {}
     models_to_eval = cfg.get("models", [])
     test_sets = cfg.get("testing", [])
@@ -239,9 +282,11 @@ def main():
         logger.error("Config file must contain 'models' and 'testing' sections.")
         return
 
-    for model_info in models_to_eval:
+    total_evals = len(models_to_eval) * len(test_sets)
+    eval_count = 0
+    for model_idx, model_info in enumerate(models_to_eval, 1):
         model_name = model_info["name"]
-        logger.info(f"--- Evaluating model: {model_name} ---")
+        logger.info(f"--- Evaluating model: {model_name} [{model_idx}/{len(models_to_eval)}] ---")
         evaluation_results[model_name] = {}
         
         # Initialize model
@@ -255,10 +300,11 @@ def main():
             logger.error(f"Could not load checkpoint for model '{model_name}'. Skipping.")
             continue
 
-        for test_info in test_sets:
+        for test_idx, test_info in enumerate(test_sets, 1):
             test_set_name = test_info["name"]
             test_csv = Path(test_info["csv_path"])
-            logger.info(f"--- Running on test set: {test_set_name} ---")
+            eval_count += 1
+            logger.info(f"--- Running on test set: {test_set_name} [{test_idx}/{len(test_sets)}] (eval {eval_count}/{total_evals}) ---")
             
             if not test_csv.exists():
                 logger.error(f"Test CSV for '{test_set_name}' not found at '{test_csv}'. Skipping.")
@@ -274,13 +320,35 @@ def main():
                 data_dir,
             )
 
-            test_ds = BADataset(
-                file_paths=paths,
-                age_labels=ages,
-                sexes=sexes,
-                modalities=modalities,
-                mode="test",
-            )
+            # Check if this model requires segmentation input
+            model_params = model_info["params"]
+            in_channels = model_params.get("in_channels", 1)
+            should_normalize = model_params.get("normalize", True)
+
+            if in_channels > 1:
+                # Model expects multi-channel segmentation input (one-hot encoded)
+                transform = SegmentationTestGenerator(n_classes=in_channels)
+                logger.info(f"Using segmentation transforms with {in_channels} classes.")
+                # Disable BADataset's built-in normalization/clamping — the transform handles it
+                test_ds = BADataset(
+                    file_paths=paths,
+                    age_labels=ages,
+                    sexes=sexes,
+                    modalities=modalities,
+                    mode="test",
+                    transform=transform,
+                    normalize=False,
+                    clamp=False,
+                )
+            else:
+                test_ds = BADataset(
+                    file_paths=paths,
+                    age_labels=ages,
+                    sexes=sexes,
+                    modalities=modalities,
+                    mode="test",
+                    normalize=should_normalize,
+                )
 
             test_loader = DataLoader(
                 test_ds,
@@ -300,11 +368,59 @@ def main():
             # Print summary
             print_summary_table(model_name, test_set_name, metrics)
 
-    # 4. --- Save final results ---
+            # Log to W&B
+            if use_wandb:
+                log_prefix = f"{model_name}/{test_set_name}"
+                wandb_log = {
+                    f"{log_prefix}/overall_mae": metrics['overall_mae'],
+                }
+                # Log per-modality MAE
+                for mod, mae in metrics.get('modality_mae', {}).items():
+                    wandb_log[f"{log_prefix}/modality/{mod}_mae"] = mae
+                # Log per-sex MAE
+                for sex, mae in metrics.get('sex_mae', {}).items():
+                    wandb_log[f"{log_prefix}/sex/{sex}_mae"] = mae
+                # Log per-headmotion MAE
+                for hm, mae in metrics.get('headmotion_mae', {}).items():
+                    wandb_log[f"{log_prefix}/headmotion/{hm}_mae"] = mae
+                wandb.log(wandb_log)
+
+    # 5. --- W&B Summary Table ---
+    if use_wandb:
+        # Build a summary table with all results
+        columns = ["Model", "Test Set", "Overall MAE", "Modality MAEs", "Sex MAEs"]
+        table = wandb.Table(columns=columns)
+        for m_name, test_results in evaluation_results.items():
+            for ts_name, mets in test_results.items():
+                mod_str = ", ".join(f"{k}: {v:.4f}" for k, v in mets.get('modality_mae', {}).items())
+                sex_str = ", ".join(f"{k}: {v:.4f}" for k, v in mets.get('sex_mae', {}).items())
+                table.add_data(m_name, ts_name, f"{mets['overall_mae']:.4f}", mod_str, sex_str)
+        wandb.log({"evaluation_summary": table})
+
+        # Log overall summary metrics
+        all_maes = [
+            mets['overall_mae']
+            for test_results in evaluation_results.values()
+            for mets in test_results.values()
+            if not np.isnan(mets['overall_mae'])
+        ]
+        if all_maes:
+            wandb.log({
+                "summary/average_mae": np.mean(all_maes),
+                "summary/best_mae": np.min(all_maes),
+                "summary/worst_mae": np.max(all_maes),
+                "summary/num_evaluations": len(all_maes),
+            })
+
+    # 6. --- Save final results ---
     results_file = log_dir / "evaluation_summary.json"
     with open(results_file, "w") as f:
         json.dump(evaluation_results, f, indent=4)
     logger.info(f"Full evaluation results saved to {results_file}")
+
+    if use_wandb:
+        wandb.finish()
+        logger.info("W&B session finished.")
 
 if __name__ == "__main__":
     main() 

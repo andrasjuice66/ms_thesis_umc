@@ -16,7 +16,7 @@ num_workers: 2
 
 wandb:
   use_wandb: true
-  project: "brain-age-evaluation"
+  project: "final_evaluation"
   entity: null
   experiment_name: "evaluation-final-datasets-with-stats-before-after-correction"  # optional, auto-generated if not provided
 
@@ -25,7 +25,7 @@ wandb:
 models:
 
   - name: "brainagenext_t1"
-    checkpoint: "/mnt/c/Projects/thesis_project/checkpoints/brainagenext_baseline/brainagenext_baseline_best_mae.pt"
+    checkpoint: "/mnt/c/Projects/thesis_project/best_models/best_models/brainagenext_t1_augmented_final_best_mae.pt"
     params:
       type: "brainagenext"
       in_channels: 1
@@ -36,7 +36,7 @@ models:
       normalize: true
 
   - name: "brainagenext"
-    checkpoint: "/mnt/c/Projects/thesis_project/checkpoints/brainagenext_dom_rand/brainagenext_dom_rand_best_mae.pt"
+    checkpoint: "/mnt/c/Projects/thesis_project/best_models/best_models/brainagenext_augmented_final_best_mae.pt"
     params:
       type: "brainagenext"
       in_channels: 1
@@ -47,7 +47,7 @@ models:
       normalize: true
 
   - name: "sfcn_seg_map"
-    checkpoint: "/mnt/c/Projects/thesis_project/checkpoints/sfcn_class_seg_map_finetune/sfcn_class_seg_map_finetune_best_mae.pt"
+    checkpoint: "/mnt/c/Projects/thesis_project/best_models/best_models/sfcn_class_seg_map_final_best_mae.pt"
     data_dir: "/mnt/c/Projects/thesis_project/Data/brain_age_segmented/" # Override data directory for this model
     params:
       type: "sfcn_class"
@@ -59,9 +59,10 @@ models:
       normalize: false
 
   - name: "two_step"
-    checkpoint: "/mnt/c/Projects/thesis_project/checkpoints/two_step/two_step_synth_best_mae.pt"
+    checkpoint: "/mnt/c/Projects/thesis_project/best_models/best_models/two_step_final_best_mae.pt"
     params:
       type: "multitask"
+      n_classes: 33
       normalize: true
 
 
@@ -69,11 +70,11 @@ models:
 # List of test sets, each with a name and a path to its CSV file.
 testing:
 
-  - name: "OldValidationSet"
-    csv_path: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels_local/val_labels.csv"
+  - name: "ValidationSet"
+    csv_path: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels/val_labels.csv"
 
-  - name: "ExternalTestSetBalanced"
-    csv_path: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels_local/test_labels.csv"
+  - name: "TestSet"
+    csv_path: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels/test_labels.csv"
 
-  - name: "MovementNoise"
-    csv_path: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels_local/test_movement_noise.csv"  
+  - name: "MovementNoiseTestSet"
+    csv_path: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels/test_movement_noise.csv"  
