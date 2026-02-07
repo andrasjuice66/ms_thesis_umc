@@ -144,7 +144,7 @@ training:
 # ────────────────────────────  OUTPUT  ────────────────────────── #
 output:
   output_dir: "/home/ajoos/run_output/two_step/checkpoints"
-  experiment_name: "two_step_final"
+  experiment_name: "two_step_final_2"
 
 # ─────────────────────────────  W&B  ──────────────────────────── #
 wandb:
