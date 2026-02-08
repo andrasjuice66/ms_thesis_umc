@@ -24,19 +24,19 @@ wandb:
 # List of models, each with a name, checkpoint path, and parameters.
 models:
 
-  - name: "brainagenext_t1"
-    checkpoint: "/mnt/c/Projects/thesis_project/best_models/best_models/brainagenext_t1_augmented_final_best_mae.pt"
-    params:
-      type: "brainagenext"
-      in_channels: 1
-      dropout_rate: 0.0
-      model_id: "B"
-      feature_size: 512
-      hidden_size: 64
-      normalize: true
+  # - name: "brainagenext_t1"
+  #   checkpoint: "/mnt/c/Projects/thesis_project/best_models/best_models/brainagenext_t1_augmented_final_best_mae.pt"
+  #   params:
+  #     type: "brainagenext"
+  #     in_channels: 1
+  #     dropout_rate: 0.0
+  #     model_id: "B"
+  #     feature_size: 512
+  #     hidden_size: 64
+  #     normalize: true
 
   - name: "brainagenext"
-    checkpoint: "/mnt/c/Projects/thesis_project/best_models/best_models/brainagenext_augmented_final_best_mae.pt"
+    checkpoint: "/mnt/c/Projects/thesis_project/best_models/best_models/brainagenext_augmented_final_epoch010.pt"
     params:
       type: "brainagenext"
       in_channels: 1
