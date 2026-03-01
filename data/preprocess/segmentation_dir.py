@@ -117,7 +117,7 @@ def main(input_dir, output_dir) -> None:
     threads = 6
     use_gpu = False
     wandb_project = "thesis_preprocess"
-    use_wandb = True
+    use_wandb = False
     
     # Validate input directory
     if not input_dir.exists():
@@ -268,11 +268,7 @@ def main(input_dir, output_dir) -> None:
 
 if __name__ == "__main__":
 
-    input_dir = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed_no_csf/CBS")
-    out_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_segmented/CBS")
-    main(input_dir, out_root)
-
-    input_dir = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed_no_csf/CFMM-7T")
-    out_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_segmented/CFMM-7T")
+    input_dir = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed_no_csf/OODtest/PT030_OpenNeuro")
+    out_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_segmented1/OODtest/PT030_OpenNeuro")
     main(input_dir, out_root)
     

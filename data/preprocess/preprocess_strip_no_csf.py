@@ -118,9 +118,8 @@ def find_images(root):
     log = logging.getLogger()
     log.info(f"Scanning directory for images: {root}")
     for p in root.rglob("*"):
-        if (p.name.lower().endswith(".nii.gz") and 
-            ("uni" in p.name.lower() or "t1" in p.name.lower()) and
-            "map" not in p.name.lower()):
+        if (p.name.lower().endswith(".nii.gz") and not "run-2" in p.name.lower() and
+             "pdw" in p.name.lower()):
             log.info(f"Found image: {p}")
             yield p
 
@@ -320,22 +319,8 @@ def main(data_root, out_root):
 
 
 if __name__ == "__main__":
-    
-    # GSP
-    # data_root = Path("/mnt/c/Projects/thesis_project/Data/ATAG")
-    # out_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed_no_csf/ATAG")
-    # main(data_root, out_root)
 
-
-    # data_root = Path("/mnt/c/Projects/thesis_project/Data/CEREBRUM-7T")
-    # out_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed_no_csf/CEREBRUM-7T")
-    # main(data_root, out_root)
-
-    data_root = Path("/mnt/c/Projects/thesis_project/Data/CBS")
-    out_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed_no_csf/CBS")
+    data_root = Path("/mnt/c/Projects/thesis_project/Data/OODtest/FOMO300k/PT030_OpenNeuro")
+    out_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed_no_csf/OODtest/PT030_OpenNeuro")
     main(data_root, out_root)
-
-    # data_root = Path("/mnt/c/Projects/thesis_project/Data/CFMM-7T")
-    # out_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed_no_csf/CFMM-7T")
-    # main(data_root, out_root)
     

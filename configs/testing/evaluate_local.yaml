@@ -20,27 +20,23 @@ wandb:
   entity: null
   experiment_name: "evaluation-final-datasets-with-stats-before-after-correction"  # optional, auto-generated if not provided
 
+# --- Bias Correction (Smith et al., 2019) ---
+# Fits x = a*y + b on the named validation set, then applies x_corrected = (x - b) / a
+# to all test sets (including the validation set itself).
+bias_correction:
+  enabled: true
+  fit_on: "ValidationSet"  # must match a name in the 'testing' list below
+
 # --- Models to Evaluate ---
 # List of models, each with a name, checkpoint path, and parameters.
 models:
 
-  # - name: "brainagenext_t1"
-  #   checkpoint: "/mnt/c/Projects/thesis_project/best_models/best_models/brainagenext_t1_augmented_final_best_mae.pt"
-  #   params:
-  #     type: "brainagenext"
-  #     in_channels: 1
-  #     dropout_rate: 0.0
-  #     model_id: "B"
-  #     feature_size: 512
-  #     hidden_size: 64
-  #     normalize: true
-
-  - name: "brainagenext"
-    checkpoint: "/mnt/c/Projects/thesis_project/best_models/best_models/brainagenext_augmented_final_epoch010.pt"
+  - name: "brainagenext_t1"
+    checkpoint: "/mnt/c/Projects/thesis_project/best_models/best_models/brainagenext_t1_augmented_final_best_mae.pt"
     params:
       type: "brainagenext"
       in_channels: 1
-      dropout_rate: 0.2
+      dropout_rate: 0.0
       model_id: "B"
       feature_size: 512
       hidden_size: 64
@@ -59,7 +55,7 @@ models:
       normalize: false
 
   - name: "two_step"
-    checkpoint: "/mnt/c/Projects/thesis_project/best_models/best_models/two_step_final_best_mae.pt"
+    checkpoint: "/mnt/c/Projects/thesis_project/best_models/best_models/two_step_final_2_best_mae.pt"
     params:
       type: "multitask"
       n_classes: 33
@@ -77,4 +73,7 @@ testing:
     csv_path: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels/test_labels.csv"
 
   - name: "MovementNoiseTestSet"
-    csv_path: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels/test_movement_noise.csv"  
+    csv_path: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels/test_movement_noise.csv" 
+    
+  - name: "OODTestSet"
+    csv_path: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels/test_ood.csv"   

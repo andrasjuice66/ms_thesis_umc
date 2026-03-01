@@ -18,6 +18,7 @@ import pandas as pd
 import numpy as np
 import torch
 import wandb
+from scipy.stats import spearmanr
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from monai.transforms import Compose, EnsureChannelFirstd, SqueezeDimd, AsDiscreted
@@ -166,6 +167,22 @@ def evaluate_model(model, test_loader, device, model_type, headmotions=None):
             
     return np.array(all_preds), np.array(all_ages), all_modalities, all_sexes, all_headmotions
 
+def fit_bias_correction(predictions: np.ndarray, true_ages: np.ndarray):
+    """
+    Fits the linear model x = a*y + b (predicted age = a * chronological age + b)
+    on a labelled set (e.g. validation set) following Smith et al. (2019).
+
+    Returns (a, b) so that the corrected predicted age is: x_corrected = (x - b) / a
+    """
+    a, b = np.polyfit(true_ages, predictions, 1)
+    return float(a), float(b)
+
+
+def apply_bias_correction(predictions: np.ndarray, a: float, b: float) -> np.ndarray:
+    """Applies bias correction: x_corrected = (x - b) / a  (Smith et al., 2019)."""
+    return (predictions - b) / a
+
+
 def calculate_metrics(predictions, true_ages, modalities, sexes, headmotions=None):
     """Calculates MAE overall, per modality, per sex, and per headmotion type."""
     df_data = {
@@ -180,9 +197,13 @@ def calculate_metrics(predictions, true_ages, modalities, sexes, headmotions=Non
         
     df = pd.DataFrame(df_data)
     df['ae'] = np.abs(df['prediction'] - df['age'])
-    
+    df['delta'] = df['prediction'] - df['age']
+
+    spearman_r, spearman_p = spearmanr(df['delta'], df['age'])
     metrics = {
-        'overall_mae': df['ae'].mean()
+        'overall_mae': df['ae'].mean(),
+        'spearman_r_delta_age': float(spearman_r),
+        'spearman_p_delta_age': float(spearman_p),
     }
     
     # MAE per modality
@@ -210,34 +231,58 @@ def calculate_metrics(predictions, true_ages, modalities, sexes, headmotions=Non
     
     return metrics
 
-def print_summary_table(model_name, test_set_name, metrics):
-    """Prints a formatted summary table of the evaluation metrics."""
+def print_summary_table(model_name, test_set_name, metrics, corrected_metrics=None, correction_coeffs=None):
+    """Prints a formatted summary table of the evaluation metrics.
+
+    If corrected_metrics is provided, shows before/after bias correction side-by-side.
+    """
     print("\n" + "="*80)
     print(f"Evaluation Summary: Model '{model_name}' on Test Set '{test_set_name}'")
+    if correction_coeffs is not None:
+        a, b = correction_coeffs
+        print(f"  Bias correction: a={a:.4f}, b={b:.4f}  →  x_corrected = (x - b) / a")
     print("-"*80)
-    
-    print(f"  Overall MAE: {metrics['overall_mae']:.4f}")
-    
+
+    if corrected_metrics is not None:
+        print(f"  {'Metric':<30} {'Raw':>12} {'Corrected':>12}")
+        print(f"  {'-'*30} {'-'*12} {'-'*12}")
+        print(f"  {'Overall MAE':<30} {metrics['overall_mae']:>12.4f} {corrected_metrics['overall_mae']:>12.4f}")
+        print(f"  {'Spearman r (delta vs age)':<30} {metrics['spearman_r_delta_age']:>12.4f} {corrected_metrics['spearman_r_delta_age']:>12.4f}")
+    else:
+        print(f"  Overall MAE: {metrics['overall_mae']:.4f}")
+        print(f"  Spearman r (delta vs age): {metrics['spearman_r_delta_age']:.4f}  (p={metrics['spearman_p_delta_age']:.3e})")
+
     print("\n  MAE by Modality:")
     if metrics['modality_mae']:
         for modality, mae in metrics['modality_mae'].items():
-            print(f"    - {modality}: {mae:.4f}")
+            if corrected_metrics is not None:
+                corr_mae = corrected_metrics['modality_mae'].get(modality, float('nan'))
+                print(f"    - {modality:<26} raw={mae:.4f}  corrected={corr_mae:.4f}")
+            else:
+                print(f"    - {modality}: {mae:.4f}")
     else:
         print("    No modality data available.")
-        
+
     print("\n  MAE by Sex:")
     if metrics['sex_mae']:
         for sex, mae in metrics['sex_mae'].items():
-            print(f"    - {sex}: {mae:.4f}")
+            if corrected_metrics is not None:
+                corr_mae = corrected_metrics['sex_mae'].get(sex, float('nan'))
+                print(f"    - {sex:<28} raw={mae:.4f}  corrected={corr_mae:.4f}")
+            else:
+                print(f"    - {sex}: {mae:.4f}")
     else:
         print("    No sex data available.")
-    
-    # Add headmotion results if available
+
     if 'headmotion_mae' in metrics:
         print("\n  MAE by Head Motion Type:")
         for headmotion, mae in metrics['headmotion_mae'].items():
-            print(f"    - {headmotion}: {mae:.4f}")
-        
+            if corrected_metrics is not None:
+                corr_mae = corrected_metrics.get('headmotion_mae', {}).get(headmotion, float('nan'))
+                print(f"    - {headmotion:<26} raw={mae:.4f}  corrected={corr_mae:.4f}")
+            else:
+                print(f"    - {headmotion}: {mae:.4f}")
+
     print("="*80 + "\n")
 
 def main():
@@ -278,6 +323,10 @@ def main():
     test_sets = cfg.get("testing", [])
     global_data_dir = Path(cfg.get("data_dir"))
 
+    # Bias correction settings (Smith et al., 2019)
+    bc_enabled = cfg.get("bias_correction.enabled", False)
+    bc_fit_on = cfg.get("bias_correction.fit_on", "ValidationSet")
+
     if not models_to_eval or not test_sets:
         logger.error("Config file must contain 'models' and 'testing' sections.")
         return
@@ -288,11 +337,11 @@ def main():
         model_name = model_info["name"]
         logger.info(f"--- Evaluating model: {model_name} [{model_idx}/{len(models_to_eval)}] ---")
         evaluation_results[model_name] = {}
-        
+
         # Initialize model
         model = get_model(model_info["params"], device)
-        
-        # Load checkpoint 
+
+        # Load checkpoint
         checkpoint_path = model_info["checkpoint"]
         try:
             load_checkpoint(model, checkpoint_path, device, logger)
@@ -300,12 +349,15 @@ def main():
             logger.error(f"Could not load checkpoint for model '{model_name}'. Skipping.")
             continue
 
+        # --- First pass: collect raw predictions for every test set ---
+        raw_predictions = {}  # test_set_name -> (preds, true_ages, mods, sxs, hmotions)
+
         for test_idx, test_info in enumerate(test_sets, 1):
             test_set_name = test_info["name"]
             test_csv = Path(test_info["csv_path"])
             eval_count += 1
             logger.info(f"--- Running on test set: {test_set_name} [{test_idx}/{len(test_sets)}] (eval {eval_count}/{total_evals}) ---")
-            
+
             if not test_csv.exists():
                 logger.error(f"Test CSV for '{test_set_name}' not found at '{test_csv}'. Skipping.")
                 continue
@@ -314,22 +366,18 @@ def main():
             data_dir = Path(model_info.get("data_dir", global_data_dir))
             logger.info(f"Using data directory: {data_dir}")
 
-            # Load data with headmotion support
             paths, ages, _, sexes, modalities, headmotions = read_csv_with_headmotion(
                 test_csv,
                 data_dir,
             )
 
-            # Check if this model requires segmentation input
             model_params = model_info["params"]
             in_channels = model_params.get("in_channels", 1)
             should_normalize = model_params.get("normalize", True)
 
             if in_channels > 1:
-                # Model expects multi-channel segmentation input (one-hot encoded)
                 transform = SegmentationTestGenerator(n_classes=in_channels)
                 logger.info(f"Using segmentation transforms with {in_channels} classes.")
-                # Disable BADataset's built-in normalization/clamping — the transform handles it
                 test_ds = BADataset(
                     file_paths=paths,
                     age_labels=ages,
@@ -357,44 +405,98 @@ def main():
                 num_workers=cfg.get("num_workers", 4),
             )
 
-            # Evaluate and calculate metrics
-            preds, true_ages, mods, sxs, hmotions = evaluate_model(
+            preds, true_ages_arr, mods, sxs, hmotions = evaluate_model(
                 model, test_loader, device, model_info["params"]["type"], headmotions
             )
-            metrics = calculate_metrics(preds, true_ages, mods, sxs, hmotions)
-            
+            raw_predictions[test_set_name] = (preds, true_ages_arr, mods, sxs, hmotions)
+
+        # --- Bias correction: fit on the designated validation set ---
+        correction_coeffs = None
+        if bc_enabled:
+            if bc_fit_on in raw_predictions:
+                val_preds, val_ages, _, _, _ = raw_predictions[bc_fit_on]
+                a, b = fit_bias_correction(val_preds, val_ages)
+                correction_coeffs = (a, b)
+                logger.info(
+                    f"Bias correction (Smith et al., 2019) fitted on '{bc_fit_on}': "
+                    f"a={a:.4f}, b={b:.4f}"
+                )
+            else:
+                logger.warning(
+                    f"Bias correction enabled but '{bc_fit_on}' was not evaluated. "
+                    "Correction will not be applied."
+                )
+
+        # --- Second pass: compute metrics (with and without correction) ---
+        for test_set_name, (preds, true_ages_arr, mods, sxs, hmotions) in raw_predictions.items():
+            metrics = calculate_metrics(preds, true_ages_arr, mods, sxs, hmotions)
+
+            corrected_metrics = None
+            if correction_coeffs is not None:
+                a, b = correction_coeffs
+                corrected_preds = apply_bias_correction(preds, a, b)
+                corrected_metrics = calculate_metrics(corrected_preds, true_ages_arr, mods, sxs, hmotions)
+                metrics['bias_correction'] = {'a': a, 'b': b}
+                metrics['corrected'] = corrected_metrics
+
             evaluation_results[model_name][test_set_name] = metrics
-            
-            # Print summary
-            print_summary_table(model_name, test_set_name, metrics)
+
+            print_summary_table(
+                model_name, test_set_name, metrics,
+                corrected_metrics=corrected_metrics,
+                correction_coeffs=correction_coeffs,
+            )
 
             # Log to W&B
             if use_wandb:
                 log_prefix = f"{model_name}/{test_set_name}"
                 wandb_log = {
-                    f"{log_prefix}/overall_mae": metrics['overall_mae'],
+                    f"{log_prefix}/raw/overall_mae": metrics['overall_mae'],
+                    f"{log_prefix}/raw/spearman_r_delta_age": metrics['spearman_r_delta_age'],
                 }
-                # Log per-modality MAE
                 for mod, mae in metrics.get('modality_mae', {}).items():
-                    wandb_log[f"{log_prefix}/modality/{mod}_mae"] = mae
-                # Log per-sex MAE
+                    wandb_log[f"{log_prefix}/raw/modality/{mod}_mae"] = mae
                 for sex, mae in metrics.get('sex_mae', {}).items():
-                    wandb_log[f"{log_prefix}/sex/{sex}_mae"] = mae
-                # Log per-headmotion MAE
+                    wandb_log[f"{log_prefix}/raw/sex/{sex}_mae"] = mae
                 for hm, mae in metrics.get('headmotion_mae', {}).items():
-                    wandb_log[f"{log_prefix}/headmotion/{hm}_mae"] = mae
+                    wandb_log[f"{log_prefix}/raw/headmotion/{hm}_mae"] = mae
+
+                if corrected_metrics is not None:
+                    wandb_log[f"{log_prefix}/corrected/overall_mae"] = corrected_metrics['overall_mae']
+                    wandb_log[f"{log_prefix}/corrected/spearman_r_delta_age"] = corrected_metrics['spearman_r_delta_age']
+                    wandb_log[f"{log_prefix}/bias_correction/a"] = a
+                    wandb_log[f"{log_prefix}/bias_correction/b"] = b
+                    for mod, mae in corrected_metrics.get('modality_mae', {}).items():
+                        wandb_log[f"{log_prefix}/corrected/modality/{mod}_mae"] = mae
+                    for sex, mae in corrected_metrics.get('sex_mae', {}).items():
+                        wandb_log[f"{log_prefix}/corrected/sex/{sex}_mae"] = mae
+                    for hm, mae in corrected_metrics.get('headmotion_mae', {}).items():
+                        wandb_log[f"{log_prefix}/corrected/headmotion/{hm}_mae"] = mae
+
                 wandb.log(wandb_log)
 
     # 5. --- W&B Summary Table ---
     if use_wandb:
-        # Build a summary table with all results
-        columns = ["Model", "Test Set", "Overall MAE", "Modality MAEs", "Sex MAEs"]
+        columns = [
+            "Model", "Test Set",
+            "MAE (raw)", "Spearman r (raw)",
+            "MAE (corrected)", "Spearman r (corrected)",
+            "Modality MAEs (raw)", "Sex MAEs (raw)",
+        ]
         table = wandb.Table(columns=columns)
         for m_name, test_results in evaluation_results.items():
             for ts_name, mets in test_results.items():
                 mod_str = ", ".join(f"{k}: {v:.4f}" for k, v in mets.get('modality_mae', {}).items())
                 sex_str = ", ".join(f"{k}: {v:.4f}" for k, v in mets.get('sex_mae', {}).items())
-                table.add_data(m_name, ts_name, f"{mets['overall_mae']:.4f}", mod_str, sex_str)
+                corr = mets.get('corrected')
+                corr_mae = f"{corr['overall_mae']:.4f}" if corr else "N/A"
+                corr_r = f"{corr['spearman_r_delta_age']:.4f}" if corr else "N/A"
+                table.add_data(
+                    m_name, ts_name,
+                    f"{mets['overall_mae']:.4f}", f"{mets['spearman_r_delta_age']:.4f}",
+                    corr_mae, corr_r,
+                    mod_str, sex_str,
+                )
         wandb.log({"evaluation_summary": table})
 
         # Log overall summary metrics
