@@ -3,6 +3,10 @@
 # Directory where evaluation outputs (logs, results) will be saved
 output_dir: "/mnt/c/Projects/thesis_project/brain_age_pred/output/evaluation_all_models"
 
+# Directory where all plots are saved (scatter, bar charts, GradCAM).
+# Defaults to <output_dir>/plots if not set.
+plots_dir: "/mnt/c/Projects/thesis_project/paper_plots"
+
 # Default directory where the real image data (NIfTI files, etc.) is stored.
 # This can be overridden on a per-model basis.
 data_dir: "/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed/"
@@ -20,6 +24,14 @@ wandb:
   entity: null
   experiment_name: "evaluation-final-datasets-with-stats-before-after-correction"  # optional, auto-generated if not provided
 
+# --- GradCAM Visualisation ---
+# Generates orthogonal-slice heatmaps for a small sample per modality per test set.
+# Figures are saved under <output_dir>/plots/gradcam/ and logged to W&B if enabled.
+gradcam:
+  enabled: true
+  n_samples_per_modality: 2       # individual plots: subjects per modality
+  n_avg_samples_per_modality: 50  # average plot: max subjects per modality (use a large number for all)
+
 # --- Bias Correction (Smith et al., 2019) ---
 # Fits x = a*y + b on the named validation set, then applies x_corrected = (x - b) / a
 # to all test sets (including the validation set itself).
@@ -33,6 +45,20 @@ models:
 
   - name: "brainagenext_t1"
     checkpoint: "/mnt/c/Projects/thesis_project/best_models/best_models/brainagenext_t1_augmented_final_best_mae.pt"
+    bias_correction_modality: "t1"  # fit and apply correction on T1 subjects only
+    params:
+      type: "brainagenext"
+      in_channels: 1
+      dropout_rate: 0.0
+      model_id: "B"
+      feature_size: 512
+      hidden_size: 64
+      normalize: true
+
+
+
+  - name: "brainagenext"
+    checkpoint: "/mnt/c/Projects/thesis_project/best_models/best_models/brainagenext_augmented_final_best_mae.pt"
     params:
       type: "brainagenext"
       in_channels: 1
@@ -75,5 +101,5 @@ testing:
   - name: "MovementNoiseTestSet"
     csv_path: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels/test_movement_noise.csv" 
     
-  - name: "OODTestSet"
-    csv_path: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels/test_ood.csv"   
+  # - name: "OODTestSet"
+  #   csv_path: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels/test_ood.csv"   

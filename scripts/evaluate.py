@@ -14,6 +14,10 @@ from pathlib import Path
 from collections import defaultdict
 from datetime import datetime
 
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+
 import pandas as pd
 import numpy as np
 import torch
@@ -37,6 +41,10 @@ from brain_age_pred.utils.logger import setup_logger
 from brain_age_pred.utils.utils import read_csv, load_checkpoint
 from brain_age_pred.dataset.custom_transformations import ConvertLabelsD
 from brain_age_pred.brain_gen.labels import GENERATION_LABELS, GENERATION_CLASSES
+from brain_age_pred.utils.gradcam import (
+    generate_gradcam_samples, plot_gradcam_samples,
+    generate_average_gradcam, plot_average_gradcam,
+)
 
 class SegmentationTestGenerator:
     """Test-time transform for models that require one-hot encoded segmentation input."""
@@ -239,8 +247,9 @@ def print_summary_table(model_name, test_set_name, metrics, corrected_metrics=No
     print("\n" + "="*80)
     print(f"Evaluation Summary: Model '{model_name}' on Test Set '{test_set_name}'")
     if correction_coeffs is not None:
-        a, b = correction_coeffs
-        print(f"  Bias correction: a={a:.4f}, b={b:.4f}  →  x_corrected = (x - b) / a")
+        a, b, restrict_mod = correction_coeffs
+        scope = f"'{restrict_mod}' only" if restrict_mod else "all modalities"
+        print(f"  Bias correction ({scope}): a={a:.4f}, b={b:.4f}  →  x_corrected = (x - b) / a")
     print("-"*80)
 
     if corrected_metrics is not None:
@@ -285,6 +294,226 @@ def print_summary_table(model_name, test_set_name, metrics, corrected_metrics=No
 
     print("="*80 + "\n")
 
+def _safe_filename(s: str) -> str:
+    """Strips characters that are unsafe in filenames."""
+    for ch in (' ', '/', '\\', ':', '*', '?', '"', '<', '>', '|'):
+        s = s.replace(ch, '_')
+    return s
+
+
+def _try_set_style():
+    for style in ('seaborn-v0_8-whitegrid', 'seaborn-whitegrid', 'ggplot'):
+        try:
+            plt.style.use(style)
+            return
+        except OSError:
+            continue
+
+
+def plot_scatter_by_modality(
+    model_name: str,
+    test_set_name: str,
+    preds: np.ndarray,
+    true_ages: np.ndarray,
+    modalities: list,
+    output_dir: Path,
+    corrected_preds: np.ndarray = None,
+    use_wandb: bool = False,
+) -> Path:
+    """
+    Scatter plots of chronological age vs predicted age, one subplot per modality
+    plus an 'All' overview.  When bias-corrected predictions are supplied a second
+    row (Corrected) is added beneath the Raw row.
+
+    Returns the saved figure path.
+    """
+    _try_set_style()
+    modalities_arr = np.array(modalities)
+    unique_mods = sorted(set(modalities_arr))
+    n_mods = len(unique_mods)
+    cmap = matplotlib.colormaps.get_cmap('tab10').resampled(max(n_mods, 1))
+    mod_color = {m: cmap(i) for i, m in enumerate(unique_mods)}
+
+    n_rows = 2 if corrected_preds is not None else 1
+    n_cols = n_mods + 1  # one per modality + "All" overview
+    fig, axes = plt.subplots(
+        n_rows, n_cols,
+        figsize=(4 * n_cols, 4 * n_rows),
+        squeeze=False,
+    )
+    fig.suptitle(
+        f"Model: {model_name}   |   Test set: {test_set_name}\nChronological Age vs Predicted Age",
+        fontsize=12, fontweight='bold',
+    )
+
+    all_vals = np.concatenate([true_ages, preds] + ([corrected_preds] if corrected_preds is not None else []))
+    pad = (all_vals.max() - all_vals.min()) * 0.05
+    lim_lo, lim_hi = all_vals.min() - pad, all_vals.max() + pad
+
+    row_specs = [("Raw", preds)]
+    if corrected_preds is not None:
+        row_specs.append(("Corrected", corrected_preds))
+
+    for row_idx, (row_label, pred_set) in enumerate(row_specs):
+        col_specs = [(mod, modalities_arr == mod) for mod in unique_mods]
+        col_specs.append(("All", np.ones(len(true_ages), dtype=bool)))
+
+        for col_idx, (mod_label, mask) in enumerate(col_specs):
+            ax = axes[row_idx][col_idx]
+            x, y = true_ages[mask], pred_set[mask]
+
+            if mod_label == "All":
+                for umod in unique_mods:
+                    umask = modalities_arr == umod
+                    ax.scatter(
+                        true_ages[umask], pred_set[umask],
+                        color=mod_color[umod], alpha=0.45, s=12,
+                        label=umod, rasterized=True,
+                    )
+                if n_mods <= 10:
+                    ax.legend(fontsize=6, markerscale=1.5, loc='upper left')
+            else:
+                ax.scatter(x, y, color=mod_color[mod_label], alpha=0.5, s=12, rasterized=True)
+
+            # Identity line
+            ax.plot([lim_lo, lim_hi], [lim_lo, lim_hi], 'k--', lw=1.2, alpha=0.6, label='y = x')
+            # OLS regression line
+            if len(x) >= 2:
+                a_fit, b_fit = np.polyfit(x, y, 1)
+                xs = np.array([lim_lo, lim_hi])
+                ax.plot(xs, a_fit * xs + b_fit, color='crimson', lw=1.5,
+                        label=f'fit: {a_fit:.2f}x + {b_fit:.1f}')
+
+            mae_val = np.mean(np.abs(y - x))
+            r_val, _ = spearmanr(y - x, x)
+            ax.set_xlim(lim_lo, lim_hi)
+            ax.set_ylim(lim_lo, lim_hi)
+            ax.set_aspect('equal', adjustable='box')
+            ax.set_xlabel("Chronological Age (yrs)", fontsize=8)
+            ax.set_ylabel(f"{row_label}\nPredicted Age (yrs)" if col_idx == 0 else "Predicted Age (yrs)", fontsize=8)
+            ax.set_title(
+                f"{mod_label}\nMAE = {mae_val:.2f} yr   r = {r_val:.3f}",
+                fontsize=9,
+            )
+            ax.tick_params(labelsize=7)
+
+    plt.tight_layout()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    fname = output_dir / f"scatter_{_safe_filename(model_name)}_{_safe_filename(test_set_name)}.png"
+    fig.savefig(fname, dpi=150, bbox_inches='tight')
+    plt.close(fig)
+
+    if use_wandb:
+        wandb.log({f"plots/scatter/{model_name}/{test_set_name}": wandb.Image(str(fname))})
+
+    return fname
+
+
+def plot_modality_bar_charts(
+    evaluation_results: dict,
+    output_dir: Path,
+    use_wandb: bool = False,
+) -> list:
+    """
+    Grouped bar charts comparing per-modality MAE across all models for each test set.
+
+    One figure per test set.  When bias-corrected metrics are present, Raw and
+    Corrected are shown in two vertically stacked panels within the same figure.
+    Models are the grouped bars; modalities are the x-axis categories.
+
+    Returns a list of saved figure paths.
+    """
+    _try_set_style()
+    model_names = list(evaluation_results.keys())
+    n_models = len(model_names)
+    cmap = matplotlib.colormaps.get_cmap('Set2').resampled(max(n_models, 1))
+    model_color = {m: cmap(i) for i, m in enumerate(model_names)}
+
+    all_test_sets = sorted({ts for res in evaluation_results.values() for ts in res})
+    output_dir.mkdir(parents=True, exist_ok=True)
+    saved_paths = []
+
+    for test_set_name in all_test_sets:
+        all_modalities: set = set()
+        for m_name in model_names:
+            mets = evaluation_results[m_name].get(test_set_name, {})
+            all_modalities.update(mets.get('modality_mae', {}).keys())
+        modalities = sorted(all_modalities)
+        if not modalities:
+            continue
+
+        has_corrected = any(
+            evaluation_results[m].get(test_set_name, {}).get('corrected') is not None
+            for m in model_names
+        )
+        n_rows = 2 if has_corrected else 1
+        fig, axes = plt.subplots(
+            n_rows, 1,
+            figsize=(max(9, 2.2 * len(modalities) * n_models), 5 * n_rows),
+            squeeze=False,
+        )
+        fig.suptitle(
+            f"Per-Modality MAE Comparison   |   Test set: {test_set_name}",
+            fontsize=13, fontweight='bold',
+        )
+
+        x = np.arange(len(modalities))
+        bar_w = 0.8 / n_models
+
+        row_specs = [("Raw", 'modality_mae')]
+        if has_corrected:
+            row_specs.append(("Corrected", '_corrected_modality_mae'))
+
+        for row_idx, (row_label, _) in enumerate(row_specs):
+            ax = axes[row_idx][0]
+            for m_idx, m_name in enumerate(model_names):
+                mets = evaluation_results[m_name].get(test_set_name, {})
+                if row_label == "Corrected":
+                    mod_mae = mets.get('corrected', {}).get('modality_mae', {})
+                else:
+                    mod_mae = mets.get('modality_mae', {})
+                values = [mod_mae.get(mod, float('nan')) for mod in modalities]
+                offsets = x + (m_idx - (n_models - 1) / 2) * bar_w
+                bars = ax.bar(
+                    offsets, values, bar_w,
+                    label=m_name, color=model_color[m_name], alpha=0.85, edgecolor='white',
+                )
+                for bar, val in zip(bars, values):
+                    if not np.isnan(val):
+                        ax.text(
+                            bar.get_x() + bar.get_width() / 2,
+                            bar.get_height() + 0.02,
+                            f'{val:.2f}',
+                            ha='center', va='bottom', fontsize=7, rotation=40,
+                        )
+
+            ax.set_xticks(x)
+            ax.set_xticklabels(modalities, fontsize=10)
+            ax.set_ylabel("MAE (years)", fontsize=11)
+            ax.set_title(f"{row_label} Predictions", fontsize=11)
+            ax.legend(fontsize=9, loc='upper right')
+            valid_vals = [v for m in model_names
+                          for v in ([evaluation_results[m].get(test_set_name, {}).get('corrected', {}).get('modality_mae', {}).get(mod, float('nan'))
+                                      if row_label == "Corrected"
+                                      else evaluation_results[m].get(test_set_name, {}).get('modality_mae', {}).get(mod, float('nan'))
+                                      for mod in modalities])
+                          if not np.isnan(v)]
+            if valid_vals:
+                ax.set_ylim(0, max(valid_vals) * 1.25)
+            ax.grid(axis='y', alpha=0.4)
+
+        plt.tight_layout()
+        fname = output_dir / f"bar_modality_{_safe_filename(test_set_name)}.png"
+        fig.savefig(fname, dpi=150, bbox_inches='tight')
+        plt.close(fig)
+        saved_paths.append(fname)
+
+        if use_wandb:
+            wandb.log({f"plots/bar_modality/{test_set_name}": wandb.Image(str(fname))})
+
+    return saved_paths
+
+
 def main():
     # 1. --- Configuration ---
     cfg_file = sys.argv[1] if len(sys.argv) > 1 else "configs/evaluate_config.yaml"
@@ -297,6 +526,11 @@ def main():
     log_dir = Path(cfg.get("output_dir", "output/evaluation"))
     log_dir.mkdir(parents=True, exist_ok=True)
     logger = setup_logger("evaluation", log_file=log_dir / "eval.log")
+
+    _plots_dir_raw = cfg.get("plots_dir")
+    plots_dir = Path(_plots_dir_raw) if _plots_dir_raw else log_dir / "plots"
+    plots_dir.mkdir(parents=True, exist_ok=True)
+    logger.info(f"Plots will be saved to: {plots_dir}")
     
     device = torch.device(cfg.get("device") or ("cuda" if torch.cuda.is_available() else "cpu"))
     logger.info(f"Using device: {device}")
@@ -325,7 +559,12 @@ def main():
 
     # Bias correction settings (Smith et al., 2019)
     bc_enabled = cfg.get("bias_correction.enabled", False)
-    bc_fit_on = cfg.get("bias_correction.fit_on", "ValidationSet")
+    bc_fit_on  = cfg.get("bias_correction.fit_on", "ValidationSet")
+
+    # GradCAM settings
+    gradcam_enabled   = cfg.get("gradcam.enabled", False)
+    n_gradcam_samples     = cfg.get("gradcam.n_samples_per_modality", 2)
+    n_gradcam_avg_samples = cfg.get("gradcam.n_avg_samples_per_modality", 50)
 
     if not models_to_eval or not test_sets:
         logger.error("Config file must contain 'models' and 'testing' sections.")
@@ -410,17 +649,104 @@ def main():
             )
             raw_predictions[test_set_name] = (preds, true_ages_arr, mods, sxs, hmotions)
 
+            # GradCAM: generate heatmaps for a small representative sample per modality
+            if gradcam_enabled:
+                logger.info(f"Generating GradCAM for '{model_name}' / '{test_set_name}' "
+                            f"({n_gradcam_samples} sample(s) per modality)...")
+                gc_samples = generate_gradcam_samples(
+                    model=model,
+                    model_type=model_info["params"]["type"],
+                    test_ds=test_ds,
+                    modalities_list=modalities,
+                    n_per_modality=n_gradcam_samples,
+                    device=device,
+                    log=logger,
+                )
+                if gc_samples:
+                    gc_figs = plot_gradcam_samples(
+                        model_name=model_name,
+                        test_set_name=test_set_name,
+                        samples=gc_samples,
+                        output_dir=plots_dir,
+                        use_wandb=use_wandb,
+                    )
+                    logger.info(f"GradCAM: saved {len(gc_figs)} individual figure(s) to "
+                                f"{plots_dir / 'gradcam'}")
+                else:
+                    logger.warning("GradCAM: no individual samples were generated.")
+
+                # Average GradCAM across all subjects per modality
+                logger.info(f"Generating average GradCAM for '{model_name}' / "
+                            f"'{test_set_name}' (up to {n_gradcam_avg_samples} "
+                            f"subject(s) per modality)...")
+                avg_results = generate_average_gradcam(
+                    model=model,
+                    model_type=model_info["params"]["type"],
+                    test_ds=test_ds,
+                    modalities_list=modalities,
+                    n_max_per_modality=n_gradcam_avg_samples,
+                    device=device,
+                    log=logger,
+                )
+                if avg_results:
+                    avg_fig = plot_average_gradcam(
+                        model_name=model_name,
+                        test_set_name=test_set_name,
+                        avg_results=avg_results,
+                        output_dir=plots_dir,
+                        use_wandb=use_wandb,
+                    )
+                    if avg_fig:
+                        logger.info(f"Average GradCAM saved: {avg_fig}")
+                else:
+                    logger.warning("Average GradCAM: no results generated.")
+
         # --- Bias correction: fit on the designated validation set ---
+        # If the model declares `bias_correction_modality`, fitting and application
+        # are restricted to that modality only (e.g. "t1" for a T1-only model).
+        # All other subjects keep their raw predictions unchanged.
         correction_coeffs = None
+        restrict_mod = model_info.get("bias_correction_modality")  # None or e.g. "t1"
         if bc_enabled:
             if bc_fit_on in raw_predictions:
-                val_preds, val_ages, _, _, _ = raw_predictions[bc_fit_on]
-                a, b = fit_bias_correction(val_preds, val_ages)
-                correction_coeffs = (a, b)
-                logger.info(
-                    f"Bias correction (Smith et al., 2019) fitted on '{bc_fit_on}': "
-                    f"a={a:.4f}, b={b:.4f}"
-                )
+                val_preds, val_ages, val_mods, _, _ = raw_predictions[bc_fit_on]
+                if restrict_mod:
+                    fit_mask = np.array(list(val_mods)) == restrict_mod
+                    if fit_mask.sum() < 2:
+                        logger.warning(
+                            f"Bias correction: fewer than 2 '{restrict_mod}' subjects "
+                            f"in '{bc_fit_on}'. Skipping correction for '{model_name}'."
+                        )
+                    else:
+                        a, b = fit_bias_correction(val_preds[fit_mask], val_ages[fit_mask])
+                        correction_coeffs = (a, b, restrict_mod)
+                        logger.info(
+                            f"Bias correction fitted on '{restrict_mod}' subjects only "
+                            f"(n={fit_mask.sum()}) from '{bc_fit_on}': a={a:.4f}, b={b:.4f}"
+                        )
+                else:
+                    a, b = fit_bias_correction(val_preds, val_ages)
+                    correction_coeffs = (a, b, None)
+                    logger.info(
+                        f"Bias correction fitted on all subjects in '{bc_fit_on}': "
+                        f"a={a:.4f}, b={b:.4f}"
+                    )
+
+                if correction_coeffs is not None:
+                    a, b, _ = correction_coeffs
+                    evaluation_results[model_name]['_bias_correction'] = {
+                        'a': a, 'b': b,
+                        'fitted_on': bc_fit_on,
+                        'restricted_to_modality': restrict_mod,
+                    }
+                    if use_wandb:
+                        wandb.log({
+                            f"{model_name}/bias_correction/a": a,
+                            f"{model_name}/bias_correction/b": b,
+                            f"{model_name}/bias_correction/fitted_on": bc_fit_on,
+                            f"{model_name}/bias_correction/restricted_to_modality":
+                                restrict_mod or "all",
+                        })
             else:
                 logger.warning(
                     f"Bias correction enabled but '{bc_fit_on}' was not evaluated. "
@@ -432,11 +758,17 @@ def main():
             metrics = calculate_metrics(preds, true_ages_arr, mods, sxs, hmotions)
 
             corrected_metrics = None
+            corrected_preds = None
             if correction_coeffs is not None:
-                a, b = correction_coeffs
-                corrected_preds = apply_bias_correction(preds, a, b)
+                a, b, restrict_mod = correction_coeffs
+                if restrict_mod:
+                    # Only correct subjects of the specified modality; leave others raw
+                    corrected_preds = preds.astype(float).copy()
+                    mod_mask = np.array(list(mods)) == restrict_mod
+                    corrected_preds[mod_mask] = apply_bias_correction(preds[mod_mask], a, b)
+                else:
+                    corrected_preds = apply_bias_correction(preds, a, b)
                 corrected_metrics = calculate_metrics(corrected_preds, true_ages_arr, mods, sxs, hmotions)
-                metrics['bias_correction'] = {'a': a, 'b': b}
                 metrics['corrected'] = corrected_metrics
 
             evaluation_results[model_name][test_set_name] = metrics
@@ -446,6 +778,19 @@ def main():
                 corrected_metrics=corrected_metrics,
                 correction_coeffs=correction_coeffs,
             )
+
+            # Scatter plot: chronological vs predicted age per modality
+            scatter_path = plot_scatter_by_modality(
+                model_name=model_name,
+                test_set_name=test_set_name,
+                preds=preds,
+                true_ages=true_ages_arr,
+                modalities=list(mods),
+                output_dir=plots_dir,
+                corrected_preds=corrected_preds,
+                use_wandb=use_wandb,
+            )
+            logger.info(f"Scatter plot saved: {scatter_path}")
 
             # Log to W&B
             if use_wandb:
@@ -464,8 +809,6 @@ def main():
                 if corrected_metrics is not None:
                     wandb_log[f"{log_prefix}/corrected/overall_mae"] = corrected_metrics['overall_mae']
                     wandb_log[f"{log_prefix}/corrected/spearman_r_delta_age"] = corrected_metrics['spearman_r_delta_age']
-                    wandb_log[f"{log_prefix}/bias_correction/a"] = a
-                    wandb_log[f"{log_prefix}/bias_correction/b"] = b
                     for mod, mae in corrected_metrics.get('modality_mae', {}).items():
                         wandb_log[f"{log_prefix}/corrected/modality/{mod}_mae"] = mae
                     for sex, mae in corrected_metrics.get('sex_mae', {}).items():
@@ -475,7 +818,12 @@ def main():
 
                 wandb.log(wandb_log)
 
-    # 5. --- W&B Summary Table ---
+    # 5. --- Cross-model bar charts ---
+    bar_paths = plot_modality_bar_charts(evaluation_results, plots_dir, use_wandb=use_wandb)
+    for p in bar_paths:
+        logger.info(f"Bar chart saved: {p}")
+
+    # 6. --- W&B Summary Table ---
     if use_wandb:
         columns = [
             "Model", "Test Set",
@@ -514,10 +862,21 @@ def main():
                 "summary/num_evaluations": len(all_maes),
             })
 
-    # 6. --- Save final results ---
+    # 7. --- Save final results ---
+    class _NumpyEncoder(json.JSONEncoder):
+        """Serialise numpy scalars and arrays to native Python types."""
+        def default(self, obj):
+            if isinstance(obj, np.integer):
+                return int(obj)
+            if isinstance(obj, (np.floating, np.float32, np.float64)):
+                return float(obj)
+            if isinstance(obj, np.ndarray):
+                return obj.tolist()
+            return super().default(obj)
+
     results_file = log_dir / "evaluation_summary.json"
     with open(results_file, "w") as f:
-        json.dump(evaluation_results, f, indent=4)
+        json.dump(evaluation_results, f, indent=4, cls=_NumpyEncoder)
     logger.info(f"Full evaluation results saved to {results_file}")
 
     if use_wandb:

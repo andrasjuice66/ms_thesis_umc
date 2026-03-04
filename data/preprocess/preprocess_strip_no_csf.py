@@ -83,8 +83,8 @@ def run_synthstrip(log, inp, out):
             "freesurfer/synthstrip:1.7-gpu",
             "-i", f"/data/{inp.name}",
             "-o", f"/data/{out.name}",
-            "-g",
-            "--no-csf"  # No CSF flag
+            "-g"#,
+            #"--no-csf"  # No CSF flag
         ])
     return out
 
@@ -320,7 +320,7 @@ def main(data_root, out_root):
 
 if __name__ == "__main__":
 
-    data_root = Path("/mnt/c/Projects/thesis_project/Data/OODtest/FOMO300k/PT030_OpenNeuro")
-    out_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed_no_csf/OODtest/PT030_OpenNeuro")
+    data_root = Path("/mnt/z/preprocessed/PT018_HBN")
+    out_root = Path("/mnt/c/Projects/thesis_project/Data/OODtest/FOMO300K/PT018_HBN")
     main(data_root, out_root)
     
