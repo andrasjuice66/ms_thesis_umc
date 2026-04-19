@@ -562,9 +562,9 @@ def main():
     bc_fit_on  = cfg.get("bias_correction.fit_on", "ValidationSet")
 
     # GradCAM settings
-    gradcam_enabled   = cfg.get("gradcam.enabled", False)
-    n_gradcam_samples     = cfg.get("gradcam.n_samples_per_modality", 2)
-    n_gradcam_avg_samples = cfg.get("gradcam.n_avg_samples_per_modality", 50)
+    gradcam_enabled    = cfg.get("gradcam.enabled", False)
+    n_gradcam_samples  = cfg.get("gradcam.n_samples_per_modality", 2)
+    gradcam_atlas_path = cfg.get("gradcam.atlas_path", None)
 
     if not models_to_eval or not test_sets:
         logger.error("Config file must contain 'models' and 'testing' sections.")
@@ -677,14 +677,13 @@ def main():
 
                 # Average GradCAM across all subjects per modality
                 logger.info(f"Generating average GradCAM for '{model_name}' / "
-                            f"'{test_set_name}' (up to {n_gradcam_avg_samples} "
-                            f"subject(s) per modality)...")
+                            f"'{test_set_name}' (all subjects per modality)...")
                 avg_results = generate_average_gradcam(
                     model=model,
                     model_type=model_info["params"]["type"],
                     test_ds=test_ds,
                     modalities_list=modalities,
-                    n_max_per_modality=n_gradcam_avg_samples,
+                    n_max_per_modality=None,
                     device=device,
                     log=logger,
                 )
@@ -694,6 +693,7 @@ def main():
                         test_set_name=test_set_name,
                         avg_results=avg_results,
                         output_dir=plots_dir,
+                        atlas_path=gradcam_atlas_path,
                         use_wandb=use_wandb,
                     )
                     if avg_fig:

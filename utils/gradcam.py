@@ -277,7 +277,7 @@ def generate_average_gradcam(
     model_type: str,
     test_ds,
     modalities_list: list,
-    n_max_per_modality: int,
+    n_max_per_modality: int | None,
     device: torch.device,
     log: logging.Logger | None = None,
 ) -> dict:
@@ -292,8 +292,8 @@ def generate_average_gradcam(
 
     Parameters
     ----------
-    n_max_per_modality : cap on the number of subjects used per modality
-                         (use a large number to include all subjects).
+    n_max_per_modality : cap on the number of subjects used per modality.
+                         Pass ``None`` to use every subject in the dataset.
 
     Returns
     -------
@@ -315,7 +315,12 @@ def generate_average_gradcam(
 
     selected: list[tuple[int, str]] = []
     for mod in sorted(mod_to_indices):
-        selected.extend((idx, mod) for idx in mod_to_indices[mod][:n_max_per_modality])
+        indices = (
+            mod_to_indices[mod]
+            if n_max_per_modality is None
+            else mod_to_indices[mod][:n_max_per_modality]
+        )
+        selected.extend((idx, mod) for idx in indices)
 
     gradcam   = GradCAM3D(model, layer)
     model.eval()
@@ -477,11 +482,26 @@ def plot_gradcam_samples(
     return saved
 
 
+def _resize_cam_to(cam: np.ndarray, target_shape: tuple) -> np.ndarray:
+    """Zoom ``cam`` to ``target_shape`` and re-normalise to [0, 1]."""
+    if cam.shape == target_shape:
+        return cam
+    factors = tuple(target_shape[i] / max(cam.shape[i], 1) for i in range(3))
+    out = ndimage_zoom(cam, factors, order=1)
+    lo, hi = out.min(), out.max()
+    if hi > lo:
+        out = (out - lo) / (hi - lo)
+    else:
+        out = np.zeros_like(out)
+    return out.astype(np.float32)
+
+
 def plot_average_gradcam(
     model_name: str,
     test_set_name: str,
     avg_results: dict,
     output_dir: Path,
+    atlas_path: str | Path | None = None,
     use_wandb: bool = False,
 ) -> Path | None:
     """
@@ -491,8 +511,10 @@ def plot_average_gradcam(
         Rows    : modalities in alphabetical order, then "All"
         Columns : Axial overlay | Coronal overlay | Sagittal overlay
 
-    Each cell shows the mean MRI slice with the average GradCAM overlaid.
-    The subplot title includes the number of subjects averaged.
+    The background for each cell is the MNI152 atlas (if ``atlas_path`` is
+    provided) so anatomical landmarks are visible; the average GradCAM
+    activation is overlaid in jet colouring.  No colourbar is included.
+    The figure is saved at 300 DPI for maximum sharpness.
 
     Returns the saved figure path, or None if avg_results is empty.
     """
@@ -502,19 +524,36 @@ def plot_average_gradcam(
     plot_dir = Path(output_dir) / "gradcam"
     plot_dir.mkdir(parents=True, exist_ok=True)
 
-    # Order: alphabetical modalities first, then "All"
+    # ── Load MNI atlas ───────────────────────────────────────────────────────
+    atlas_vol: np.ndarray | None = None
+    if atlas_path is not None:
+        try:
+            import nibabel as nib
+            atlas_nib = nib.load(str(atlas_path))
+            atlas_vol = atlas_nib.get_fdata(dtype=np.float32)
+            alo, ahi = atlas_vol.min(), atlas_vol.max()
+            if ahi > alo:
+                atlas_vol = (atlas_vol - alo) / (ahi - alo)
+        except Exception as exc:
+            logger.warning(f"Could not load atlas '{atlas_path}': {exc}. "
+                           "Falling back to averaged MRI background.")
+            atlas_vol = None
+
+    # ── Row ordering: alphabetical modalities, then "All" ───────────────────
     mod_keys = sorted(k for k in avg_results if k != 'All')
     if 'All' in avg_results:
         mod_keys.append('All')
 
     n_rows = len(mod_keys)
-    n_cols = 3  # axial / coronal / sagittal
+    n_cols = 3
     plane_labels = ['Axial', 'Coronal', 'Sagittal']
 
+    # Each subplot cell ~5 × 4 inches; 300 DPI gives crisp output
     fig, axes = plt.subplots(
         n_rows, n_cols,
-        figsize=(4 * n_cols, 3.5 * n_rows),
+        figsize=(5 * n_cols, 4 * n_rows),
         squeeze=False,
+        dpi=300,
     )
     fig.suptitle(
         f"Average GradCAM  ·  {model_name}  ·  {test_set_name}",
@@ -523,41 +562,43 @@ def plot_average_gradcam(
 
     for row_idx, mod in enumerate(mod_keys):
         entry  = avg_results[mod]
-        img    = entry['image']   # (D, H, W)
-        cam    = entry['cam']     # (D, H, W) in [0, 1]
+        cam    = entry['cam']    # (D, H, W) at model-input resolution, [0, 1]
         n_subj = entry['n']
 
-        D, H, W = img.shape
+        # Choose background and resize CAM to match
+        if atlas_vol is not None:
+            bg          = atlas_vol
+            cam_display = _resize_cam_to(cam, bg.shape)
+        else:
+            bg          = entry['image']
+            cam_display = cam
+
+        D, H, W = bg.shape
         slices = [
-            (img[D // 2, :, :], cam[D // 2, :, :]),   # axial
-            (img[:, H // 2, :], cam[:, H // 2, :]),    # coronal
-            (img[:, :, W // 2], cam[:, :, W // 2]),    # sagittal
+            (bg[D // 2, :, :], cam_display[D // 2, :, :]),
+            (bg[:, H // 2, :], cam_display[:, H // 2, :]),
+            (bg[:, :, W // 2], cam_display[:, :, W // 2]),
         ]
 
-        for col_idx, (orig_sl, cam_sl) in enumerate(slices):
+        for col_idx, (bg_sl, cam_sl) in enumerate(slices):
             ax = axes[row_idx][col_idx]
-            orig_norm = orig_sl - orig_sl.min()
-            if orig_norm.max() > 0:
-                orig_norm /= orig_norm.max()
 
-            ax.imshow(orig_norm.T, cmap='gray', origin='lower', aspect='auto')
-            ax.imshow(cam_sl.T,    cmap='jet',  origin='lower', aspect='auto',
-                      alpha=0.5, vmin=0, vmax=1)
+            bg_norm = bg_sl - bg_sl.min()
+            if bg_norm.max() > 0:
+                bg_norm /= bg_norm.max()
+
+            ax.imshow(bg_norm.T,  cmap='gray', origin='lower', aspect='auto',
+                      interpolation='bilinear')
+            ax.imshow(cam_sl.T,   cmap='jet',  origin='lower', aspect='auto',
+                      alpha=0.45, vmin=0, vmax=1, interpolation='bilinear')
             ax.axis('off')
 
             if row_idx == 0:
-                ax.set_title(plane_labels[col_idx], fontsize=9)
+                ax.set_title(plane_labels[col_idx], fontsize=10, fontweight='bold')
 
-        # Row label: modality + n
         axes[row_idx][0].set_ylabel(f"{mod}\n(n={n_subj})", fontsize=9)
         axes[row_idx][0].yaxis.set_visible(True)
         axes[row_idx][0].tick_params(left=False, labelleft=False)
-
-    # Shared colorbar
-    sm = plt.cm.ScalarMappable(cmap='jet', norm=plt.Normalize(vmin=0, vmax=1))
-    sm.set_array([])
-    cbar = fig.colorbar(sm, ax=axes, shrink=0.5, pad=0.02)
-    cbar.set_label('Average GradCAM activation', fontsize=9)
 
     plt.tight_layout()
 
@@ -565,7 +606,7 @@ def plot_average_gradcam(
         plot_dir
         / f"gradcam_avg_{_safe_fn(model_name)}_{_safe_fn(test_set_name)}.png"
     )
-    fig.savefig(fname, dpi=150, bbox_inches='tight')
+    fig.savefig(fname, dpi=300, bbox_inches='tight')
     plt.close(fig)
 
     if use_wandb:

@@ -22,15 +22,15 @@ wandb:
   use_wandb: true
   project: "final_evaluation"
   entity: null
-  experiment_name: "evaluation-final-datasets-with-stats-before-after-correction"  # optional, auto-generated if not provided
+  experiment_name: "OODTestSets_PDw"  # optional, auto-generated if not provided
 
 # --- GradCAM Visualisation ---
 # Generates orthogonal-slice heatmaps for a small sample per modality per test set.
 # Figures are saved under <output_dir>/plots/gradcam/ and logged to W&B if enabled.
 gradcam:
-  enabled: true
+  enabled: false
   n_samples_per_modality: 2       # individual plots: subjects per modality
-  n_avg_samples_per_modality: 50  # average plot: max subjects per modality (use a large number for all)
+  atlas_path: "/mnt/c/Projects/thesis_project/Data/MNI152_T1_1mm_Brain.nii.gz"  # MNI152 background for average plots
 
 # --- Bias Correction (Smith et al., 2019) ---
 # Fits x = a*y + b on the named validation set, then applies x_corrected = (x - b) / a
@@ -95,11 +95,17 @@ testing:
   - name: "ValidationSet"
     csv_path: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels/val_labels.csv"
 
-  - name: "TestSet"
-    csv_path: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels/test_labels.csv"
+  # - name: "TestSet"
+  #   csv_path: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels/test_labels.csv"
 
-  - name: "MovementNoiseTestSet"
-    csv_path: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels/test_movement_noise.csv" 
+  # - name: "MovementNoiseTestSet"
+  #   csv_path: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels/test_movement_noise.csv" 
     
-  # - name: "OODTestSet"
-  #   csv_path: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels/test_ood.csv"   
+  - name: "OODTestSet"
+    csv_path: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels/test_ood_pdw.csv"  
+
+  - name: "OODTestSet_IXI"
+    csv_path: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels/test_ood_pdw_ixi.csv" 
+
+  - name: "OODTestSet_IXI_Original"
+    csv_path: "/mnt/c/Projects/thesis_project/brain_age_pred/data/labels/test_ood_pdw_ixi_original.csv" 

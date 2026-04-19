@@ -268,7 +268,7 @@ def main(input_dir, output_dir) -> None:
 
 if __name__ == "__main__":
 
-    input_dir = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed_no_csf/OODtest/PT030_OpenNeuro")
-    out_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_segmented1/OODtest/PT030_OpenNeuro")
+    input_dir = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed/IXI_pdw/")
+    out_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_segmented/IXI_pdw/")
     main(input_dir, out_root)
     

@@ -1,4 +1,106 @@
 {
     "brainagenext_t1": {
-        "ValidationSet": {
-            "overall_mae": 
+        "OODTestSet": {
+            "overall_mae": 9.670822143554688,
+            "spearman_r_delta_age": -0.7974363025511306,
+            "spearman_p_delta_age": 2.0129276435849434e-29,
+            "modality_mae": {
+                "PDw": 9.670821189880371
+            },
+            "sex_mae": {
+                "F": 10.41366195678711,
+                "M": 8.715741157531738
+            }
+        },
+        "OODTestSet_IXI": {
+            "overall_mae": 17.457605361938477,
+            "spearman_r_delta_age": -0.9832593694205445,
+            "spearman_p_delta_age": 0.0,
+            "modality_mae": {
+                "PDw": 17.457605361938477
+            },
+            "sex_mae": {
+                "F": 18.695850372314453,
+                "M": 15.8816556930542
+            }
+        }
+    },
+    "brainagenext": {
+        "OODTestSet": {
+            "overall_mae": 3.95485520362854,
+            "spearman_r_delta_age": -0.34558653538010087,
+            "spearman_p_delta_age": 6.460519053511784e-05,
+            "modality_mae": {
+                "PDw": 3.95485520362854
+            },
+            "sex_mae": {
+                "F": 4.270845413208008,
+                "M": 3.548582077026367
+            }
+        },
+        "OODTestSet_IXI": {
+            "overall_mae": 13.86831283569336,
+            "spearman_r_delta_age": -0.8957295095042457,
+            "spearman_p_delta_age": 4.64444781524654e-195,
+            "modality_mae": {
+                "PDw": 13.86831283569336
+            },
+            "sex_mae": {
+                "F": 14.926726341247559,
+                "M": 12.521242141723633
+            }
+        }
+    },
+    "sfcn_seg_map": {
+        "OODTestSet": {
+            "overall_mae": 4.183843612670898,
+            "spearman_r_delta_age": -0.7975457009095619,
+            "spearman_p_delta_age": 1.952786009066045e-29,
+            "modality_mae": {
+                "PDw": 4.18384313583374
+            },
+            "sex_mae": {
+                "F": 3.9603958129882812,
+                "M": 4.471133232116699
+            }
+        },
+        "OODTestSet_IXI": {
+            "overall_mae": 8.587662696838379,
+            "spearman_r_delta_age": -0.7167775196731985,
+            "spearman_p_delta_age": 7.427793222519303e-88,
+            "modality_mae": {
+                "PDw": 8.587662696838379
+            },
+            "sex_mae": {
+                "F": 9.719878196716309,
+                "M": 7.146661758422852
+            }
+        }
+    },
+    "two_step": {
+        "OODTestSet": {
+            "overall_mae": 5.109549522399902,
+            "spearman_r_delta_age": -0.8370845707699455,
+            "spearman_p_delta_age": 8.32611392967611e-35,
+            "modality_mae": {
+                "PDw": 5.1095499992370605
+            },
+            "sex_mae": {
+                "F": 4.912102699279785,
+                "M": 5.363410472869873
+            }
+        },
+        "OODTestSet_IXI": {
+            "overall_mae": 8.841755867004395,
+            "spearman_r_delta_age": -0.7317925960932001,
+            "spearman_p_delta_age": 2.6070002727276727e-93,
+            "modality_mae": {
+                "PDw": 8.841755867004395
+            },
+            "sex_mae": {
+                "F": 9.439473152160645,
+                "M": 8.081025123596191
+            }
+        }
+    }
+}

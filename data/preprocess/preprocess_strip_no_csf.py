@@ -119,7 +119,7 @@ def find_images(root):
     log.info(f"Scanning directory for images: {root}")
     for p in root.rglob("*"):
         if (p.name.lower().endswith(".nii.gz") and not "run-2" in p.name.lower() and
-             "pdw" in p.name.lower()):
+             "pd" in p.name.lower()):
             log.info(f"Found image: {p}")
             yield p
 
@@ -314,13 +314,13 @@ def main(data_root, out_root):
                      f"ETA {timedelta(seconds=int(eta))}")
 
     if wandb_enabled:
+        os.chdir(out_root)  # guard against WSL2/Docker leaving os.getcwd() broken
         run.finish()
     log.info("✅ All done.")
 
 
 if __name__ == "__main__":
 
-    data_root = Path("/mnt/z/preprocessed/PT018_HBN")
-    out_root = Path("/mnt/c/Projects/thesis_project/Data/OODtest/FOMO300K/PT018_HBN")
+    data_root = Path("/mnt/z/BrainAge/IXI/IXI/IXI-PD")
+    out_root = Path("/mnt/c/Projects/thesis_project/Data/brain_age_preprocessed/IXI_pdw")
     main(data_root, out_root)
-    
